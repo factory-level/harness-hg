@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/topology-plan/v1alpha2/deployment.schema.json",
+  "title": "Physical deployment record (deployments/{agents,apps,endpoints}/<id>/deployment.yaml)",
+  "description": "One physical instance, compiler-written, plain values under a single spec block (the platform's record convention - no CRD envelope). The three variants share the shape: agents carry no app/source/endpoints; apps carry app + source; endpoint records carry the endpoints list a hermes-endpoint chart release will consume. Names are FINAL here - the compiler owns naming, ApplicationSet templates stay dumb. v1alpha2: agent records may carry the installed distribution identity (`spec.distribution`) - the operational category Nexus groups the agent under beside the Harness Hg control plane, declared in the persona repository's bundles.yaml v4 and stamped by the compiler.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec"
+  ],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "profile",
+        "scope",
+        "target",
+        "argoDestination"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Logical instance id (<profile>@<scope>, apps <profile>/<app>@<scope>; elided forms in the single layout)."
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "app": {
+          "type": "string",
+          "description": "App instances only."
+        },
+        "component": {
+          "type": "string",
+          "description": "Endpoint records only: agent, or the app name."
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "global | region name | target name"
+        },
+        "region": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argoDestination": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Registered Argo CD cluster name - the ApplicationSet destination. Never hardcoded."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Agent/app records."
+        },
+        "application": {
+          "type": "string",
+          "description": "Final Argo Application name (agent/app records)."
+        },
+        "pairedAgent": {
+          "type": "string",
+          "description": "per-agent apps: the owning agent instance id."
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "App records: Argo-ready chart coordinates, local->platform-path or OCI-scheme-stripped remote.",
+          "properties": {
+            "repo": {
+              "const": "local"
+            },
+            "path": {
+              "type": "string"
+            },
+            "repoURL": {
+              "type": "string"
+            },
+            "chart": {
+              "type": "string"
+            },
+            "targetRevision": {
+              "type": "string"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "repo",
+                "path"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "repoURL"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "chart"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "targetRevision"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "required": [
+                "repoURL",
+                "chart",
+                "targetRevision"
+              ],
+              "not": {
+                "required": [
+                  "repo"
+                ]
+              }
+            }
+          ]
+        },
+        "endpoints": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Endpoint records: every endpoint of this component instance.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "type",
+              "internalUrl"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "internal",
+                  "private",
+                  "authenticated",
+                  "public",
+                  "webhook",
+                  "external"
+                ]
+              },
+              "internalUrl": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "provides": {
+                "type": "string"
+              },
+              "backend": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "service",
+                  "namespace",
+                  "port",
+                  "path"
+                ],
+                "description": "Explicit backend routing for the hermes-endpoint chart - service + namespace + port + path, never parsed out of a URL. Optional in the schema for records emitted before it existed; the chart REFUSES to render an endpoint without it, naming the fix (regenerate with a current emit).",
+                "properties": {
+                  "service": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "distribution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "displayName"
+          ],
+          "description": "Agent records: the installed distribution's declared identity (bundles.yaml v4). name is the stable machine id; displayName the human-facing category title.",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 40,
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "\\S"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "description": "Agent instance record",
+          "required": [
+            "namespace",
+            "application"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "app"
+                ]
+              },
+              {
+                "required": [
+                  "component"
+                ]
+              },
+              {
+                "required": [
+                  "endpoints"
+                ]
+              },
+              {
+                "required": [
+                  "source"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "description": "App instance record",
+          "required": [
+            "app",
+            "namespace",
+            "application",
+            "source"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "component"
+                ]
+              },
+              {
+                "required": [
+                  "endpoints"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "description": "Endpoint group record",
+          "required": [
+            "component",
+            "endpoints"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "namespace"
+                ]
+              },
+              {
+                "required": [
+                  "application"
+                ]
+              },
+              {
+                "required": [
+                  "source"
+                ]
+              },
+              {
+                "required": [
+                  "app"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

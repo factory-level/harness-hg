@@ -1,0 +1,30 @@
+{{- /*
+The site app owns its own Ingress: apps are standalone charts under the
+helm-apps contract, so the workload that serves HTTP also declares how it
+is reached — the hermes-profile chart's Service/Ingress covers only the
+agent API itself. Host defaults to the profile's conventional hostname
+("<persona>.<baseDomain>", where the persona is the release namespace
+minus its "hermes-" prefix), overridable via ingress.host.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+{{- $host := .Values.ingress.host | default (printf "%s.%s" (trimPrefix "hermes-" .Release.Namespace) .Values.ingress.baseDomain) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-site
+  labels:
+    app.kubernetes.io/name: site
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-site
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

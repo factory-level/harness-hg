@@ -1,0 +1,26 @@
+# All values may be overridden from hermes-gitops.yaml's apps[].values (author),
+# the fleet defaults' appValues, or per-instance appValues overrides.
+image: squidfunk/mkdocs-material:9
+
+# Which repo to build the site from. Defaults to this platform repo (the
+# repo that ships this chart), which is also the distribution source of the
+# repo's own test persona — the old workloadCatalog entry received the same
+# URL via env injection; as a standalone chart it is a value instead.
+source:
+  repoUrl: https://github.com/factory-level/harness-hg
+  ref: main
+
+service:
+  port: 8000
+
+# The site owns its own Ingress (apps are standalone charts under the
+# helm-apps contract — the hermes-profile chart's Ingress covers only the
+# agent API). host empty = the profile's conventional hostname,
+# "<persona>.<baseDomain>" with the persona derived from the release
+# namespace ("hermes-<persona>").
+ingress:
+  enabled: true
+  baseDomain: hermes.local
+  host: ""
+
+resources: {}

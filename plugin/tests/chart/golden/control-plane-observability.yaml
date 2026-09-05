@@ -1,0 +1,459 @@
+---
+# Source: control-plane-observability/templates/configmap-dashboard-backup.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: control-plane-observability-backup-history
+  namespace: hermes-monitoring
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: observability
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: control-plane-observability
+    app.kubernetes.io/instance: control-plane-observability
+  annotations:
+    grafana_folder: Control Plane
+data:
+  control-plane-observability-backup-history.json: |
+    {
+      "uid": "hg-backup-history",
+      "title": "Hermes — Backup history",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "1m",
+      "time": { "from": "now-7d", "to": "now" },
+      "templating": { "list": [
+        {
+          "name": "namespace",
+          "label": "Namespace",
+          "type": "textbox",
+          "hide": 0,
+          "query": "hermes-.*",
+          "current": { "text": "hermes-.*", "value": "hermes-.*" }
+        }
+      ] },
+      "panels": [
+        {
+          "id": 100,
+          "type": "row",
+          "title": "Control plane",
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+          "panels": []
+        },
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Backup runs — control plane (succeeded / failed / active)",
+          "description": "One series per backup Job, joined to its owning routine CronJob. kube_job_* series exist while the Job objects are retained (the routines' history limits); Prometheus keeps the emitted samples for its 15d retention — this window IS the history.",
+          "gridPos": { "x": 0, "y": 1, "w": 14, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (namespace, job_name) (kube_job_status_succeeded{namespace=~\"hermes-nexus|hermes-system\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"hermes-nexus|hermes-system\"})",
+              "legendFormat": "ok {{namespace}}/{{owner_name}}/{{job_name}}" },
+            { "refId": "B", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (namespace, job_name) (kube_job_status_failed{namespace=~\"hermes-nexus|hermes-system\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"hermes-nexus|hermes-system\"})",
+              "legendFormat": "fail {{namespace}}/{{owner_name}}/{{job_name}}" },
+            { "refId": "C", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (namespace, job_name) (kube_job_status_active{namespace=~\"hermes-nexus|hermes-system\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"hermes-nexus|hermes-system\"})",
+              "legendFormat": "active {{namespace}}/{{owner_name}}/{{job_name}}" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Run duration (s) — control plane",
+          "description": "completion_time - start_time per finished backup Job. Active Jobs have no completion series yet and do not plot here.",
+          "gridPos": { "x": 14, "y": 1, "w": 10, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "(max by (namespace, job_name) (kube_job_status_completion_time{namespace=~\"hermes-nexus|hermes-system\"}) - max by (namespace, job_name) (kube_job_status_start_time{namespace=~\"hermes-nexus|hermes-system\"})) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"hermes-nexus|hermes-system\"})",
+              "legendFormat": "{{namespace}}/{{owner_name}}/{{job_name}}" }
+          ]
+        },
+        {
+          "id": 200,
+          "type": "row",
+          "title": "Agents",
+          "gridPos": { "x": 0, "y": 10, "w": 24, "h": 1 },
+          "panels": []
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Backup runs — agents (succeeded / failed / active)",
+          "description": "Per-profile, bundle and app-chart routines in the agent namespaces. Same join and same retention caveat as the control-plane panel.",
+          "gridPos": { "x": 0, "y": 11, "w": 14, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (namespace, job_name) (kube_job_status_succeeded{namespace=~\"$namespace\", namespace!~\"hermes-nexus|hermes-system|hermes-monitoring|hermes-gitops\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "ok {{namespace}}/{{owner_name}}/{{job_name}}" },
+            { "refId": "B", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (namespace, job_name) (kube_job_status_failed{namespace=~\"$namespace\", namespace!~\"hermes-nexus|hermes-system|hermes-monitoring|hermes-gitops\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "fail {{namespace}}/{{owner_name}}/{{job_name}}" },
+            { "refId": "C", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (namespace, job_name) (kube_job_status_active{namespace=~\"$namespace\", namespace!~\"hermes-nexus|hermes-system|hermes-monitoring|hermes-gitops\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "active {{namespace}}/{{owner_name}}/{{job_name}}" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Run duration (s) — agents",
+          "gridPos": { "x": 14, "y": 11, "w": 10, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "(max by (namespace, job_name) (kube_job_status_completion_time{namespace=~\"$namespace\", namespace!~\"hermes-nexus|hermes-system|hermes-monitoring|hermes-gitops\"}) - max by (namespace, job_name) (kube_job_status_start_time{namespace=~\"$namespace\", namespace!~\"hermes-nexus|hermes-system|hermes-monitoring|hermes-gitops\"})) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "{{namespace}}/{{owner_name}}/{{job_name}}" }
+          ]
+        }
+      ]
+    }
+---
+# Source: control-plane-observability/templates/configmap-dashboard-overview.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: control-plane-observability-overview
+  namespace: hermes-monitoring
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: observability
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: control-plane-observability
+    app.kubernetes.io/instance: control-plane-observability
+  annotations:
+    grafana_folder: Control Plane
+data:
+  control-plane-observability-overview.json: |
+    {
+      "uid": "hg-control-plane-overview",
+      "title": "Hermes — Control plane overview",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Firing alerts",
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "count(ALERTS{alertstate=\"firing\", alertname!=\"Watchdog\"}) or vector(0)" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Argo apps needing attention",
+          "description": "Applications not both Synced and Healthy. The overlay's argocd source levels the same fact.",
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "(count(argocd_app_info{sync_status!=\"Synced\"}) or vector(0)) + (count(argocd_app_info{health_status!=\"Healthy\"}) or vector(0))" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Dead-lettered events",
+          "description": "XLEN of every edge's DLQ at scrape time (router /metrics). Nonzero means retries are exhausted and a human owes the queue a decision.",
+          "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "sum(hermes_event_dlq_depth) or vector(0)" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Routers up",
+          "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "sum(hermes_router_up) or vector(0)" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Agent runtime freshness (s since last observer event)",
+          "description": "The in-pod observer's heartbeat per profile. A flat climb means the agent runtime stopped emitting - the same fact Nexus renders as agent health.",
+          "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "time() - max by (profile) (hermes_observer_last_event_timestamp_seconds)",
+              "legendFormat": "{{profile}}" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Fleet MTD estimated spend (USD)",
+          "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "max by (profile) (hermes_cost_usd_mtd)",
+              "legendFormat": "{{profile}}" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Backup routine staleness (h since last success)",
+          "description": "hermes-* namespaces' CronJobs via kube-state-metrics. The overlay's backup source levels the same fact against its staleness window.",
+          "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "h" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "(time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{namespace=~\"hermes-.*\"})) / 3600",
+              "legendFormat": "{{namespace}}/{{cronjob}}" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Event deliveries and failures (per hour)",
+          "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum(rate(hermes_event_deliveries_total[1h])) * 3600 or vector(0)",
+              "legendFormat": "delivered" },
+            { "refId": "B", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum(rate(hermes_events_publish_failures_total[1h])) * 3600 or vector(0)",
+              "legendFormat": "publish failures" },
+            { "refId": "C", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum(rate(hermes_chatops_delivery_failures_total[1h])) * 3600 or vector(0)",
+              "legendFormat": "chatops failures" }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Hermes workload memory (top 10)",
+          "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "topk(10, sum by (namespace, pod) (container_memory_working_set_bytes{namespace=~\"hermes-.*\", container!=\"\"}))",
+              "legendFormat": "{{namespace}}/{{pod}}" }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Prometheus head series",
+          "description": "The stack watching itself: a runaway series count is how observability becomes the outage.",
+          "gridPos": { "x": 12, "y": 21, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "prometheus_tsdb_head_series", "legendFormat": "series" }
+          ]
+        }
+      ]
+    }
+---
+# Source: control-plane-observability/templates/configmap-dashboard-reconciliation.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: control-plane-observability-reconciliation
+  namespace: hermes-monitoring
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: observability
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: control-plane-observability
+    app.kubernetes.io/instance: control-plane-observability
+  annotations:
+    grafana_folder: Control Plane
+data:
+  control-plane-observability-reconciliation.json: |
+    {
+      "uid": "hg-control-plane-reconciliation",
+      "title": "Hermes — GitOps reconciliation",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "table",
+          "title": "Applications by exact identity",
+          "description": "namespace/name is the identity - never a card title. Anything not Synced+Healthy is what the overlay's argocd source is red about.",
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": {},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true, "format": "table",
+              "expr": "argocd_app_info" }
+          ],
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true, "service": true } } }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Out of sync",
+          "gridPos": { "x": 0, "y": 9, "w": 6, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "count(argocd_app_info{sync_status=\"OutOfSync\"}) or vector(0)" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Degraded / Missing",
+          "gridPos": { "x": 6, "y": 9, "w": 6, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "count(argocd_app_info{health_status=~\"Degraded|Missing\"}) or vector(0)" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Sync operations (per hour)",
+          "gridPos": { "x": 12, "y": 9, "w": 12, "h": 5 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (phase) (rate(argocd_app_sync_total[1h])) * 3600",
+              "legendFormat": "{{phase}}" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Backup routine staleness (h since last success)",
+          "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "h" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "(time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{namespace=~\"hermes-.*\"})) / 3600",
+              "legendFormat": "{{namespace}}/{{cronjob}}" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Failed jobs in hermes namespaces",
+          "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (namespace) (kube_job_status_failed{namespace=~\"hermes-.*\"}) or vector(0)",
+              "legendFormat": "{{namespace}}" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Dead-letter depth by edge",
+          "gridPos": { "x": 0, "y": 22, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "hermes_event_dlq_depth", "legendFormat": "{{edge}}" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "text",
+          "title": "Destination-server reconciliation",
+          "gridPos": { "x": 12, "y": 22, "w": 12, "h": 8 },
+          "options": {
+            "mode": "markdown",
+            "content": "The host reconciler (`hg reconcile`, M01) publishes its state as a ConfigMap record, not a Prometheus exposition - desired / attempted / applied SHAs, phase, and the retry gate live in **Nexus** under the reconciliation source. No panel here queries it, deliberately: a chart over a series nobody emits reads as permanently broken, which teaches you to ignore this page."
+          }
+        }
+      ]
+    }

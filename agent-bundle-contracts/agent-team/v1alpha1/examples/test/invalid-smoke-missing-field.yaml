@@ -1,0 +1,6 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: AgentTest
+smoke:
+  - service: hermes-marketing-manager
+    port: 8642
+    path: /health

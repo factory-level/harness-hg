@@ -1,0 +1,29 @@
+{{- include "hermes.computeGuard" . -}}
+{{- /*
+The observer-metrics directory plugin (hermes.observer.v1 -> Prometheus
+/metrics on :{{ .Values.metrics.port }}), shipped as chart payload from
+files/plugins/observer-metrics/. Mounted read-only into the
+bootstrap-distribution initContainer at /plugins; boot.sh copies it into
+the ACTIVE profile's plugins/ dir on the PVC (where the fork's
+user-plugin discovery scans) and `hermes plugins enable`s it - see
+configmap-boot.yaml for the full rationale.
+
+Explicit .Files.Get per file (not .Files.Glob ... AsConfig) so a stray
+__pycache__/ from local test imports can never leak into the ConfigMap.
+*/ -}}
+{{- if and (eq .Values.providers.compute "pod") .Values.metrics.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hermes.fullname" . }}-plugins
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+data:
+  plugin.yaml: |
+{{ .Files.Get "files/plugins/observer-metrics/plugin.yaml" | indent 4 }}
+  __init__.py: |
+{{ .Files.Get "files/plugins/observer-metrics/__init__.py" | indent 4 }}
+{{- end -}}

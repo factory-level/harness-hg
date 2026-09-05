@@ -1,0 +1,12 @@
+# The Eve harness declaration (harness-declaration/v1alpha1, ADR 0162).
+# hg validate reads every harness/<name>/harness.yaml; a harness without
+# one — or without a gateway — fails the gate.
+contract: harness-declaration/v1alpha1
+spec:
+  name: eve
+  status: active
+  gateway:
+    kind: external-service
+    provider:
+      name: vercel-ai-gateway
+      notes: model/provider selection flows through gateway config via the AI SDK (#654); credentials ride the agentSecrets path.

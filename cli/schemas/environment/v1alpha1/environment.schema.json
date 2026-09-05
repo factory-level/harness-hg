@@ -1,0 +1,683 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment/v1alpha1/environment.schema.json",
+  "title": "Environment spec",
+  "description": "The declarative source of truth for ONE deployed environment (#674): everything the state and infra Pulumi stacks are configured with, in one authored file. `hg env apply` compiles it into the two `Pulumi.<env>.yaml` config blocks (generated projections, never hand-edited); `hg env plan` diffs; `hg env new` drives day-0 from it. Secret VALUES never live here \u2014 a `{secret: true}` leaf marks a value that exists only as `secure:` ciphertext in the generated config, written by `pulumi config set --secret`. It lives in cli/schemas/ (the evals precedent): this contract versions with the CLI, and agent-bundle-contracts/ is the wrong tenant \u2014 this file is authored by a platform operator, never by an agent-bundle repo.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "name",
+    "project",
+    "rootKms",
+    "state",
+    "infra"
+  ],
+  "$defs": {
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secret"
+      ],
+      "properties": {
+        "secret": {
+          "const": true,
+          "description": "The value exists only as encrypted `secure:` ciphertext in the generated stack config. The generator carries existing ciphertext through untouched; a marked leaf with no ciphertext yet is an actionable finding naming the `hg env set-secret` command that supplies it."
+        }
+      }
+    },
+    "stringOrSecret": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/secretRef"
+        }
+      ]
+    },
+    "quotedString": {
+      "type": "string",
+      "description": "Deliberately string-typed: numeric-looking values (snowflake ids) MUST stay strings end to end \u2014 unquoted YAML numbers round above 2^53 in the JS config path and drop silently (#358). The generator re-quotes on emit; the schema refuses non-strings so the rounding can never have happened by the time hg reads the spec."
+    },
+    "envValues": {
+      "type": "object",
+      "description": "One instance's env vars. Every value is either a plaintext STRING (never a bare number or boolean \u2014 #358) or a secret marker.",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/quotedString"
+          },
+          {
+            "$ref": "#/$defs/secretRef"
+          }
+        ]
+      }
+    },
+    "valueTree": {
+      "description": "An app-values subtree: nested maps whose leaves are strings, numbers, booleans, or secret markers (matches what the emitter's deep_merge accepts).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/valueTree"
+          }
+        },
+        {
+          "$ref": "#/$defs/secretRef"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/valueTree"
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/environment/v1alpha1",
+      "description": "Pins the spec contract; the compiler refuses versions it does not implement."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+      "maxLength": 21,
+      "description": "The environment's name \u2014 also the state-stack agent entry, the infra stack name, and the seed of every derived resource name (bucket `<project>-<name>-state`, SA `<name>-deployer@\u2026`). Max 21 chars so the bucket and SA ids fit their GCP limits (state/src/config.ts)."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The GCP project id (`gcp:project` on the state stack; the base of every gs:// and service-account URI)."
+    },
+    "rootKms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "location",
+        "keyring",
+        "key"
+      ],
+      "description": "Coordinates of the manual root-of-trust KMS key (state/README.md \u00a71). hg assembles the full `gcpkms://projects/<project>/locations/<location>/keyRings/<keyring>/cryptoKeys/<key>` secrets-provider URI and the `rootKmsKeyId` resource path from these \u2014 the operator never types a URI.",
+      "properties": {
+        "location": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyring": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "rootStateBucket": {
+      "type": "string",
+      "description": "Override for the root Pulumi state bucket name. Default: `<project>-pulumi-root-state` (state/README.md \u00a71)."
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deployerGroup",
+        "agents"
+      ],
+      "description": "Config for the state-backend stack (state/): per-agent buckets, deploy SAs, IAM, backup sinks.",
+      "properties": {
+        "deployerGroup": {
+          "type": "string",
+          "minLength": 3,
+          "description": "Who may impersonate the deploy SAs. Bare email = group; `user:`/`serviceAccount:` prefixes pass through (state/src/config.ts deployerPrincipal)."
+        },
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 21
+          },
+          "description": "Environments/agents getting a state bucket + deploy SA each. Max 21 chars (SA id budget)."
+        },
+        "backupEnvironments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 16
+          },
+          "description": "Environments getting a CMEK backup bucket + writer/reader SAs. Max 16 chars (`<env>-backup-writer` must fit 30). NOTE: the CMEK key is non-deletable in GCP."
+        },
+        "bucketLocation": {
+          "type": "string",
+          "description": "GCS location for the buckets. Default US."
+        },
+        "perAgentKeys": {
+          "type": "boolean",
+          "description": "Strict per-agent KMS keys instead of the shared root key. One-way door: keyrings/keys are non-deletable."
+        }
+      }
+    },
+    "infra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providers",
+        "gitopsRepoUrl"
+      ],
+      "description": "Config for the infra stack \u2014 key-for-key the surface infra/src/control-flow/config.ts load() reads, with secrets as markers.",
+      "properties": {
+        "clusterProvider": {
+          "enum": [
+            "none",
+            "k3s-local",
+            "gke-autopilot",
+            "eks-fargate"
+          ]
+        },
+        "kubeconfigPath": {
+          "type": "string"
+        },
+        "kubeconfigContext": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "gitopsRepoUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gitopsBranch": {
+          "type": "string"
+        },
+        "gitopsBranchProtection": {
+          "type": "boolean"
+        },
+        "gitopsRequiredReviewers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gitopsGitToken": {
+          "$ref": "#/$defs/secretRef"
+        },
+        "hermesGitopsRepoUrl": {
+          "type": "string"
+        },
+        "chartRevision": {
+          "type": "string"
+        },
+        "cloudflareApiToken": {
+          "$ref": "#/$defs/secretRef"
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "compute",
+            "secret",
+            "ingress"
+          ],
+          "properties": {
+            "compute": {
+              "enum": [
+                "pod"
+              ]
+            },
+            "secret": {
+              "enum": [
+                "k8s"
+              ]
+            },
+            "ingress": {
+              "enum": [
+                "ingress",
+                "cloudflare",
+                "none"
+              ]
+            }
+          }
+        },
+        "stages": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hermes": {
+              "type": "boolean"
+            },
+            "agents": {
+              "type": "boolean"
+            },
+            "cluster": {
+              "type": "boolean"
+            }
+          },
+          "description": "Real booleans only \u2014 the stack reader's `Boolean(x ?? true)` treats a quoted \"false\" as true; the schema refuses strings so that trap is unreachable from the spec."
+        },
+        "versions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "argocdChart": {
+              "type": "string"
+            },
+            "esoChart": {
+              "type": "string"
+            },
+            "pkoChart": {
+              "type": "string"
+            }
+          },
+          "description": "Chart versions as STRINGS (a two-segment version unquoted becomes a YAML number; the generator re-quotes on emit)."
+        },
+        "hermes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "pluginPath": {
+              "type": "string"
+            },
+            "scaffold": {
+              "type": "boolean"
+            }
+          }
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ref": {
+                "type": "string"
+              },
+              "subdir": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "runtime": {
+                "enum": [
+                  "hermes",
+                  "eve"
+                ]
+              },
+              "overrides": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "apps": {
+                    "$ref": "#/$defs/valueTree"
+                  },
+                  "appValues": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/$defs/valueTree"
+                    }
+                  },
+                  "backup": {
+                    "$ref": "#/$defs/valueTree"
+                  },
+                  "deployment": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "baseImageTag": {
+                        "type": "string"
+                      },
+                      "diskSizeGb": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  },
+                  "expose": {
+                    "$ref": "#/$defs/valueTree"
+                  },
+                  "gitAuthSecretRef": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "agentSecrets": {
+          "type": "object",
+          "description": "Per-instance env vars. Keyed by instance (DNS-1123, \u226440); every value a string or a secret marker \u2014 never a bare number (#358).",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,38}[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/envValues"
+          }
+        },
+        "agentGitAuth": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "password": {
+                "$ref": "#/$defs/secretRef"
+              },
+              "sshPrivateKey": {
+                "$ref": "#/$defs/secretRef"
+              }
+            }
+          }
+        },
+        "routerSecrets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/secretRef"
+          }
+        },
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Slack workspace provisioning (the SlackWorkspace bootstrap component): one Slack app per eve agent created through the official Slack CLI (whose one-time `slack login` on the operator host replaces any app-config token), plus declaratively managed channels and membership. Pod credentials (SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET) ride agentSecrets, not this block.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "teamId": {
+              "type": "string",
+              "pattern": "^T[A-Z0-9]{5,20}$",
+              "description": "The workspace (team) id every CLI call pins. A similarly named workspace with a different id is a different workspace."
+            },
+            "adminUserToken": {
+              "$ref": "#/$defs/secretRef",
+              "description": "xoxp user token for channel create/adopt and bot invites (a bot cannot invite itself)."
+            },
+            "eventsReady": {
+              "type": "boolean",
+              "description": "Render event subscriptions + request_url into manifests. Leave false until the endpoint answers url_verification - Slack challenges the URL at manifest apply."
+            },
+            "deleteAppsOnDestroy": {
+              "type": "boolean"
+            },
+            "cliBin": {
+              "type": "string"
+            },
+            "apps": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "displayName",
+                  "botScopes"
+                ],
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "botScopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "botEvents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "appId": {
+                    "type": "string",
+                    "description": "Adopt an existing app (A...) instead of creating one - the recovery slot after state loss. Empty = create."
+                  },
+                  "eventsUrl": {
+                    "type": "string",
+                    "description": "This app's full Events request URL (https://<webhook-host>/eve/v1/slack). One hostname per app - eve mounts the same path on every agent. Should match a controlPlaneIngress.webhookEndpoints hostname."
+                  }
+                }
+              },
+              "description": "Keyed by agents[] instance name; each key must name a runtime: eve agent."
+            },
+            "channels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                  },
+                  "channelId": {
+                    "type": "string",
+                    "pattern": "^C[A-Z0-9]{5,20}$",
+                    "description": "Existing public channel id: referenced bots join it themselves (channels:join), no admin token. Unset = create/adopt via @pulumi/slack, which needs slack.adminUserToken."
+                  },
+                  "topic": {
+                    "type": "string"
+                  },
+                  "private": {
+                    "type": "boolean"
+                  },
+                  "agents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^U[A-Z0-9]{5,20}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "argocdRepoCreds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gitopsUsername": {
+              "type": "string"
+            },
+            "hermesGitopsUsername": {
+              "type": "string"
+            },
+            "gitopsToken": {
+              "$ref": "#/$defs/secretRef"
+            },
+            "hermesGitopsToken": {
+              "$ref": "#/$defs/secretRef"
+            }
+          }
+        },
+        "targetClusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "server"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "server": {
+                "type": "string"
+              },
+              "bearerToken": {
+                "$ref": "#/$defs/secretRef"
+              },
+              "caData": {
+                "type": "string"
+              },
+              "insecure": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "helmOciRegistries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "token": {
+                "$ref": "#/$defs/secretRef"
+              },
+              "insecure": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "pluginConfig": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "direct",
+                "pr"
+              ]
+            },
+            "prAutoMerge": {
+              "type": "boolean"
+            },
+            "allowDirectCommit": {
+              "type": "boolean"
+            },
+            "profilesPath": {
+              "type": "string"
+            },
+            "defaultsFile": {
+              "type": "string"
+            },
+            "overridesDir": {
+              "type": "string"
+            },
+            "gitAuthorName": {
+              "type": "string"
+            },
+            "gitAuthorEmail": {
+              "type": "string"
+            },
+            "imageRepository": {
+              "type": "string"
+            },
+            "imageTag": {
+              "type": "string"
+            }
+          }
+        },
+        "fleetDefaults": {
+          "$ref": "#/$defs/valueTree"
+        },
+        "controlPlaneIngress": {
+          "$ref": "#/$defs/valueTree"
+        },
+        "nexusCapabilities": {
+          "$ref": "#/$defs/valueTree"
+        },
+        "reconcile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "string"
+            },
+            "repoUrl": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "apply": {
+              "type": "string"
+            },
+            "statusNamespace": {
+              "type": "string"
+            },
+            "kubeContext": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

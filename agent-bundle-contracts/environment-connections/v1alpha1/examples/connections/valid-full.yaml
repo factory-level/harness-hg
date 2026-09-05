@@ -1,0 +1,20 @@
+# Two connections, routed: the Discord bot's interactions from one guild go
+# to echo and everything else to greeter; the GitHub App's webhooks from one
+# repository go to echo.
+apiVersion: hermes.gitops/v1alpha1
+kind: Connections
+
+connections:
+  - name: company-discord
+    provider: discord
+    bindings:
+      - profile: echo
+        match:
+          guilds: ["123456789012345678"]
+      - profile: greeter
+  - name: platform-github
+    provider: github
+    bindings:
+      - profile: echo
+        match:
+          repositories: ["factory-level/hermes-gitops-plugin"]

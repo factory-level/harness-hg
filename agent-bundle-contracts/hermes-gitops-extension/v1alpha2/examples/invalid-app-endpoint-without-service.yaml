@@ -1,0 +1,13 @@
+# App endpoints are backed by a named Kubernetes Service the chart renders -
+# omitting it is rejected at the app level (agent endpoints are the ones
+# that forbid it).
+contractVersion: 2
+apps:
+  - name: content-kanban
+    chart: content-kanban
+    repo: oci://ghcr.io/factory-level/charts
+    version: 0.3.0
+    endpoints:
+      - name: api
+        port: 80
+        type: private

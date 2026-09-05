@@ -1,0 +1,49 @@
+# Code owners for harness-hg.
+#
+# GitHub reads this file to request reviews automatically. It is the
+# machine-readable half of the ownership rules; the human half - review
+# expectations per change type, and the emergency-override process - is in
+# CONTRIBUTING.md (#138).
+#
+# Scope note: this file governs THIS repository. The ownership split that
+# matters operationally is a different one - which trees inside the
+# generated GitOps repository belong to the bot and which to the operator
+# (ADR-19). That split is documented in governance.md and enforced there,
+# not here, because those files live in another repository entirely.
+
+# Default owner for everything not matched below.
+*                                   @calv-io-n
+
+# --- Frozen contracts -----------------------------------------------------
+# A change here is a new version directory, never an edit. These paths get
+# the most scrutiny because a consumer somewhere is already depending on
+# the current shape.
+/agent-bundle-contracts/                    @calv-io-n
+
+# --- The emitter: the only thing that writes to the GitOps repository ----
+# Secret handling and error scrubbing live here.
+/plugin/gitops_emitter/             @calv-io-n
+
+# --- Charts and bootstrap: what actually reaches a cluster ---------------
+/harness/                           @calv-io-n
+/control-plane/                      @calv-io-n
+/infra/gitops-template/             @calv-io-n
+/infra/src/                         @calv-io-n
+
+# --- Generated artifacts: regenerate, never hand-edit --------------------
+# Committed and byte-compared. A hand-edit here passes review by looking
+# small and fails the gate by being wrong.
+/plugin/tests/chart/golden/         @calv-io-n
+/control-plane/nexus/dist/          @calv-io-n
+/control-plane/nexus/chart/files/                @calv-io-n
+
+# --- Documentation contract ----------------------------------------------
+# _docs/ is three parts with different rules (design = target,
+# architecture = present, adr = decisions + costs). See CONTRIBUTING.md.
+/_docs/                             @calv-io-n
+
+# --- Governance itself ---------------------------------------------------
+/CODEOWNERS                         @calv-io-n
+/LICENSE                            @calv-io-n
+/SECURITY.md                        @calv-io-n
+/CONTRIBUTING.md                    @calv-io-n

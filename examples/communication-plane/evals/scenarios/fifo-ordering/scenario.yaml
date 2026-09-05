@@ -1,0 +1,15 @@
+# A FIFO sequence through one ordering group: the runner emits the
+# payloads in order; the evaluator asserts the agent deliveries completed
+# in that same order on the durable transport.
+name: fifo-ordering
+profile: platform-sre
+invoke:
+  events:
+    name: observability.alert
+    from: platform-sre/monitoring#alerts
+    orderingKey: incident/eval-fifo
+    payloads:
+      - fixtures/alert-firing.json
+      - fixtures/alert-resolved.json
+      - fixtures/alert-firing.json
+evaluate: evaluate.py

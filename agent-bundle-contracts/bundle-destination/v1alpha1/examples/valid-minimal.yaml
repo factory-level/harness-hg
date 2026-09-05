@@ -1,0 +1,3 @@
+apiVersion: hermes-gitops.factorylevel.dev/bundle-destination/v1alpha1
+gitops:
+  repoUrl: https://github.com/example/persona.gitops.git

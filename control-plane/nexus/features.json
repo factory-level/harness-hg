@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "features": [
+    {
+      "id": "repository-links",
+      "title": "Repository links",
+      "description": "Repository, docs and runbook links on agent and application cards, declared by the persona repository (https only, triple-validated).",
+      "milestone": "M2 · Repository links",
+      "defaultOff": true
+    },
+    {
+      "id": "communication-view",
+      "title": "Communication view",
+      "description": "The read-only routing graph: producers, routers and destinations from the emitted communication records, with delivery semantics. No in-cluster addresses ever reach the browser.",
+      "milestone": "M3 · Communication view",
+      "defaultOff": true
+    },
+    {
+      "id": "all-agents-event",
+      "title": "All-agents event",
+      "description": "Show the reserved agents.all/v1 broadcast on the Communication view: the implied test event every distribution ships with, fanned out by the router to every agent profile. Display only - the reservation is platform contract whether or not this is on.",
+      "milestone": "M3 · Communication view",
+      "defaultOff": true
+    },
+    {
+      "id": "group-collapse",
+      "title": "Group collapse",
+      "description": "Collapse a group to its name, member count and health rollup — computed over hidden members too, so collapsing never hides a red card.",
+      "milestone": "M4 · Groups",
+      "defaultOff": true
+    },
+    {
+      "id": "sticky-notes",
+      "title": "Sticky notes",
+      "description": "Pin durable operator context to the canvas in edit mode — plain text, stored on this control plane only, never operational data.",
+      "milestone": "M6 · Sticky notes",
+      "defaultOff": true
+    },
+    {
+      "id": "connections",
+      "title": "Operator connections",
+      "description": "Draw dashed conceptual edges between cards in edit mode — visually distinct from repository relationships and asserting nothing about traffic. Stored on this control plane only.",
+      "milestone": "M7 · Connections",
+      "defaultOff": true
+    },
+    {
+      "id": "agents-view",
+      "title": "Agents view",
+      "description": "The operational directory: every agent as a row with health, group, binding and instances, filterable, with deep-linked detail. Profile only — Uptime and Evals wait on published data.",
+      "milestone": "M8 · Agents view",
+      "defaultOff": true
+    },
+    {
+      "id": "embed-debug",
+      "title": "Embed debug",
+      "description": "A diagnostic view that frames Grafana from THIS page's origin and session — the only conditions that answer whether Nexus could embed a dashboard. Renders no plan data. Argo CD is framed too, and is expected to be refused.",
+      "milestone": "M9 · Embed debug",
+      "defaultOff": true
+    },
+    {
+      "id": "inventory-sidebar",
+      "title": "Inventory sidebar",
+      "description": "The insert library (design 12): every compiled component grouped by source repository and kind, searchable, with on-sheet items marked. Adding creates a layout REFERENCE on the active sheet - deployment state is never touched.",
+      "milestone": "M0 · Fleet Canvas",
+      "defaultOff": true
+    },
+    {
+      "id": "canvas-objects",
+      "title": "Canvas objects",
+      "description": "Text labels and rectangles/containers as whiteboard primitives on the active sheet, plus card removal in edit mode. Presentation only - saved with the workspace document.",
+      "milestone": "M0 · Fleet Canvas",
+      "defaultOff": false
+    },
+    {
+      "id": "canvas-layout-aids",
+      "title": "Layout aids",
+      "description": "Drags snap the anchor object to the dot grid (hold Alt to bypass); a multi-selection gains align (6 ways) and distribute (H/V, needs 3+); a selected container gains bring-to-front/send-to-back. All positions, one undo step per action.",
+      "milestone": "M13 · Canvas editing",
+      "defaultOff": true
+    },
+    {
+      "id": "canvas-multiplicity",
+      "title": "Multiplicity",
+      "description": "Multi-instance components show their count on the canvas: an ×N chip (default), a visual stack, or expanded per-instance chips with individual health - all derived from the plan's real instances and the health overlay, never persisted. Expansion creates no inventory.",
+      "milestone": "M13 · Canvas editing",
+      "defaultOff": true
+    },
+    {
+      "id": "typed-connections",
+      "title": "Typed connections",
+      "description": "Operator edges carry a relationship kind (depends-on, calls, observes, owns, custom) with per-kind styling. Edges select like any object and die to Delete; a selected edge's panel retypes it - only kinds legal for the endpoint pair are offered. Presentation-plane: nothing here asserts runtime traffic.",
+      "milestone": "M13 · Canvas editing",
+      "defaultOff": true
+    },
+    {
+      "id": "canvas-groups",
+      "title": "Canvas groups",
+      "description": "Group selected objects into a named presentation hull (ADR-72): move together, rename, collapse to a pill, ungroup without deleting members. Pure canvas arrangement - deployment grouping stays plan data and these never feed a rollup.",
+      "milestone": "M13 · Canvas editing",
+      "defaultOff": true
+    },
+    {
+      "id": "edit-inspector",
+      "title": "Edit-mode inspector",
+      "description": "Selecting one card in edit mode docks the component drawer beside the canvas (non-modal, canvas keeps the keyboard) with a Canvas section - sheet position and remove-from-sheet - kept visibly apart from the read-only inventory facts. A multi-selection shows a count panel with bulk remove.",
+      "milestone": "M13 · Canvas editing",
+      "defaultOff": true
+    },
+    {
+      "id": "canvas-multiselect",
+      "title": "Multi-selection",
+      "description": "The Miro selection grammar in edit mode: shift-click toggles, a Shift-held or Select-tool background drag sweeps a marquee (a bare drag pans), Cmd/Ctrl-A selects the sheet, arrows nudge (Shift = grid step). A drag or Delete of many objects is ONE undo step.",
+      "milestone": "M13 · Canvas editing",
+      "defaultOff": false
+    },
+    {
+      "id": "eval-results",
+      "title": "Eval results",
+      "description": "Published eval results on agent detail and in the Agents directory, and the eval source in the health overlay (ADR-57). Off means the adapter reports `not configured` regardless of what has been published.",
+      "milestone": "M1 · Evals",
+      "defaultOff": true
+    },
+    {
+      "id": "iam-badge",
+      "title": "IAM badge",
+      "description": "A shield on every card carrying an ADR-40 workload endpoint, listing the hostnames published outside the cluster (in-cluster Service URLs are deliberately not counted). It reports publication, not authorization - Cloudflare Access group membership is not carried in the plan yet.",
+      "milestone": "M10 · Canvas object system",
+      "defaultOff": true
+    },
+    {
+      "id": "alerting-badge",
+      "title": "Alerting badge",
+      "description": "A bell on the agents alarms are ROUTED TO - earned twice over: an alarm-family route must deliver to the agent AND the alert pipeline (promstack Prometheus, the feed into Alertmanager) must be connected. Count = inbound alarm routes + the live firing summary. Merely being monitored rings nothing; on a typical fleet this is one bell, on the SRE.",
+      "milestone": "M10 · Canvas object system",
+      "defaultOff": true
+    },
+    {
+      "id": "backups-view",
+      "title": "Backups",
+      "description": "The top-level Backups surface: every discovered routine as a status row with its schedule, retention, protected paths and last success, plus the platform backup summary. Schedule health and artifact verification are separate columns on purpose - a routine that runs nightly and has never been read back is not a proven restore point, and this view refuses to render it as one.",
+      "milestone": "M12 · Backups",
+      "defaultOff": true
+    },
+    {
+      "id": "avatar-gallery",
+      "title": "Avatar gallery",
+      "description": "The avatar-code page at #/avatars: the platform's animated avatar inventory with click-to-copy codes for agent display.icon declarations. Read-only reference material - the selection itself is a persona-repository declaration.",
+      "milestone": "Wave 5 · Brand",
+      "defaultOff": false
+    },
+    {
+      "id": "canvas-object-demo",
+      "title": "Canvas Object Demo",
+      "description": "A specimen sheet beside System showing all eight canvas object kinds at the design's exact coordinates - including reserved profiles, agent distributions and communication panels, which no plan can express until a dashboard-plan v1alpha3. It renders no live data: every name on it is fiction, and the sheet says so.",
+      "milestone": "M10 · Canvas object system",
+      "defaultOff": true
+    },
+    {
+      "id": "canvas-badge-demo",
+      "title": "Canvas Badge Demo",
+      "description": "A specimen page beside Objects showing every badge domain in every state it has — including the `none` state an enabled domain renders when it has nothing to report, and the two disclaimers that keep IAM and Alerting honest. Every badge is drawn by the production card from synthetic facts: it renders no live data, and every name on it is fiction.",
+      "milestone": "M10 · Canvas object system",
+      "defaultOff": true
+    }
+  ]
+}

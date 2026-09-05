@@ -1,0 +1,18 @@
+# The shipped catalog's shape: a literal platform dashboard uid, and the
+# {instance} token for a per-agent dashboard.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha1
+kind: PanelCatalog
+panels:
+  - id: system-firing-alerts
+    surface: system
+    title: Firing alerts
+    dashboard: hg-control-plane-overview
+    panelId: 1
+    size: compact
+  - id: agent-ready-pods
+    surface: agent
+    title: Agent ready pods
+    dashboard: "{instance}"
+    panelId: 3
+    size: compact
+    range: 24h

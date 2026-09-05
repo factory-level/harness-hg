@@ -1,0 +1,16 @@
+# A Hermes agent still deployed through the record's expose block: the
+# gateway, its console and the webhook port, behind service-token Access.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Endpoints
+expose:
+  services:
+    - {name: tools, port: 8642, path: /}
+    - {name: dashboard, port: 9119, path: /}
+    - {name: hooks, port: 8644, path: /}
+  access: {policy: service-token}
+endpoints:
+  - name: hooks
+    path: /webhooks/brand-brief
+    port: 8644
+    signature: hmac-sha256
+    type: webhook

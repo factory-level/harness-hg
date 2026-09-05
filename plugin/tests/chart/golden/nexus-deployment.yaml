@@ -1,0 +1,125 @@
+---
+# Source: nexus/templates/deployment.yaml
+# The standalone Nexus service (ADR-48). HOME points at the state PVC, so
+# plugin_api's Path.home()-derived state paths land on durable storage
+# with zero code change; the config file is subPath-mounted onto the
+# exact path the plugin resolves. The plan arrives by git clone (init)
+# and stays fresh by pull (sidecar) - Nexus stays a projection of the
+# GitOps repository, never a second authority (ADR-42).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nexus-state
+  labels: {hermes-gitops.factorylevel.dev/plane: control-plane, hermes-gitops.factorylevel.dev/component: nexus, app.kubernetes.io/name: nexus}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Source: nexus/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexus
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: nexus
+    app.kubernetes.io/name: nexus
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # the state PVC is RWO
+  selector:
+    matchLabels: {app.kubernetes.io/name: nexus}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: nexus}
+      annotations:
+        # Scraped by the monitoring stack's existing kubernetes-pods
+        # annotation job (#280) - no ServiceMonitor, no monitoring-chart
+        # change. /metrics serves published eval results.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+        # Roll the pods when the projected code/UI changes - a ConfigMap
+        # edit alone updates mounts minutes later without a restart, which
+        # left a crashed old process running the new file (observed live).
+        # features.json rides the code checksum too: it is projected into
+        # the SAME nexus-code ConfigMap, and plugin_api.py captures the
+        # registry once at import (FEATURES, plugin_api.py:88), so adding
+        # a flag without a restart left the pod serving the old set.
+        # `codeChecksum` is the same payload hashed by the CALLER (Pulumi
+        # hashes the projected files so its Release diff can see them at
+        # all - it does not read a local chart's contents). Preferred when
+        # set so the two never disagree; a plain `helm install` still gets
+        # the render-time hash below.
+        # The UI bundles are NOT chart files (they live in the externally
+        # provisioned dist ConfigMap, see configmaps.yaml), so the
+        # render-time fallback cannot see them; the CALLER's codeChecksum
+        # hashes control-plane/nexus/dist too - style.css included, because
+        # the brand fonts live INSIDE it (ADR-105) and a CSS-only update
+        # must roll the pod, or standalone.py's boot-time DIST_VERSION keeps
+        # advertising the old cache key over a new mount.
+        checksum/code: 71e1ce834deec459840cc8769c6ee72b95c1ad88d0b235bd8a2a2fad93ad39ea
+        # Same reason, for the CONFIG map: changing an integration base URL
+        # rewrote the ConfigMap and left the running pod on the old value,
+        # so Nexus kept serving dead Grafana/Argo links after a fixed `up`.
+        checksum/config: ef434405c611cccee1138a4d8c2ff8cd071c759724c34ff74649dcc2bc22a7aa
+    spec:
+      serviceAccountName: nexus
+      initContainers:
+        - name: clone
+          image: ghcr.io/factory-level/harness-hg-nexus:0.0.0-dev
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              mkdir -p /state/.hermes/plugins/hermes-gitops/state
+              rm -rf /repo/* /repo/.git 2>/dev/null || true
+              git clone --depth 1 --branch main \
+                "https://git.invalid/gitops.git" /repo
+          volumeMounts:
+            - {name: repo, mountPath: /repo}
+            - {name: state, mountPath: /state}
+      containers:
+        - name: nexus
+          image: ghcr.io/factory-level/harness-hg-nexus:0.0.0-dev
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["uvicorn", "standalone:app", "--host", "0.0.0.0", "--port", "8080"]
+          env:
+            - {name: HOME, value: /state}
+            - {name: PYTHONPATH, value: /app}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - {name: code, mountPath: /app}
+            - {name: dist, mountPath: /app/dist}
+            - {name: repo, mountPath: /repo, readOnly: true}
+            - {name: state, mountPath: /state}
+            - name: config
+              mountPath: /state/.hermes/plugins/hermes-gitops/config.yaml
+              subPath: config.yaml
+        - name: repo-sync
+          image: ghcr.io/factory-level/harness-hg-nexus:0.0.0-dev
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                git -C /repo pull --quiet || echo "[repo-sync] pull failed; retrying"
+                sleep 60
+              done
+          volumeMounts:
+            - {name: repo, mountPath: /repo}
+      volumes:
+        - {name: repo, emptyDir: {}}
+        - {name: state, persistentVolumeClaim: {claimName: nexus-state}}
+        - {name: code, configMap: {name: nexus-code}}
+        - {name: dist, configMap: {name: "nexus-ui-dist"}}
+        - {name: config, configMap: {name: nexus-config}}

@@ -1,0 +1,20 @@
+# A sandbox environment binding the alias to the real Discord plugin.
+# Two credential forms: an operator-host env var (CLI-side delivery) and
+# an in-cluster Secret reference. Values never appear here.
+version: 1
+
+chatopsConnections:
+  company_discord:
+    provider: discord
+    credentialRef:
+      env: HG_DISCORD_BOT_TOKEN
+  company_slack:
+    provider: slack
+    credentialRef:
+      name: company-slack
+      key: bot-token
+
+durableProvider:
+  plugin: redis-streams
+  config:
+    streamPrefix: hermes-events

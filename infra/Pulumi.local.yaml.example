@@ -1,0 +1,438 @@
+# Example stack config for a local/dev bootstrap run (e.g. against the
+# scripts/dev-cluster.sh k3d cluster). Copy to Pulumi.<stack>.yaml (Pulumi
+# names it after the stack, e.g. `Pulumi.local.yaml` for a stack named
+# "local") and fill in real values.
+#
+#   cp Pulumi.local.yaml.example Pulumi.local.yaml
+#   pulumi stack init local        # or: pulumi stack select local
+#   pulumi up
+#
+# Secrets (argocdRepoCreds tokens, gitopsGitToken) should be set with
+# `pulumi config set --secret hermes-gitops-bootstrap:<key> <value>` rather
+# than hand-edited into this file once real; this example intentionally
+# leaves them unset/commented (repo credential Secrets are skipped when
+# absent; gitopsGitToken has no default and stage 1 simply won't write one
+# to the operating profile's .env if you don't set it).
+#
+# "Done" for stages 1-2, before any cluster exists: the GitOps repo at
+# gitopsRepoUrl has a bootstrap/ app-of-apps tree (created by the explicit
+# gitops-scaffold step - issues #12/#14 [B1]/[B2] - which runs whenever
+# gitopsRepoUrl is real, even with `agents: []`) and a
+# profiles/<name>/profile.yaml per entry in `agents:` below - `git clone` it and look, or run
+# scripts/verify-bootstrap-git-side.sh for an automated version of exactly
+# that check against a disposable local repo (no GitHub needed).
+config:
+  # --- kubeconfig (stage 3 only - ignored entirely while stages.cluster
+  # is false) ---
+  # --- control-plane cluster (CONFIG_TARGET step 0) ---
+  # Which strategy provisions (or merely references) the cluster Argo CD
+  # runs on (src/components/cluster). `none` (the default when omitted)
+  # means bring-your-own kubeconfig: point kubeconfigPath/
+  # kubeconfigContext below at an existing cluster. The others produce
+  # the kubeconfig themselves, ignoring the two keys below:
+  #   k3s-local      drives scripts/dev-cluster.sh (k3d) - `pulumi up`
+  #                  alone brings the cluster up, `pulumi destroy` tears
+  #                  it down; no manual pre-step
+  #   gke-autopilot  GKE Autopilot via @pulumi/gcp (an OPTIONAL SDK -
+  #                  `cd infra && bun add @pulumi/gcp`); reads the
+  #                  standard gcp:project / gcp:region config keys
+  #   eks-fargate    EKS on Fargate via @pulumi/eks (an OPTIONAL SDK -
+  #                  `cd infra && bun add @pulumi/eks`); reads the
+  #                  standard aws:region config key
+  # Provisioned cluster name defaults to "hermes-gitops"; override with
+  # hermes-gitops-bootstrap:clusterName. NOTE: the cloud strategies are
+  # implemented against the providers' documented shapes but are NOT
+  # live-verified in this repo's verification environment (local
+  # docker/k3d only - no GCP/AWS available); validate against a real
+  # project/account before relying on them.
+  hermes-gitops-bootstrap:clusterProvider: none
+
+  # Path to a kubeconfig file. Omit (or leave unset) to use the ambient
+  # kubeconfig (KUBECONFIG env var, or ~/.kube/config, or in-cluster config
+  # when the Pulumi program itself runs inside a cluster).
+  hermes-gitops-bootstrap:kubeconfigPath: /home/youruser/.kube/config
+  # Context name inside that kubeconfig. Omit to use its current-context.
+  hermes-gitops-bootstrap:kubeconfigContext: k3d-hermes-gitops-dev
+
+  # --- GitOps repo (stages 1-2 push to this; stage 3's hermes-gitops-root
+  # Application converges the cluster on it) ---
+  # A real, reachable repo URL enables the hermes-gitops-root Application;
+  # a placeholder (unresolvable) URL is accepted for stage-3-only
+  # verification runs and gates root_app off entirely (see
+  # src/components/root-app). "placeholder" is auto-detected from
+  # the URL shape (contains "example.invalid" or scaffold tokens like
+  # "__GITOPS_REPO_URL__") - no separate flag needed. A `file://` URL
+  # works too (gitops_emitter/gitrepo.py supports it natively) - useful
+  # for exercising stages 1-2 against a local bare repo without GitHub,
+  # exactly what scripts/verify-bootstrap-git-side.sh automates.
+  hermes-gitops-bootstrap:gitopsRepoUrl: https://github.com/your-org/your-hermes-gitops-gitops.git
+  hermes-gitops-bootstrap:gitopsBranch: main
+
+  # --- harness-hg repo (source of charts/hermes-profile) ---
+  hermes-gitops-bootstrap:hermesGitopsRepoUrl: https://github.com/factory-level/harness-hg.git
+  hermes-gitops-bootstrap:chartRevision: main
+
+  # --- GITOPS_GIT_TOKEN: push credential for gitopsRepoUrl (and, if
+  # hermes.scaffold is true and the repo is on github.com and doesn't
+  # exist yet, repo-creation scope too). Written by stage 1
+  # (hermes_install.py) into the operating profile's .env, where the
+  # fork's own startup loads it into the process environment before
+  # gitops-emitter's read_git_token ever runs - see
+  # gitops_emitter/README.md's "Secret naming" section. REQUIRED at
+  # `pulumi preview` whenever `agents:` is non-empty and gitopsRepoUrl is
+  # real (issue #37 [K5] - a missing push credential is a guaranteed
+  # mid-apply failure, so it fails loudly up front instead); set any
+  # placeholder string for a pure-local `file://` verification run. ---
+  # hermes-gitops-bootstrap:gitopsGitToken: (set as a secret, see above)
+
+  # --- providers (must match schemas/cluster-values/v1alpha1 enums) ---
+  hermes-gitops-bootstrap:providers:
+    compute: pod
+    secret: k8s
+    ingress: ingress
+
+  # --- chart versions (all pinned; see src/control-flow/config.ts for
+  # the defaults used when these are omitted) ---
+  hermes-gitops-bootstrap:versions:
+    argocdChart: "10.1.4"      # Argo CD app v3.4.5
+    esoChart: "2.7.0"          # External Secrets Operator v2.7.0
+    pkoChart: "2.7.0"          # Pulumi Kubernetes Operator v2.7.0
+
+  # --- stage gating: all four stages default to true, so `pulumi up`
+  # against an unmodified copy of this file runs all of them. Set any of
+  # them false to skip that stage entirely - e.g. `hermes: false` if
+  # Hermes + the plugin are already installed/configured on this machine
+  # and you only want to iterate on `agents:` below, or `cluster: false`
+  # to exercise stages 1-2 on their own (this is what
+  # scripts/verify-bootstrap-git-side.sh does - see its header comment).
+  # ---
+  hermes-gitops-bootstrap:stages:
+    hermes: true
+    agents: true
+    cluster: true
+
+  # --- stage 1: install the Hermes fork CLI + the gitops-emitter plugin
+  # (src/components/hermes-install). `source` is whatever `uv
+  # tool install` would accept as its PACKAGE argument: a local directory
+  # (installed with --editable - the supported shape for iterating against
+  # a fork checked out next to this repo) or a git URL (the general case
+  # for an operator without a local fork checkout), optionally combined
+  # with `ref` (a branch/tag/commit). REPRODUCIBILITY (issue #7 [D3]):
+  # a local path WITHOUT `ref` is an --editable install tracking the
+  # on-disk working tree - fast for iteration, NOT reproducible across
+  # machines or checkouts. Setting `ref` alongside a local path installs
+  # from the checkout's git database at that commit instead
+  # (git+file://<path>@<ref>, non-editable) - reproducible; the working
+  # tree is ignored.
+  # `pluginPath` defaults to this checkout's own root (empty string here
+  # means exactly that - see hermes_install.py's `_resolve_plugin_path`);
+  # only set it if harness-hg lives somewhere else on this
+  # machine. `scaffold` is passed straight through to
+  # plugins.entries.gitops-emitter.scaffold - it only controls the
+  # PLUGIN's defensive install-time scaffold fallback; the dedicated
+  # gitops-scaffold step (issues #12/#14 [B1]/[B2]) scaffolds the repo
+  # regardless of this toggle, so `scaffold: false` can never leave
+  # hermes-gitops-root pointing at an unscaffolded repo.
+  #
+  # TWO PINS, ONE FORK. This `source`/`ref` pins the fork on the OPERATOR
+  # HOST; the agent image tag (spec.deployment.baseImageTag, built from the
+  # same fork) pins the copy that runs IN the pod. They are independent
+  # settings and nothing keeps them in step, so move them together. Stage 1
+  # asserts the host build carries the capabilities the fleet depends on -
+  # the profile-lifecycle hooks and `hermes cron sync` - and fails at
+  # preview naming the fix if it does not, because the alternative is a
+  # fleet that comes up healthy with every declared cron job silently
+  # unscheduled. The same coupling runs the other way: a distribution that
+  # raises `hermes_requires` to a newer build fails stage 2 until `ref`
+  # moves. ---
+  hermes-gitops-bootstrap:hermes:
+    source: /home/youruser/src/hermes-agent-gitops
+    ref: ""
+    pluginPath: ""
+    scaffold: true
+
+  # --- stage 2: `hermes profile install <source>#<ref>` per entry
+  # (src/components/hermes-agent), run serially in list order. `name`
+  # overrides the distribution's own manifest name (omit to let the
+  # distribution name itself). `overrides` is the per-agent override
+  # document (apps/appValues/deployment/expose) - THE source
+  # of truth for an agent's shape (issue #34 [K3]): typed + validated at
+  # `pulumi preview` (a typo'd key fails loudly instead of being
+  # silently dropped), diffed per key at preview (K1), and removing it
+  # here clears the persisted copy on the next apply (E2). Secrets are
+  # NOT override values - they go through agentSecrets above (K6). See
+  # gitops_emitter/README.md's "Override chain" for the merge
+  # semantics. ---
+  hermes-gitops-bootstrap:agents:
+    - source: github.com/your-org/your-support-agent
+      ref: v1.0.0
+      # Subdirectory of the source repo containing the distribution
+      # (monorepo layouts, e.g. this repo's own persona under
+      # .hermes-dist/distribution-agent). Same as the fork's
+      # `hermes profile install --subdir` / `#subdirectory=` form.
+      # subdir: .hermes-dist/distribution-agent
+      # name: support-agent
+      # overrides:
+      #   deployment:
+      #     diskSizeGb: 250
+      #   # Satisfy an app's valuesRequired (or tune any chart value):
+      #   appValues:
+      #     vector-db:
+      #       auth:
+      #         apiKeySecretRef: my-secret
+    # An agent on the Eve runtime (ADR-149): an npm project (package.json +
+    # agent/ + hermes-gitops.yaml with contractVersion 5 and runtime.kind
+    # eve) at `subdir`. No stage 1 is involved - the bootstrap runs the
+    # emitter's push-driven emit_cli from this checkout, so an Eve-only
+    # stack sets stages.hermes: false. `overrides` is refused for eve; the
+    # project's own hermes-gitops.yaml is its whole deployment intent, and
+    # its locked eve must equal versions.json runtimes.eve.version (or its
+    # deployment.runtimeImageTag). The record's identity is package.json's
+    # name, so `name` is only a cross-check here.
+    # SWITCHING an existing entry between runtimes is two applies, not one:
+    # the per-agent Command's URN carries the runtime, so a one-step switch
+    # creates the new Command and deletes the old one with no ordering
+    # between them - the old delete (a decommission) can remove the record
+    # the new create just emitted. Remove the entry, `pulumi up` (the
+    # record is decommissioned), then add it back with the new runtime.
+    # - runtime: eve
+    #   source: github.com/your-org/your-agents
+    #   ref: main
+    #   subdir: agents/echo
+
+  # --- optional: plugin-config fields + fleet defaults (issue #13 [E3]).
+  # Every field under pluginConfig is written to
+  # plugins.entries.gitops-emitter only when set; unset keeps the
+  # plugin's own fallback defaults (gitops_emitter/emitter.py's
+  # load_plugin_config - the single source of default values), so an
+  # unmodified stack behaves identically. fleetDefaults, when present, is
+  # materialized WHOLESALE as the fleet defaults.yaml (the BOTTOM of the
+  # emitter's override chain) at the effective defaults_file path on
+  # every apply - author fleet-wide deployment/expose/appValues defaults
+  # here, not by hand-editing the generated file. The effective
+  # overrides_dir is created if missing either way. ---
+  # hermes-gitops-bootstrap:pluginConfig:
+  #   # Publishing posture (issues #17/#21 [F1]/[F3]). Default when
+  #   # omitted: "pr" for a github.com gitopsRepoUrl, "direct" otherwise.
+  #   # In pr mode, INSTALLS commit direct (fresh fleet converges
+  #   # non-interactively) and UPDATES open PRs - auto-merged by default
+  #   # (prAutoMerge: true) so `pulumi up` still converges; set
+  #   # prAutoMerge: false for a human day-2 review gate (the update PR
+  #   # then waits for a human merge before Argo CD rolls the change).
+  #   mode: pr
+  #   prAutoMerge: true
+  #   profilesPath: profiles
+  #   defaultsFile: /home/youruser/.hermes/gitops-emitter/defaults.yaml
+  #   overridesDir: /home/youruser/.hermes/gitops-emitter/overrides
+  #   gitAuthorName: hermes-gitops-bot
+  #   gitAuthorEmail: hg-bot@users.noreply.github.com
+  #   imageRepository: ghcr.io/factory-level/hermes-agent
+  #   imageTag: latest
+  # hermes-gitops-bootstrap:fleetDefaults:
+  #   deployment:
+  #     diskSizeGb: 100
+
+  # --- per-agent env secrets (issue #38 [K6] - UX_TARGET point 4).
+  # One entry per instance name, one key per spec.envRequires var. Set
+  # each value with:
+  #   pulumi config set --secret --path 'agentSecrets.<name>.<VAR>' <value>
+  # (ciphertext in this file; `pulumi up` decrypts at apply and writes a
+  # k8s Secret "hermes-<name>-env" in namespace "hermes-<name>" that the
+  # workload's envFrom references). Rotation = same command + `pulumi up`
+  # (the Secret updates and the StatefulSet is rollout-restarted).
+  # NEVER hand-edit plaintext values into this block. When
+  # decommissioning an agent (removing its agents[] entry - issue #24
+  # [F6]), delete its agentSecrets entry too: the per-agent Secret is
+  # keyed here, and the record prune doesn't reach into stack config. ---
+  # hermes-gitops-bootstrap:agentSecrets:
+  #   support-agent:
+  #     DISCORD_BOT_TOKEN: (set as a secret, see above)
+  #     OPENAI_API_KEY: (set as a secret, see above)
+
+  # --- private spec.source credentials (issue #18 [G1]). Materialized as
+  # Secret hermes-<name>-git-auth in the instance namespace; point the
+  # record's spec.gitAuthSecretRef (settable via agents[].overrides or
+  # the distribution itself) at that name. username+password = HTTPS PAT
+  # (an ephemeral .netrc for the boot clone); sshPrivateKey = SSH deploy
+  # key. Set values with:
+  #   pulumi config set --secret --path 'agentGitAuth.<name>.password' <pat>
+  # ---
+  # hermes-gitops-bootstrap:agentGitAuth:
+  #   support-agent:
+  #     username: x-access-token
+  #     password: (set as a secret, see above)
+
+  # --- optional: Argo CD repo credentials for private repos. Omit both
+  # tokens to skip creating repo credential Secrets (fine for public
+  # repos). Distinct from gitopsGitToken above - this is a read-only
+  # credential Argo CD itself uses to pull, not the write credential
+  # gitops-emitter pushes with (same physical PAT may satisfy both in a
+  # real fleet). `gitopsUsername`/`hermesGitopsUsername` both default to
+  # "git" (config.py) - the conventional username for a PAT-as-password
+  # HTTPS credential (GitHub/GitLab/etc. all accept any non-empty
+  # username here) - only set them if your git host expects something
+  # else. ---
+  # hermes-gitops-bootstrap:argocdRepoCreds:gitopsToken: (set as a secret, see above)
+  # hermes-gitops-bootstrap:argocdRepoCreds:gitopsUsername: git
+  # hermes-gitops-bootstrap:argocdRepoCreds:hermesGitopsToken: (set as a secret, see above)
+  # hermes-gitops-bootstrap:argocdRepoCreds:hermesGitopsUsername: git
+
+  # --- optional: remote workload clusters to register as Argo CD cluster
+  # Secrets (issue #5 [C1]). Empty/omitted = single in-cluster behavior.
+  # NOTE: v1 is single-cluster — the profiles ApplicationSet pins its
+  # destination to in-cluster and ignores spec.targetCluster; registering
+  # clusters here only stages them for the future destination-clusters
+  # phase. "in-cluster" is reserved for the control plane itself.
+  # bearerToken is a ServiceAccount token on the REMOTE cluster with
+  # enough RBAC for Argo CD to sync there; caData is the remote API
+  # server's base64 CA bundle (or set insecure: true for local/dev).
+  # Set the token encrypted:
+  #   pulumi config set --secret --path 'targetClusters[0].bearerToken' <token>
+  # ---
+  # hermes-gitops-bootstrap:targetClusters:
+  #   - name: workload-eu-1
+  #     server: https://10.0.0.5:6443
+  #     caData: <base64 CA bundle>
+  #     bearerToken: (set as a secret, see above)
+
+
+  # --- optional: control-plane ingress via Cloudflare Tunnel + Zero Trust
+  # (spec §25). Publishes Grafana + Argo CD (and optionally Hermes) plus
+  # ONE SUBDOMAIN PER agents[] ENTRY through a single outbound-only
+  # tunnel; every hostname is gated by its own Cloudflare Access app at
+  # the edge. Omitted/provider "none" = feature off. Requires the API
+  # token (Tunnel + DNS + Access edit scopes), set encrypted:
+  #   pulumi config set --secret hermes-gitops-bootstrap:cloudflareApiToken <token>
+  # Per-agent subdomains need agents[i].name set (the subdomain label);
+  # traffic is routed to the cluster's Traefik with the host header
+  # rewritten to "<name>.<agentHostHeaderDomain>", so the profile's
+  # normal in-cluster Ingress rules serve it unchanged (site at /,
+  # secret-tester at /secret-tester, ...).
+  # ---
+  # hermes-gitops-bootstrap:controlPlaneIngress:
+  #   provider: cloudflare
+  #   accountId: <cloudflare-account-id>
+  #   zoneId: <cloudflare-zone-id>
+  #   zoneName: example.com
+  #   teamName: <team>            # <team>.cloudflareaccess.com
+  #   # Named Zero Trust Access GROUPS, assigned per target below - THE
+  #   # way to scope who reaches what (platform-admins get Argo CD, a
+  #   # broad viewers group gets Grafana, a support team gets only its
+  #   # own agent). Members are OR-combined; a group needs at least one
+  #   # member rule.
+  #   accessGroups:
+  #     platform-admins:
+  #       emails: [alice@example.com, bob@example.com]
+  #     viewers:
+  #       emailDomains: [example.com]
+  #     ci:
+  #       serviceTokenIds: [<service-token-id>]
+  #     # One gate for all three control-plane UIs. Explicit emails, not a
+  #     # domain: Argo CD can delete workloads and Prometheus has no login
+  #     # of its own, so this group is the smallest blast radius that still
+  #     # lets an on-call engineer see everything.
+  #     sre:
+  #       emails: [sre-1@example.com, sre-2@example.com]
+  #   access:
+  #     # Per-target group assignment. Targets: grafana, argocd, hermes,
+  #     # agents (default for every agent subdomain), agent:<name> (one
+  #     # agent, overrides "agents"). A target with no assignment falls
+  #     # back to the flat rules below; a target with NEITHER fails at
+  #     # preview (zero include rules = everyone locked out).
+  #     groups:
+  #       grafana: [viewers, platform-admins, sre]
+  #       argocd: [platform-admins, ci, sre]
+  #       prometheus: [sre]   # see hostnames.prometheus below
+  #       agents: [viewers]
+  #       # agent:support-agent: [platform-admins]
+  #       # workload:support-agent/postiz: [platform-admins]  # required per
+  #       #   workloadEndpoints entry - workload targets have NO fallback
+  #     # Flat fallback for unassigned targets (fine for small fleets
+  #     # where everyone sees everything):
+  #     emailDomain: example.com  # human operators; and/or:
+  #     # serviceTokenIds: [<service-token-id>]   # CI / automation
+  #     # Optional "Sign in with Google" at the edge (#332). Set BOTH or
+  #     # neither (half-configured fails at preview). The OAuth client is
+  #     # created by hand in the Google Cloud Console (no API exists) -
+  #     # see runbooks/google-sso.md. One-time-PIN stays offered alongside
+  #     # it, so a bad client can never lock you out of the edge.
+  #     # googleClientId: <id>.apps.googleusercontent.com
+  #     # googleClientSecret:
+  #     #   secure: <set with pulumi config set --secret --path controlPlaneIngress.access.googleClientSecret>
+  #   # RESERVED LABELS. Every published hostname - these, one per agent
+  #   # (agentSubdomains), each workloadEndpoints entry, and the uptime
+  #   # status page - shares ONE label namespace under zoneName, and a
+  #   # collision fails at preview rather than silently letting the last
+  #   # DNS record win. So an agent may not be named "grafana". Add a row
+  #   # here whenever a new label is claimed.
+  #   #
+  #   #   grafana     -> the fleet's Grafana        (has its own login)
+  #   #   argocd      -> Argo CD                    (has its own login)
+  #   #   prometheus  -> Prometheus, OFF by default (NO login of its own:
+  #   #                  publishing it makes Access the ONLY gate, not a
+  #   #                  second one - opt in deliberately)
+  #   #   hermes      -> the Hermes dashboard / Nexus, OFF by default
+  #   #                  because Hermes runs host-side. ADR-44: anything
+  #   #                  that FRAMES Grafana needs this ON and under this
+  #   #                  SAME zone - hermes.<zone> framing grafana.<zone>
+  #   #                  is same-site, so the Grafana session cookie and
+  #   #                  CF_Authorization reach the iframe; a host-side
+  #   #                  page framing grafana.<zone> is cross-site and
+  #   #                  cannot. Nothing frames it today.
+  #   # hostnames: {grafana: grafana, argocd: argocd, hermes: "", nexus: "", prometheus: ""}
+  #   # Setting hostnames.nexus publishes the Nexus dashboard (ADR-48 put it
+  #   # in-cluster) and is what lets the bootstrap configure it: Nexus then
+  #   # gets its own Access application AND real integration URLs, instead
+  #   # of the host port-forward URLs `hg up` passes locally (ADR-53).
+  #   # services:
+  #   #   grafana: http://monitoring-grafana.hermes-monitoring.svc
+  #   #   argocd: https://argocd-server.argocd.svc
+  #   #   nexus: http://nexus.hermes-nexus.svc
+  #   #   prometheus: http://monitoring-prometheus-server.hermes-monitoring.svc
+  #   #   traefik: http://traefik.kube-system.svc:80
+  #   # agentSubdomains: true
+  #   # agentHostHeaderDomain: hermes.local
+  #   # sessionDuration: 24h
+  #   # Per-workload hostnames (ADR-40): a dedicated hostname per agent
+  #   # application, dialing its in-cluster Service. Reachability only -
+  #   # Cloudflare Access decides who may CONNECT; the app keeps its own
+  #   # login/roles. Each entry requires an explicit
+  #   # access.groups["workload:<agent>/<app>"] assignment (no fallback).
+  #   # workloadEndpoints:
+  #   #   support-agent/postiz:
+  #   #     hostname: postiz.example.com
+  #   #     origin: http://postiz.hermes-support-agent.svc:5000
+  #   #     # noTlsVerify: true   # https origins are VERIFIED unless opted out
+
+  # --- What a DEPLOYED Nexus is ALLOWED to do (ADR-84, #403/#409).
+  # Distinct from the operator feature overlay (`hg nexus features`),
+  # which says what has SHIPPED: these say what this environment may use
+  # at all, so no in-app toggle and no API route can reach them.
+  #
+  # Omit the whole block for the production posture, which is what you
+  # want almost always: destructive reset OFF, every launch view served.
+  # Values must be real booleans - a quoted "true" is refused here rather
+  # than silently reaching the backend as a string and resolving to off.
+  #
+  # `hg nexus set` does NOT reach a bootstrap-owned Nexus (`hg up` stands
+  # down when Pulumi owns the release, ADR-53), which is exactly why this
+  # key exists.
+  # hermes-gitops-bootstrap:nexusCapabilities:
+  #   workspaceReset: false           # true only where losing the canvas is fine
+  #   views:                          # only system|communication|agents|backups
+  #     system: false                 # withheld: gone from nav AND 404 on its route
+
+  # --- The destination-host reconciler (#271, ADR-54): a systemd USER
+  # timer driving `hg reconcile run` about once a minute on the operator
+  # host. Poll -> exact-commit checkout -> checks -> apply -> Argo wait.
+  # A failed commit is BLOCKED until a new push or `hg reconcile retry`
+  # (no backoff, by design). Changing `version` here and running
+  # `pulumi up` rewrites the unit and daemon-reloads - that IS the
+  # upgrade path. checks/apply empty = the CLI defaults
+  # (hg topology doctor + pulumi preview, then pulumi up --yes). ---
+  # hermes-gitops-bootstrap:reconcile:
+  #   enabled: true
+  #   version: <git rev or tag to stamp into the unit + ledger>
+  #   repoUrl: <the deployment repository the timer watches>
+  #   branch: main
+  #   intervalSeconds: 60

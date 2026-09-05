@@ -1,0 +1,13 @@
+# INVALID: an excused claim without its rationale is a silencer, not a
+# claim a reviewer can check - the reason is required.
+apiVersion: nexus.hermes.ai/v1alpha3
+kind: PlatformBackupStatus
+observedAt: "2026-08-18T03:14:07Z"
+backupId: hg-x
+createdAt: "2026-08-18T03:11:52Z"
+destinationClass: gcs
+verification:
+  state: available
+unprotectedByDesign:
+  - claim: some-volume
+    namespace: hermes-system

@@ -1,0 +1,240 @@
+{{- $repositoryByName := dict -}}
+{{- range .Values.spec.repositories -}}
+{{- $_ := set $repositoryByName .name . -}}
+{{- end -}}
+{{- $hasRuntime := .Values.spec.dashboard.enabled -}}
+{{- range .Values.spec.profiles -}}
+{{- if .gatewayEnabled -}}
+{{- $hasRuntime = true -}}
+{{- end -}}
+{{- range .repositoryRefs -}}
+{{- if not (hasKey $repositoryByName .) -}}
+{{- fail (printf "profile repositoryRef %q does not name a declared repository" .) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $hasRuntime -}}
+{{- fail "a Hermes bundle needs at least one enabled profile gateway or the shared dashboard" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "hermes-bundle.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    {{- include "hermes-bundle.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "hermes-bundle.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "hermes-bundle.selectorLabels" . | nindent 6 }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "hermes-bundle.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.spec.deployment.diskSizeGb }}Gi
+    - metadata:
+        name: workspaces
+        labels:
+          {{- include "hermes-bundle.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.spec.deployment.workspaceSizeGb }}Gi
+  template:
+    metadata:
+      labels:
+        {{- include "hermes-bundle.labels" . | nindent 8 }}
+      annotations:
+        checksum/spec: {{ .Values.spec | toJson | sha256sum }}
+        # The BOOT SCRIPT is a ConfigMap the init container reads once, so a
+        # change to it alone never rolled the pod: the mount updated minutes
+        # later and the already-written .env kept the old values. Found live -
+        # a new WEBHOOK_PORT sat in the ConfigMap while the running gateway
+        # bound nothing. Checksum the rendered script, same as spec.
+        checksum/boot: {{ include (print $.Template.BasePath "/configmap-boot.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "hermes-bundle.fullname" . }}
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: bootstrap-bundle
+          image: {{ include "hermes-bundle.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: workspaces
+              mountPath: /workspaces
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            {{- range .Values.spec.profiles }}
+            {{- if .envSecretRef }}
+            - name: profile-{{ .name }}-env
+              mountPath: /run/secrets/profiles/{{ .name }}/env
+              readOnly: true
+            {{- end }}
+            {{- if .gitAuthSecretRef }}
+            - name: profile-{{ .name }}-git
+              mountPath: /run/secrets/profiles/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- range .Values.spec.repositories }}
+            {{- if .gitAuthSecretRef }}
+            - name: repository-{{ .name }}-git
+              mountPath: /run/secrets/repositories/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+      containers:
+        {{- range $index, $profile := .Values.spec.profiles }}
+        {{- if $profile.gatewayEnabled }}
+        - name: profile-{{ $profile.name }}
+          image: {{ include "hermes-bundle.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["/opt/hermes/bin/hermes"]
+          args: ["-p", {{ $profile.name | quote }}, "gateway", "run"]
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+            {{- with $.Values.observability }}{{- with .observerUrl }}
+            {{- /* Lifecycle records (#476): same knob as the per-profile
+                 chart - the bundled gateways emit the cron/agent/tool/
+                 gateway planes here. Unset = no-op. */}}
+            - name: HERMES_OBSERVER_URL
+              value: {{ . | quote }}
+            {{- end }}{{- end }}
+            {{- if $profile.apiServerPort }}
+            {{- /* The fork's api_server refuses to start without a key
+                 (>= 16 chars), even loopback. Minted per profile by
+                 apikey-secret.yaml, exactly as the per-profile chart does;
+                 0.0.0.0 because the bundle Service targets api-N. */}}
+            - name: API_SERVER_HOST
+              value: "0.0.0.0"
+            - name: API_SERVER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermes-bundle.fullname" $ }}-{{ $profile.name }}-api-key
+                  key: password
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          {{- if or $profile.apiServerPort $profile.webhookPort }}
+          ports:
+            {{- if $profile.apiServerPort }}
+            - name: api-{{ $index }}
+              containerPort: {{ $profile.apiServerPort }}
+              protocol: TCP
+            {{- end }}
+            {{- if $profile.webhookPort }}
+            {{/* Bundling retires the per-profile Service a router would
+                 otherwise address, so a bundled profile that any route
+                 TARGETS has to publish its gateway port here (#278). */}}
+            - name: hook-{{ $index }}
+              containerPort: {{ $profile.webhookPort }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            {{- range $profile.repositoryRefs }}
+            {{- $repository := index $repositoryByName . }}
+            - name: workspaces
+              mountPath: {{ $repository.mountPath | quote }}
+              subPath: repos/{{ $repository.name }}
+              readOnly: {{ eq $repository.access "read-only" }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.spec.dashboard.enabled }}
+        - name: dashboard
+          image: {{ include "hermes-bundle.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-lc"]
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/opt/data
+              export HERMES_HOME=/opt/data
+              exec /opt/hermes/bin/hermes dashboard \
+                --host 0.0.0.0 \
+                --port {{ .Values.spec.dashboard.port }} \
+                --no-open
+          envFrom:
+            - secretRef:
+                name: {{ .Values.spec.dashboard.envSecretRef }}
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          ports:
+            - name: dashboard
+              containerPort: {{ .Values.spec.dashboard.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+        {{- end }}
+      volumes:
+        - name: boot-script
+          configMap:
+            name: {{ include "hermes-bundle.fullname" . }}-boot
+            defaultMode: 0555
+        {{- range .Values.spec.profiles }}
+        {{- if .envSecretRef }}
+        - name: profile-{{ .name }}-env
+          secret:
+            secretName: {{ .envSecretRef }}
+        {{- end }}
+        {{- if .gitAuthSecretRef }}
+        - name: profile-{{ .name }}-git
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+        {{- end }}
+        {{- end }}
+        {{- range .Values.spec.repositories }}
+        {{- if .gitAuthSecretRef }}
+        - name: repository-{{ .name }}-git
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+        {{- end }}
+        {{- end }}

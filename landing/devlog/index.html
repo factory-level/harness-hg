@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devlog — Harness Hg</title>
+<meta name="description" content="Building Harness Hg in the open: the design calls, the ones that were wrong, and what each of them cost. Every entry links the decision record and the code.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="Devlog — Harness Hg">
+<meta property="og:description" content="The design calls behind Harness Hg — the ones that held, the ones that were wrong, and what each of them cost.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. Only the two text faces are
+     preloaded: JetBrains Mono appears on inline literals mid-article, not on
+     the first screen. `crossorigin` because font fetches are CORS-mode
+     requests even same-origin. -->
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js"></script>
+<link rel="stylesheet" href="../styles.css?v=18">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href="../">
+      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Hermes</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="../features/">Overview</a></li>
+          <li><a href="../features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="../features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="../features/communication.html">Communication</a></li>
+          <li><a href="../features/backups.html">Backups</a></li>
+          <li><a href="../features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="../docs/">Docs</a>
+      <a href="../demo/">Demo</a>
+      <a href="./" aria-current="page">Devlog</a>
+      <a href="../about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main class="reading" id="main" tabindex="-1">
+
+  <div class="index__head">
+    <p class="meta">Build log</p>
+    <h1 class="post__title">The devlog</h1>
+    <p class="post__standfirst">One person building a deployment platform for AI agents, in the open. These are the design calls — the ones that held, the ones that were wrong, and the ones still unresolved. Every entry links the decision record it came from and the code that proves it.</p>
+  </div>
+
+  <div class="entries">
+
+    <a class="entry" href="the-copy-is-the-one-that-rots.html">
+      <div class="entry__when">
+        <span>3 Aug 2026</span>
+        <span class="entry__tag">Bootstrap · ADR-63</span>
+      </div>
+      <div class="entry__body">
+        <span class="entry__title">The copy is always the one that rots</span>
+        <span class="entry__hook">One version pin had quietly reached three copies across two languages. The fix was not discipline or a checklist — it was making the second copy fail the build.</span>
+      </div>
+    </a>
+
+    <a class="entry" href="the-rehearsal-found-the-lie.html">
+      <div class="entry__when">
+        <span>2 Aug 2026</span>
+        <span class="entry__tag">Recovery · ADR-52</span>
+      </div>
+      <div class="entry__body">
+        <span class="entry__title">The rehearsal proved the fleet was not rebuildable</span>
+        <span class="entry__hook">The first honest run of the recovery gate failed at the rebuild, on a credential someone had created by hand weeks earlier. The fleet had not been rebuildable since that day — and everything was green the entire time.</span>
+      </div>
+    </a>
+
+    <a class="entry" href="the-panel-meant-something-else.html">
+      <div class="entry__when">
+        <span>2 Aug 2026</span>
+        <span class="entry__tag">Nexus · ADR-44</span>
+      </div>
+      <div class="entry__body">
+        <span class="entry__title">The panel rendered perfectly and meant something else</span>
+        <span class="entry__hook">I built the first embedded dashboard, verified it in a browser, and then withdrew it. Nothing about the frame was broken. The tab said Uptime and the panel behind it was spend.</span>
+      </div>
+    </a>
+
+    <a class="entry" href="bundling-is-not-a-downgrade.html">
+      <div class="entry__when">
+        <span>1 Aug 2026</span>
+        <span class="entry__tag">Bundles</span>
+      </div>
+      <div class="entry__body">
+        <span class="entry__title">Bundling is a co-location decision, not a security one</span>
+        <span class="entry__hook">The same asymmetry turned up three separate times before I named it. Moving two agents into a bundle to save resources was quietly removing the ability to isolate them.</span>
+      </div>
+    </a>
+
+  </div>
+
+  <p class="index__foot">Nineteen days old at the time of writing. The whole decision log is <a href="https://github.com/factory-level/harness-hg/tree/main/_docs/adr">published</a>, and so is <a href="https://github.com/factory-level/harness-hg/blob/main/maintainers/gaps.md">every place the system falls short of its own design</a>.</p>
+
+</main>
+
+<script src="../hero.js?v=18"></script>
+</body>
+</html>

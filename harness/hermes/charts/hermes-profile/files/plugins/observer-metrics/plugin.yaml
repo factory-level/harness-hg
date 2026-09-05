@@ -1,0 +1,14 @@
+name: observer-metrics
+version: "0.1.0"
+description: >
+  hermes.observer.v1 - exposes per-profile token usage and estimated
+  spend as Prometheus metrics on :9464/metrics (stdlib-only, fail-open).
+  Delivered by the hermes-profile chart (files/plugins/observer-metrics,
+  copied to the profile's plugins/ dir by boot.sh); the fleet Grafana
+  budget dashboard (charts/fleet-dashboard) and the per-profile
+  monitoring dashboard read the series it emits.
+author: hermes-gitops
+kind: standalone
+provides_hooks:
+  - post_api_request
+  - api_request_error

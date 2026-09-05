@@ -1,0 +1,44 @@
+{{- $hasPorts := .Values.spec.dashboard.enabled -}}
+{{- range .Values.spec.profiles -}}
+{{- if .apiServerPort -}}
+{{- $hasPorts = true -}}
+{{- end -}}
+{{- end -}}
+{{- if $hasPorts }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hermes-bundle.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    {{- include "hermes-bundle.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hermes-bundle.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- if .Values.spec.dashboard.enabled }}
+    - name: dashboard
+      port: {{ .Values.spec.dashboard.port }}
+      targetPort: dashboard
+      protocol: TCP
+    {{- end }}
+    {{- range $index, $profile := .Values.spec.profiles }}
+    {{- if $profile.apiServerPort }}
+    - name: api-{{ $index }}
+      port: {{ $profile.apiServerPort }}
+      targetPort: api-{{ $index }}
+      protocol: TCP
+      appProtocol: http
+    {{- end }}
+    {{- if $profile.webhookPort }}
+    - name: hook-{{ $index }}
+      port: {{ $profile.webhookPort }}
+      targetPort: hook-{{ $index }}
+      protocol: TCP
+      appProtocol: http
+    {{- end }}
+    {{- end }}
+{{- end }}

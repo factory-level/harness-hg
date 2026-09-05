@@ -1,0 +1,20 @@
+# Access is an enum: read-only or read-write. Anything else is refused.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: strategy-context
+    source:
+      url: git@github.com:organization/strategy-context.git
+      revision:
+        mode: pinned
+        sha: 0123456789abcdef0123456789abcdef01234567
+      authSecretRef: hermes-strategy-context-git
+    mount:
+      path: /workspaces/strategy-context
+      access: writable
+
+bindings:
+  - repository: strategy-context
+    profiles: [marketing-manager]
+    purpose: strategy-context

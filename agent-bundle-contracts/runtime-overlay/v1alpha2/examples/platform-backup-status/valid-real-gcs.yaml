@@ -1,0 +1,17 @@
+# A real bucket, with the generation a restore selects by.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: PlatformBackupStatus
+observedAt: "2026-08-02T03:14:07Z"
+backupId: hg-2026-08-02T03-11-52z
+createdAt: "2026-08-02T03:11:52Z"
+destinationClass: gcs
+verification:
+  state: restorable
+  restoredAt: "2026-08-02T04:58:40Z"
+  durationSeconds: 219
+components:
+  - name: host/nexus-state
+    kind: host-archive
+    sizeKB: 88
+    checksum: 4c81de09aa62
+    generation: "1785704683230157"

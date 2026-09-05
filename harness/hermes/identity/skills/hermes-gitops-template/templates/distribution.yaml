@@ -1,0 +1,35 @@
+# The manifest — the ONE required file of a distribution. Scaffolded by
+# skills/hermes-gitops-template, modeled directly on
+# examples/distributed-profile/distributions/persona-echo/distribution.yaml
+# (harness-hg). Read that file side by side with this one if
+# anything below is unclear — it is the canonical, real reference.
+#
+# This file stays PURE HERMES: it names the agent, its version, the Hermes
+# runtimes it supports, and every secret it needs. The plugin reads it at
+# install time and validates it BEFORE any manifest is generated. Only
+# values declared here can ever be overridden by an operator.
+#
+# Deployment intent (Helm apps, exposed services, disk size) lives in the
+# hermes-gitops.yaml file BESIDE this one — never here. The plugin does not
+# read embedded extension blocks from this file.
+name: <PERSONA>                  # DNS-1123 label: lowercase, digits, hyphens; max 40 chars
+version: <VERSION>               # e.g. 1.0.0
+description: "<DESCRIPTION>"
+author: "<AUTHOR>"
+license: "<LICENSE>"             # e.g. MIT
+
+# The range of Hermes runtimes this agent works with.
+hermes_requires: ">=0.9"
+
+# Required secrets and configurable inputs. The platform provisions the
+# values (pulumi config set --secret --path
+# 'agentSecrets.<PERSONA>.ANTHROPIC_API_KEY' ...); this file only NAMES
+# them. If a required entry here has no value configured on the platform,
+# validation fails before anything is rendered, naming the exact variable.
+#
+# Do NOT pad this list "just in case" — every entry becomes an install-time
+# requirement an operator must seed before the instance reaches Healthy.
+env_requires:
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic API key — <PERSONA>'s model provider"
+    required: true

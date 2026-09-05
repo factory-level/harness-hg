@@ -1,0 +1,44 @@
+# Runtime settings for <PERSONA>. Scaffolded by skills/hermes-gitops-template,
+# modeled on examples/distributed-profile/distributions/persona-echo/config.yaml.
+#
+# config.yaml is USER-OWNED: an update never clobbers it (pass --force-config
+# to replace it deliberately). Any secret this config (or SOUL.md, or a tool)
+# reads at runtime MUST have a matching env_requires entry in distribution.yaml.
+#
+# DECLARE WHAT YOU DEPEND ON. Most of what an agent *is* at runtime is
+# configured here, and anything omitted falls back to a default that can move
+# under you between Hermes versions. `hg agent show` prints the running state
+# of every section below, so whatever you care about is worth writing down and
+# then checking, rather than inferring from behaviour.
+model:
+  provider: anthropic
+  name: claude-sonnet-4-5
+
+# MCP servers the agent connects to. THIS is the key the runtime reads. A
+# distribution may also ship an mcp.json — it will be faithfully copied onto
+# the agent and then read by nothing, so `hg validate` warns when it sees one.
+# mcp_servers:
+#   my-server:
+#     url: http://my-server.my-namespace.svc.cluster.local:8080
+
+# Plugins are opt-in: one that is installed but not listed here never loads.
+# (The platform appends its own observer-metrics entry at boot, so expect this
+# list to have one more member on a running agent than it has here.)
+# plugins:
+#   enabled:
+#     - my-plugin
+
+# Messaging platforms. Credentials live in .env via env_requires, never here.
+# Note that some adapters enable themselves purely from a token present in the
+# environment — declaring the intent here keeps "why is this agent on Discord?"
+# answerable from the repo.
+# platforms:
+#   webhook:
+#     enabled: true
+#     extra:
+#       routes:
+#         # POST /webhooks/alerts, signed with the caller's shared secret.
+#         alerts:
+#           prompt: |
+#             Something fired. Diagnose it per your SOUL.
+#             {__raw__}

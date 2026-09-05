@@ -1,0 +1,71 @@
+# Platform monitoring, part 3: the fleet budget & TCO surface - one
+# Grafana dashboard (uid hermes-fleet-tco) and per-persona
+# BudgetExceeded alert rules, rendered by the LOCAL chart
+# charts/fleet-dashboard into ConfigMaps in hermes-monitoring that the
+# platform Grafana's sidecars import (see monitoring-stack.yaml).
+# Synced by the hermes-gitops-root Application like every other manifest
+# in bootstrap/.
+#
+# THIS FILE IS THE BUDGET-EDITING SURFACE: add or change a persona's
+# monthly USD budget under helm.valuesObject.budgets and merge - a
+# normal GitOps change. Budgets compare against hermes_cost_usd_mtd,
+# the observer plugin's persisted month-to-date estimate (see
+# _docs/wiki/platform/observability.md), so pod restarts and Prometheus's short
+# retention never corrupt the math.
+#
+# Unlike the other monitoring-* files this one DOES carry scaffold
+# tokens: it sources a chart from the platform repo itself, exactly
+# like the ApplicationSet does.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fleet-dashboard
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/component: fleet-dashboard
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # "default" (Argo CD's built-in AppProject), same reasoning as the
+  # other bootstrap-level Applications: the hermes-gitops AppProject is
+  # created by this same bootstrap/ sync, so platform apps can't
+  # reference it without a bootstrapping deadlock.
+  project: default
+  source:
+    repoURL: __HERMES_GITOPS_REPO_URL__
+    targetRevision: __CHART_REVISION__
+    path: control-plane/fleet-dashboard/chart
+    helm:
+      valuesObject:
+        # persona -> monthly USD budget. One row per installed profile
+        # you want budget-tracked; each entry also creates a
+        # BudgetExceeded alert rule.
+        budgets: {}
+        #  social-media: 25
+        #  event-manager: 100
+        alert:
+          enabled: true
+          # Set at least one receiver BEFORE adding budgets - the chart
+          # fails the render otherwise (an alert with no receiver is a
+          # silent no-op, and silent is worse than loud).
+          webhookUrl: ""
+          discordUrl: ""
+          # Optional fleet-total rule: sum of every profile's MTD
+          # estimated spend. 0 = off.
+          fleetBudgetUsd: 0
+  destination:
+    name: in-cluster
+    namespace: hermes-monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

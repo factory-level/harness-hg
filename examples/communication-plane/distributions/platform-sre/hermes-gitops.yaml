@@ -1,0 +1,97 @@
+# platform-sre deployment + communication intent (contract v3, ADR-39).
+#
+# The route below is the whole demonstration: one typed event from the
+# monitoring app fans out to this profile's own gateway handler (durable
+# FIFO by subject, keyed incident session) and to two ChatOps spaces.
+# Which provider backs company_discord - recording locally, real Discord
+# in the sandbox - is the environment's decision, never this file's.
+contractVersion: 3
+
+endpoints:
+  # The agent gateway's webhook platform - the communication plane
+  # DELIVERS here; it never replaces this surface.
+  - name: hooks
+    port: 8644
+    path: /webhooks/alerts
+    type: webhook
+    signature: hmac-sha256
+
+# The v1 exposure block still OPENS the port on the agent Service (the
+# rendered record is v1; typed endpoints above are compiler-only intent
+# until the record bump). Same additive-window duality marketing-sre uses.
+expose:
+  services:
+    - name: hooks
+      port: 8644
+      path: /
+  access:
+    policy: service-token
+
+apps:
+  - name: monitoring
+    chart: control-plane/monitoring/chart
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+        schema: events/observability-alert/v1.schema.json
+        # Grafana groups an alert's firing and resolved notifications
+        # under one groupKey - that IS the incident identity.
+        subject: groupKey
+        adapter:
+          type: webhook
+          inject:
+            appValue:
+              path: alert.webhookUrl
+
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      delivery:
+        mode: queued
+        guarantee: at-least-once
+        retry:
+          maxAttempts: 5
+          backoff: exponential
+        deadLetter:
+          enabled: true
+          retention: 14d
+        ordering:
+          mode: fifo
+          key: subject
+          onFailure: dead-letter-and-continue
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts
+            session:
+              mode: keyed
+              key: subject
+        - chatops: company_discord#channel-1
+        - chatops: company_discord#channel-2
+
+    - name: external-alert-triage
+      from:
+        externalInput: demo-alert-source
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts
+            session:
+              mode: keyed
+              key: subject
+        - chatops: company_discord#channel-1
+
+  externalInputs:
+    - name: demo-alert-source
+      event: source.demo.alert/v1
+      schema: events/demo-alert/v1.schema.json
+      subject: incident
+      verification:
+        type: hmac-sha256
+        secretRef:
+          name: demo-alert-source-webhook
+          key: secret

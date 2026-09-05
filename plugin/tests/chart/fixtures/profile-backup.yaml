@@ -1,0 +1,14 @@
+# Backup-declaring HermesProfile record fixture for the valid-backup golden
+# render (infra/scripts/render-test.sh): spec.backup intent + the
+# providers.backup=pvc destination (cluster-values-backup.yaml) renders the
+# per-instance backups PVC and archive CronJob.
+#
+# Chart-test-owned fixture - see profile-minimal.yaml's header for why it
+# is not one of the frozen schema examples.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  backup:
+    schedule: "0 3 * * *"
+    retention: 7

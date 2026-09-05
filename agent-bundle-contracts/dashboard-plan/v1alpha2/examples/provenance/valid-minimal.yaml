@@ -1,0 +1,4 @@
+sourceSha: "0000000000000000000000000000000000000000"
+sourcePaths:
+  - dashboard/contribution.yaml
+  - dashboard/views/default.yaml

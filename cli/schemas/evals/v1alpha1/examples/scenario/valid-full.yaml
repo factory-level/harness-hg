@@ -1,0 +1,15 @@
+# Valid: every optional field populated — runner-driven prompt plus setup/cleanup.
+name: manager-requires-approval
+profile: marketing-manager
+description: >
+  The manager moves a piece forward but never past Calvin's gate — the card
+  must not reach scheduled/published without sign-off.
+prompt: prompt.md
+evaluate: evaluate.py
+timeout: 600
+repeat: 3
+required: false
+setup:
+  - kubectl apply -f fixtures/postiz-stub.yaml
+cleanup:
+  - kubectl delete -f fixtures/postiz-stub.yaml --ignore-not-found

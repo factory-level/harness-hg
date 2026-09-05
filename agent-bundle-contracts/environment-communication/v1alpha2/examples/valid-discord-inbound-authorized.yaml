@@ -1,0 +1,20 @@
+# v1alpha2 (#348): a Discord connection that ACCEPTS instructions, and
+# says exactly who from and where.
+version: 1
+chatopsConnections:
+  manager:
+    provider: discord
+    credentialRef:
+      name: hermes-manager-chatops
+      key: DISCORD_BOT_TOKEN
+    inbound:
+      # Snowflakes, not display names: a display name is changeable by
+      # the person it names.
+      approvedUsers:
+        - "289374650192837465"
+      approvedRoles:
+        - "402938475610293847"
+      approvedChannels:
+        - "1402938475610293847"
+      mentionPolicy: require-mention
+      threadPolicy: inherit

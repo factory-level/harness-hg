@@ -1,0 +1,15 @@
+# Invalid: `valuesRequired` never appears in the RENDERED record - the
+# emitter validates it pre-render (every dot-path resolved non-null in the
+# merged values) and drops it. A record still carrying it means the render
+# pipeline was bypassed.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  apps:
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm
+      version: 1.9.1
+      valuesRequired:
+        - auth.apiKeySecretRef

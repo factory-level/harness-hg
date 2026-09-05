@@ -1,0 +1,980 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment/v1alpha2/environment.schema.json",
+  "title": "Environment spec",
+  "description": "The declarative source of truth for ONE deployed environment (#674): everything the state and infra Pulumi stacks are configured with, in one authored file. `hg env apply` compiles it into the two `Pulumi.<env>.yaml` config blocks (generated projections, never hand-edited); `hg env plan` diffs; `hg env new` drives day-0 from it. Secret VALUES never live here — a `{secret: true}` leaf marks a value that exists only as `secure:` ciphertext in the generated config, written by `pulumi config set --secret`. It lives in cli/schemas/ (the evals precedent): this contract versions with the CLI, and agent-bundle-contracts/ is the wrong tenant — this file is authored by a platform operator, never by an agent-bundle repo. v1alpha2 adds the optional `grants` block: the bootstrap's half of every concern an agent-team repository declares only its own half of - cluster targets per region, DNS, policy, capability providers and repository mounts - unioned by the topology compiler with the team's `harness-hg/` files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "name",
+    "project",
+    "rootKms",
+    "state",
+    "infra"
+  ],
+  "$defs": {
+    "secretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "secret"
+      ],
+      "properties": {
+        "secret": {
+          "const": true,
+          "description": "The value exists only as encrypted `secure:` ciphertext in the generated stack config. The generator carries existing ciphertext through untouched; a marked leaf with no ciphertext yet is an actionable finding naming the `hg env set-secret` command that supplies it."
+        }
+      }
+    },
+    "stringOrSecret": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/secretRef"
+        }
+      ]
+    },
+    "quotedString": {
+      "type": "string",
+      "description": "Deliberately string-typed: numeric-looking values (snowflake ids) MUST stay strings end to end — unquoted YAML numbers round above 2^53 in the JS config path and drop silently (#358). The generator re-quotes on emit; the schema refuses non-strings so the rounding can never have happened by the time hg reads the spec."
+    },
+    "envValues": {
+      "type": "object",
+      "description": "One instance's env vars. Every value is either a plaintext STRING (never a bare number or boolean — #358) or a secret marker.",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/quotedString"
+          },
+          {
+            "$ref": "#/$defs/secretRef"
+          }
+        ]
+      }
+    },
+    "valueTree": {
+      "description": "An app-values subtree: nested maps whose leaves are strings, numbers, booleans, or secret markers (matches what the emitter's deep_merge accepts).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/valueTree"
+          }
+        },
+        {
+          "$ref": "#/$defs/secretRef"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/valueTree"
+          }
+        }
+      ]
+    },
+    "workspaceSecretName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+    },
+    "workspaceShortName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/environment/v1alpha2",
+      "description": "Pins the spec contract; the compiler refuses versions it does not implement."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+      "maxLength": 21,
+      "description": "The environment's name — also the state-stack agent entry, the infra stack name, and the seed of every derived resource name (bucket `<project>-<name>-state`, SA `<name>-deployer@…`). Max 21 chars so the bucket and SA ids fit their GCP limits (state/src/config.ts)."
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The GCP project id (`gcp:project` on the state stack; the base of every gs:// and service-account URI)."
+    },
+    "rootKms": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "location",
+        "keyring",
+        "key"
+      ],
+      "description": "Coordinates of the manual root-of-trust KMS key (state/README.md §1). hg assembles the full `gcpkms://projects/<project>/locations/<location>/keyRings/<keyring>/cryptoKeys/<key>` secrets-provider URI and the `rootKmsKeyId` resource path from these — the operator never types a URI.",
+      "properties": {
+        "location": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyring": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "rootStateBucket": {
+      "type": "string",
+      "description": "Override for the root Pulumi state bucket name. Default: `<project>-pulumi-root-state` (state/README.md §1)."
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deployerGroup",
+        "agents"
+      ],
+      "description": "Config for the state-backend stack (state/): per-agent buckets, deploy SAs, IAM, backup sinks.",
+      "properties": {
+        "deployerGroup": {
+          "type": "string",
+          "minLength": 3,
+          "description": "Who may impersonate the deploy SAs. Bare email = group; `user:`/`serviceAccount:` prefixes pass through (state/src/config.ts deployerPrincipal)."
+        },
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 21
+          },
+          "description": "Environments/agents getting a state bucket + deploy SA each. Max 21 chars (SA id budget)."
+        },
+        "backupEnvironments": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 16
+          },
+          "description": "Environments getting a CMEK backup bucket + writer/reader SAs. Max 16 chars (`<env>-backup-writer` must fit 30). NOTE: the CMEK key is non-deletable in GCP."
+        },
+        "bucketLocation": {
+          "type": "string",
+          "description": "GCS location for the buckets. Default US."
+        },
+        "perAgentKeys": {
+          "type": "boolean",
+          "description": "Strict per-agent KMS keys instead of the shared root key. One-way door: keyrings/keys are non-deletable."
+        }
+      }
+    },
+    "infra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providers",
+        "gitopsRepoUrl"
+      ],
+      "description": "Config for the infra stack — key-for-key the surface infra/src/control-flow/config.ts load() reads, with secrets as markers.",
+      "properties": {
+        "clusterProvider": {
+          "enum": [
+            "none",
+            "k3s-local",
+            "gke-autopilot",
+            "eks-fargate"
+          ]
+        },
+        "kubeconfigPath": {
+          "type": "string"
+        },
+        "kubeconfigContext": {
+          "type": "string"
+        },
+        "clusterName": {
+          "type": "string"
+        },
+        "gitopsRepoUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gitopsBranch": {
+          "type": "string"
+        },
+        "gitopsBranchProtection": {
+          "type": "boolean"
+        },
+        "gitopsRequiredReviewers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gitopsGitToken": {
+          "$ref": "#/$defs/secretRef"
+        },
+        "hermesGitopsRepoUrl": {
+          "type": "string"
+        },
+        "chartRevision": {
+          "type": "string"
+        },
+        "cloudflareApiToken": {
+          "$ref": "#/$defs/secretRef"
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "compute",
+            "secret",
+            "ingress"
+          ],
+          "properties": {
+            "compute": {
+              "enum": [
+                "pod"
+              ]
+            },
+            "secret": {
+              "enum": [
+                "k8s"
+              ]
+            },
+            "ingress": {
+              "enum": [
+                "ingress",
+                "cloudflare",
+                "none"
+              ]
+            }
+          }
+        },
+        "stages": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hermes": {
+              "type": "boolean"
+            },
+            "agents": {
+              "type": "boolean"
+            },
+            "cluster": {
+              "type": "boolean"
+            }
+          },
+          "description": "Real booleans only — the stack reader's `Boolean(x ?? true)` treats a quoted \"false\" as true; the schema refuses strings so that trap is unreachable from the spec."
+        },
+        "versions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "argocdChart": {
+              "type": "string"
+            },
+            "esoChart": {
+              "type": "string"
+            },
+            "pkoChart": {
+              "type": "string"
+            }
+          },
+          "description": "Chart versions as STRINGS (a two-segment version unquoted becomes a YAML number; the generator re-quotes on emit)."
+        },
+        "hermes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "pluginPath": {
+              "type": "string"
+            },
+            "scaffold": {
+              "type": "boolean"
+            }
+          }
+        },
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ref": {
+                "type": "string"
+              },
+              "subdir": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "runtime": {
+                "enum": [
+                  "hermes",
+                  "eve"
+                ]
+              },
+              "overrides": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "apps": {
+                    "$ref": "#/$defs/valueTree"
+                  },
+                  "appValues": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "$ref": "#/$defs/valueTree"
+                    }
+                  },
+                  "backup": {
+                    "$ref": "#/$defs/valueTree"
+                  },
+                  "deployment": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "baseImageTag": {
+                        "type": "string"
+                      },
+                      "diskSizeGb": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    }
+                  },
+                  "expose": {
+                    "$ref": "#/$defs/valueTree"
+                  },
+                  "gitAuthSecretRef": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "agentSecrets": {
+          "type": "object",
+          "description": "Per-instance env vars. Keyed by instance (DNS-1123, ≤40); every value a string or a secret marker — never a bare number (#358).",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9]{0,38}[a-z0-9])?$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/envValues"
+          }
+        },
+        "agentGitAuth": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "username": {
+                "type": "string"
+              },
+              "password": {
+                "$ref": "#/$defs/secretRef"
+              },
+              "sshPrivateKey": {
+                "$ref": "#/$defs/secretRef"
+              }
+            }
+          }
+        },
+        "routerSecrets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/secretRef"
+          }
+        },
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Slack workspace provisioning (the SlackWorkspace bootstrap component): one Slack app per eve agent created through the official Slack CLI (whose one-time `slack login` on the operator host replaces any app-config token), plus declaratively managed channels and membership. Pod credentials (SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET) ride agentSecrets, not this block.",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "teamId": {
+              "type": "string",
+              "pattern": "^T[A-Z0-9]{5,20}$",
+              "description": "The workspace (team) id every CLI call pins. A similarly named workspace with a different id is a different workspace."
+            },
+            "adminUserToken": {
+              "$ref": "#/$defs/secretRef",
+              "description": "xoxp user token for channel create/adopt and bot invites (a bot cannot invite itself)."
+            },
+            "eventsReady": {
+              "type": "boolean",
+              "description": "Render event subscriptions + request_url into manifests. Leave false until the endpoint answers url_verification - Slack challenges the URL at manifest apply."
+            },
+            "deleteAppsOnDestroy": {
+              "type": "boolean"
+            },
+            "cliBin": {
+              "type": "string"
+            },
+            "apps": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "displayName",
+                  "botScopes"
+                ],
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "botScopes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "botEvents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "appId": {
+                    "type": "string",
+                    "description": "Adopt an existing app (A...) instead of creating one - the recovery slot after state loss. Empty = create."
+                  },
+                  "eventsUrl": {
+                    "type": "string",
+                    "description": "This app's full Events request URL (https://<webhook-host>/eve/v1/slack). One hostname per app - eve mounts the same path on every agent. Should match a controlPlaneIngress.webhookEndpoints hostname."
+                  }
+                }
+              },
+              "description": "Keyed by agents[] instance name; each key must name a runtime: eve agent."
+            },
+            "channels": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$"
+                  },
+                  "channelId": {
+                    "type": "string",
+                    "pattern": "^C[A-Z0-9]{5,20}$",
+                    "description": "Existing public channel id: referenced bots join it themselves (channels:join), no admin token. Unset = create/adopt via @pulumi/slack, which needs slack.adminUserToken."
+                  },
+                  "topic": {
+                    "type": "string"
+                  },
+                  "private": {
+                    "type": "boolean"
+                  },
+                  "agents": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^U[A-Z0-9]{5,20}$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "argocdRepoCreds": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gitopsUsername": {
+              "type": "string"
+            },
+            "hermesGitopsUsername": {
+              "type": "string"
+            },
+            "gitopsToken": {
+              "$ref": "#/$defs/secretRef"
+            },
+            "hermesGitopsToken": {
+              "$ref": "#/$defs/secretRef"
+            }
+          }
+        },
+        "targetClusters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "server"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "server": {
+                "type": "string"
+              },
+              "bearerToken": {
+                "$ref": "#/$defs/secretRef"
+              },
+              "caData": {
+                "type": "string"
+              },
+              "insecure": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "helmOciRegistries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "token": {
+                "$ref": "#/$defs/secretRef"
+              },
+              "insecure": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "pluginConfig": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "direct",
+                "pr"
+              ]
+            },
+            "prAutoMerge": {
+              "type": "boolean"
+            },
+            "allowDirectCommit": {
+              "type": "boolean"
+            },
+            "profilesPath": {
+              "type": "string"
+            },
+            "defaultsFile": {
+              "type": "string"
+            },
+            "overridesDir": {
+              "type": "string"
+            },
+            "gitAuthorName": {
+              "type": "string"
+            },
+            "gitAuthorEmail": {
+              "type": "string"
+            },
+            "imageRepository": {
+              "type": "string"
+            },
+            "imageTag": {
+              "type": "string"
+            }
+          }
+        },
+        "fleetDefaults": {
+          "$ref": "#/$defs/valueTree"
+        },
+        "controlPlaneIngress": {
+          "$ref": "#/$defs/valueTree"
+        },
+        "nexusCapabilities": {
+          "$ref": "#/$defs/valueTree"
+        },
+        "reconcile": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "string"
+            },
+            "repoUrl": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "apply": {
+              "type": "string"
+            },
+            "statusNamespace": {
+              "type": "string"
+            },
+            "kubeContext": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "grants": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What this environment GRANTS an agent-team repository - the bootstrap's half of each dual-owned concern. The team declares what it brings and needs in `harness-hg/`; this block says what it gets. The topology compiler unions the two: a name declared on both sides is a refusal (TOPO018), a team region with no targets here is a refusal (TOPO019). Absent: one synthesized target per team region, no DNS, no policy, no extra capabilities or mounts.",
+      "properties": {
+        "targets": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 40
+          },
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "argoDestination"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                  "maxLength": 40,
+                  "description": "Stable target name; becomes the <scope> of per-target instances and the environment/targets/<name>/values.yaml directory."
+                },
+                "argoDestination": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Name of the registered Argo CD cluster this target deploys to (a cluster Secret; `in-cluster` for the control-plane cluster). Multiple targets may share one cluster as separate deployment cells - namespaces and identities stay distinct."
+                },
+                "primary": {
+                  "type": "boolean",
+                  "description": "The region's primary target - where per-region instances land when the region has several targets. Default: the first target."
+                }
+              }
+            }
+          },
+          "description": "Region name -> the deployment targets granted to it (each mapped to a registered Argo CD cluster). Every key must name a region the team's `harness-hg/topology.yaml` declares."
+        },
+        "globalTarget": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "The target that hosts singleton components. Must name a granted target; absent = the primary target of the team's hubRegion."
+        },
+        "dns": {
+          "description": "Base domains canonical endpoint hostnames are projected under. Absent: no public URLs are planned and private endpoints resolve to Kubernetes DNS.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publicBaseDomain": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Base domain under which canonical public hostnames are projected (two-label scheme: <endpoint>.<component>-<profile>-<scope>.<base>). Absent: no public URLs are planned."
+            },
+            "privateBaseDomain": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Base domain for `private` endpoints. Absent: private endpoints resolve to Kubernetes DNS."
+            }
+          }
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowedChartSources": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^(https://\\S+|oci://\\S+)$",
+                "description": "Remote helm repo URL prefix. `local` charts (the platform tree) are always allowed and never listed."
+              },
+              "description": "Remote chart sources apps may reference. Absent or empty: only `repo: local` charts are allowed."
+            },
+            "allowedJurisdictions": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 2
+              },
+              "description": "Jurisdictions targets may declare. Absent: every declared jurisdiction is allowed."
+            }
+          },
+          "description": "Operator-owned declaration of what the environment ALLOWS. The compile-time authority for the chart-source allowlist (the Argo CD AppProject's sourceRepos is maintained separately: platform entries templated by the scaffold, remote-chart entries operator-authored in cluster-values) and for the jurisdictions profiles may be placed into. The compiler validates every app's chart source against allowedChartSources before any deployment record is generated (TOPO008) and every target's jurisdiction against allowedJurisdictions (TOPO007)."
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "Capability name -> the implementation the environment provides for it (environment-capabilities/v1alpha1 shape). Concatenated with the team's `harness-hg/capabilities.yaml`; a name present on both sides is TOPO018.",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "implementation",
+              "url"
+            ],
+            "properties": {
+              "implementation": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What serves this capability, in the operator's words (e.g. managed-redis, external-sentiment-api). Documentation and a stable identifier for the plan - the compiler never interprets it."
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^https?://\\S+$",
+                "description": "The resolved URL injected into consumers. Non-sensitive by contract: credentials travel the secret path (envRequires), never a capability binding."
+              },
+              "region": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 40,
+                "description": "Region this implementation lives in, for locality resolution: a same-region requirement matches only consumers in this region. Absent = global (reachable from anywhere, satisfies any locality except same-target - an environment binding is never target-local)."
+              }
+            }
+          }
+        },
+        "workspaces": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repositories",
+            "bindings"
+          ],
+          "properties": {
+            "repositories": {
+              "description": "The catalogue of mountable repositories. Declaring one grants nothing: a repository reaches a profile only through a binding.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "source",
+                  "mount"
+                ],
+                "properties": {
+                  "name": {
+                    "$ref": "#/$defs/workspaceShortName",
+                    "description": "Short name bindings reference this repository by."
+                  },
+                  "source": {
+                    "description": "Where the checkout comes from: self (the bound profile's own distribution repository) or an explicit url with a pinned or application-resolved revision.",
+                    "oneOf": [
+                      {
+                        "const": "self",
+                        "description": "The bound profile's OWN distribution repository, resolved per profile from its deployed record: url from spec.source, revision from spec.sha, credential from spec.gitAuthSecretRef. Still an explicit grant - installing a distribution mounts nothing until a binding says self."
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "url",
+                          "revision"
+                        ],
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "Git URL of the repository to clone. The compiler refuses an ssh URL (git@ or ssh://) that carries no authSecretRef."
+                          },
+                          "revision": {
+                            "description": "How the checkout's commit is chosen: pinned to an explicit SHA, or resolved from a named application's deployed record.",
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "mode",
+                                  "sha"
+                                ],
+                                "properties": {
+                                  "mode": {
+                                    "const": "pinned",
+                                    "description": "Pins the checkout to an explicit commit."
+                                  },
+                                  "sha": {
+                                    "description": "Full 40-hex commit SHA the checkout is pinned at.",
+                                    "type": "string",
+                                    "pattern": "^[0-9a-f]{40}$"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "mode",
+                                  "application"
+                                ],
+                                "properties": {
+                                  "mode": {
+                                    "const": "application-revision",
+                                    "description": "Resolves the checkout from a deployed application record."
+                                  },
+                                  "application": {
+                                    "$ref": "#/$defs/workspaceShortName",
+                                    "description": "Name of the deployed profile whose record spec.sha this checkout resolves to; that record must name this same repository as its source."
+                                  }
+                                }
+                              }
+                            ]
+                          },
+                          "authSecretRef": {
+                            "$ref": "#/$defs/workspaceSecretName",
+                            "description": "Name of the Kubernetes Secret holding the Git credential the clone authenticates with. A reference only - the value never appears in this file."
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "mount": {
+                    "description": "Where and how the checkout appears inside a granted profile's runtime.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "path",
+                      "access"
+                    ],
+                    "properties": {
+                      "path": {
+                        "description": "Absolute mount path under /workspaces/ the checkout appears at.",
+                        "type": "string",
+                        "pattern": "^/workspaces/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*$"
+                      },
+                      "access": {
+                        "description": "Whether the profile can write to the checkout: read-only or read-write.",
+                        "type": "string",
+                        "enum": [
+                          "read-only",
+                          "read-write"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "bindings": {
+              "description": "Explicit repository-to-profile grants - the only thing that makes a repository reach a profile, independent of bundle membership.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "repository",
+                  "profiles",
+                  "purpose"
+                ],
+                "properties": {
+                  "repository": {
+                    "$ref": "#/$defs/workspaceShortName",
+                    "description": "Name of a declared repository this binding grants."
+                  },
+                  "profiles": {
+                    "description": "The profiles granted this repository's mount.",
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": {
+                      "$ref": "#/$defs/workspaceShortName"
+                    }
+                  },
+                  "purpose": {
+                    "$ref": "#/$defs/workspaceShortName",
+                    "description": "Short label naming why the grant exists (e.g. strategy-context); carried through to the compiled binding."
+                  }
+                }
+              }
+            }
+          },
+          "description": "Repository mounts the environment grants on top of the team's own `harness-hg/workspaces.yaml`: the same repositories/bindings shape (environment-workspaces/v1alpha1), concatenated before compilation. A repository name present on both sides is TOPO018."
+        }
+      }
+    }
+  }
+}

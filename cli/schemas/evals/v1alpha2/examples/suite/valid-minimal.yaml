@@ -1,0 +1,3 @@
+# Valid: the smallest legal suite — scenarios/ dir and all defaults implied.
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha2
+name: persona-echo-evals

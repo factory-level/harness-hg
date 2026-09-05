@@ -1,0 +1,8 @@
+# Dev-loop config (agent-team/v1alpha1 AgentTest): placeholder values the
+# LOCAL loop (`hg test`) runs with - never production credentials. A
+# placeholder is loudly skipped by proofs, never silently green. Nothing
+# in the cluster reads this file.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: AgentTest
+secrets:
+  ANTHROPIC_API_KEY: dev-placeholder

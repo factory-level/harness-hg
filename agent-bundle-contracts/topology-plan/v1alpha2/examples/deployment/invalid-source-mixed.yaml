@@ -1,0 +1,13 @@
+spec:
+  id: x/a@y
+  profile: x
+  app: a
+  scope: y
+  target: y-a
+  argoDestination: y-a
+  namespace: n
+  application: n
+  source:
+    repo: local
+    path: charts/a
+    repoURL: ghcr.io/x/c

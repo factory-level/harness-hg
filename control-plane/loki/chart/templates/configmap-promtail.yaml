@@ -1,0 +1,46 @@
+# The collector config. The plane relabel is the point (ADR 0164): every
+# stream carries plane=control-plane|workload derived from its namespace,
+# so the two planes are one query dimension apart and never interleaved
+# by default.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: loki
+    app.kubernetes.io/name: promtail
+data:
+  promtail.yaml: |
+    server:
+      http_listen_port: 3101
+    positions:
+      filename: /run/promtail/positions.yaml
+    clients:
+      - url: http://loki.{{ .Release.Namespace }}.svc:3100/loki/api/v1/push
+    scrape_configs:
+      - job_name: pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: __host__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+          # plane=control-plane for the declared namespaces + prefix,
+          # else workload (control-plane/planes.yaml is the authority).
+          - target_label: plane
+            replacement: workload
+          - source_labels: [__meta_kubernetes_namespace]
+            regex: "({{ join "|" .Values.controlPlaneNamespaces }}|{{ .Values.controlPlaneNamespacePrefix }}.*)"
+            target_label: plane
+            replacement: control-plane
+          - source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+            target_label: __path__
+            separator: /
+            replacement: /var/log/pods/*$1/*.log

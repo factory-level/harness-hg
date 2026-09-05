@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/bundle-destination/v1alpha1/destination.schema.json",
+  "title": "Bundle destination",
+  "description": "The `harness-hg/destination.yaml` file at an agent-team repo's root (the `.harness-hg/` dot-directory was never built - `hg bundle init` #673 wrote there until and that path stays readable): where THIS repo's emitted records go. `hg topology emit` reads it as the default destination when no --output flag names one, so an author can emit without re-typing the GitOps repo every time. Authored by bundle repos - the right tenant for a frozen agent-bundle contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "gitops"],
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/bundle-destination/v1alpha1",
+      "description": "Pins the contract; the CLI refuses versions it does not implement."
+    },
+    "gitops": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repoUrl"],
+      "properties": {
+        "repoUrl": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(https://|git@|ssh://|file://)",
+          "description": "The GitOps destination repository the emitted records are pushed to. A URL, never a local path - the destination is shared truth, not a working copy."
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Branch the records land on. Default main."
+        }
+      }
+    }
+  }
+}

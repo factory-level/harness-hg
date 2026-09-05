@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/agent-runtime/v1alpha1/agent-runtime.schema.json",
+  "title": "Agent runtime manifest (/hg/runtime-manifest.json)",
+  "description": "GENERATED, and purely DESCRIPTIVE: what one deployed agent actually got. Nothing reads it to decide behaviour, and it must never grow into a second configuration language - every field it carries is already stated somewhere authoritative, and this record is the join.\n\nTwo producers write it from one definition: the eve-agent and eve-bundle charts render it into a ConfigMap mounted read-only at /hg/runtime-manifest.json, and `hg agent inspect|render` computes it offline from the same value documents the ApplicationSet layers. `hg eve prove` EVE022 compares the two and names the field that differs, so a drift between chart and CLI is a failing proof rather than a surprise in production.\n\nA ConfigMap rather than a file the boot script writes, because it must answer from the API server while the pod is down or crash-looping - which is when \"what did this agent get\" is usually the question.\n\nNAMES ONLY. `requiredSecrets` carries variable names and `connections` carries connection and provider names; no value, token or key ever enters this object, because it is a ConfigMap in the agent's namespace and readable by anything that can read that namespace.\n\nPlain values under a single `spec` block, the platform's record convention - no apiVersion, no kind, no CRD.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "spec"],
+  "properties": {
+    "contract": {
+      "const": "agent-runtime/v1alpha1",
+      "description": "The contract this document claims to be. A bump is a new schema directory, like every other frozen contract here."
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "engine",
+        "instance",
+        "namespace",
+        "runtimeImage",
+        "source",
+        "workspaces",
+        "requiredSecrets",
+        "connections",
+        "apps"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The agent's own name - the profile name, and the record's directory name."
+        },
+        "engine": {
+          "enum": ["eve", "hermes"],
+          "description": "Which AI harness runs this agent. The first thing a reader of this document needs, and the reason the shape is shared across runtimes at all."
+        },
+        "instance": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The Kubernetes-facing identity: `hermes-<name>` or `ag-eve-<name>` standalone, `<bundle-application>-<member>` for a bundled member."
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The namespace the workload runs in - the bundle's, for a bundled member."
+        },
+        "bundle": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The bundle this agent is a member of. ABSENT when the agent is deployed standalone - never an empty string, so \"is this bundled\" is a key test rather than a value test."
+        },
+        "runtimeImage": {
+          "type": "string",
+          "description": "The container image the agent process runs, as deployed - including a local-loop dev build, which is the point: the manifest says what runs, not what would run elsewhere."
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "revision"],
+          "description": "Where the agent's code came from, resolved. The pod clones this at boot; nothing materializes a second copy.",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "description": "The git URL the pod clones."
+            },
+            "revision": {
+              "type": "string",
+              "description": "The resolved commit. A full 40-character sha for anything deployed; the field is a plain string so a manifest rendered from a placeholder record is still readable rather than unrenderable."
+            },
+            "subdir": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The agent's directory within the repository (a monorepo of agents). Absent when the repository root IS the project."
+            }
+          }
+        },
+        "workspaces": {
+          "type": "array",
+          "description": "Bound code workspaces, sorted by name. `path` is where the agent actually reads the checkout INSIDE the pod, which is not always the binding's authored mountPath: a standalone Eve agent mounts under /app/workspaces (on its data claim), a bundle honours mountPath at its shared /workspaces claim. Reporting the real path is the whole point.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "path", "access", "repository", "revision"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "pattern": "^/" },
+              "access": { "enum": ["read-only", "read-write"] },
+              "repository": { "type": "string" },
+              "revision": { "type": "string" }
+            }
+          }
+        },
+        "requiredSecrets": {
+          "type": "array",
+          "description": "Environment variable NAMES the record requires, sorted and de-duplicated. Never values.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "connections": {
+          "type": "array",
+          "description": "Third-party app registrations bound to this agent, sorted by name. Names only - the credentials live in the platform Secret the projection reads.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "provider"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "provider": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "apps": {
+          "type": "array",
+          "description": "Child Helm applications the agent's own chart deploys, sorted. Empty for a bundled member by design: its apps deploy from deployments/apps, not from the bundle chart (EVE020).",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

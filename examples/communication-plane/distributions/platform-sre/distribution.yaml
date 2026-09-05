@@ -1,0 +1,21 @@
+# The subscribing persona of the communication-plane reference fixture:
+# woken by observability.alert/v1 events delivered - HMAC-signed - to its
+# own gateway's /webhooks/alerts handler by the event router.
+name: platform-sre
+version: 0.1.0
+description: "Reference SRE persona - subscribes to observability.alert/v1 through the communication plane."
+author: "hermes-gitops examples"
+license: "UNLICENSED"
+
+hermes_requires: ">=0.9"
+
+env_requires:
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic API key - the agent's model provider"
+    required: true
+  - name: WEBHOOK_ENABLED
+    description: "Set to '1' - enables the gateway's webhook platform (port 8644), the inbound surface the router delivers to"
+    required: true
+  - name: WEBHOOK_SECRET
+    description: "HMAC secret the webhook platform validates (X-Webhook-Signature-V2). The router signs each delivery with it."
+    required: true

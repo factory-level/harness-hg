@@ -1,0 +1,6 @@
+# A connection alias without a provider binds to nothing.
+version: 1
+chatopsConnections:
+  company_discord:
+    credentialRef:
+      env: HG_DISCORD_BOT_TOKEN

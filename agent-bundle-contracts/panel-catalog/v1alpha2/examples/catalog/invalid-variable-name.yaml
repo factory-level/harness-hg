@@ -1,0 +1,14 @@
+# INVALID: a Grafana variable name with URL metacharacters. The name
+# becomes part of a query parameter (var-<name>); the pattern keeps it a
+# bare identifier.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha2
+kind: PanelCatalog
+panels:
+  - id: x
+    surface: backup
+    title: Something
+    dashboard: hg-backup-history
+    panelId: 3
+    size: wide
+    variables:
+      "ns&kiosk": target

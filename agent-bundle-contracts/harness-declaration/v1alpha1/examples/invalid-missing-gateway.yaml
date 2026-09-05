@@ -1,0 +1,5 @@
+# INVALID: a harness with no gateway declaration does not validate — the
+# platform ships no universal gateway to fall back on (ADR 0162).
+contract: harness-declaration/v1alpha1
+spec:
+  name: eve

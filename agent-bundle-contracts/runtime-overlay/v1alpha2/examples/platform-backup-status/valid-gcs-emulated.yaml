@@ -1,0 +1,22 @@
+# The local loop's sink. `gcs-emulated`, never `gcs`: fake-gcs-server
+# speaks the real API and provides no off-site durability, and a surface
+# that could not tell them apart would present a laptop as a cloud.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: PlatformBackupStatus
+observedAt: "2026-08-02T03:14:07Z"
+backupId: hg-2026-08-02T03-11-52z
+createdAt: "2026-08-02T03:11:52Z"
+environment: marketing-sre,nexus
+destinationClass: gcs-emulated
+verification:
+  state: available
+components:
+  - name: volume/marketing-sre/hermes-marketing-sre-backup
+    kind: volume-archive
+    profile: marketing-sre
+    routine: hermes-marketing-sre-backup
+    sizeKB: 13387
+    checksum: a968c1ee40e4
+    generation: "1785704683230156"
+    consistency: fresh routine invocation, exported and checksummed
+summary: 1 component(s), 1 archived

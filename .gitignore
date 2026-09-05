@@ -1,0 +1,68 @@
+.superpowers/
+
+# bun/node dependencies — every JS workspace here (cli/, infra/, uptime/)
+# commits a lockfile, so node_modules is always reproducible with
+# `bun install --frozen-lockfile`. cli/ lacked this and got 874 files
+# committed by accident.
+node_modules/
+
+# Eve build output and durable state. An agent project under examples/ is a
+# REAL eve project - `eve build` writes .output/ (a 24 MB Nitro server) and
+# .eve/ holds .workflow-data, the Workflow world: every session, turn and
+# message the agent has handled. Committing either would put a build tree
+# and a conversation history in the repository. The pod keeps its own copy
+# on the data volume (ADR-150); nothing here is an input to anything.
+.output/
+.eve/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Real Pulumi stack configs for bootstrap/ (may contain kubeconfig paths,
+# repo URLs, and - if hand-edited instead of set via `pulumi config set
+# --secret` - credentials). Only the example template is meant to be
+# committed.
+bootstrap/Pulumi.*.yaml
+!bootstrap/Pulumi.local.yaml.example
+
+# Same rule for every pulumi/programs/*/ program (gce-instance, gcp-network,
+# ...) - these are config-driven, no stack files committed per design (see
+# each program's Pulumi.yaml/README). Pulumi.yaml itself (the project
+# manifest, no stack suffix) is unaffected by this glob and stays tracked.
+pulumi/programs/*/Pulumi.*.yaml
+
+# Real secrets copied from a `.env.template` (e.g.
+# examples/persona-echo/.env.template's own "copy to .env" instruction) -
+# never meant to be committed, wherever it lands in the tree.
+.env
+
+# MkDocs Material wiki build output (make wiki-build / mkdocs build).
+# The wiki's build output lives beside its source (_docs/wiki/mkdocs.yml
+# sets site_dir: ../site). Anchored so it cannot swallow any chart named
+# site/ (e.g. examples/charts/site), which MUST ship
+# with the repo — Argo CD renders it from the platform repo clone.
+/_docs/site/
+
+# skill-creator eval workspaces. `<skill>-workspace/` holds run transcripts,
+# grading JSON and a review.html per iteration - local scratch output, not
+# repository content. 119 files of it were committed by accident in #192.
+*-workspace/
+# ...but never the SlackWorkspace Pulumi component: the glob above
+# silently swallowed it, and #766 merged WITHOUT the component file
+# (found live: pulumi up ERR_MODULE_NOT_FOUND on the server).
+!infra/src/components/slack-workspace/
+
+# hg CLI proof artifacts (hg nexus prove) - evidence is local, never committed
+.hg/
+.worktrees/
+*.pem
+
+# Local agent/tooling scratch - never committed (worktrees alone are ~845MB)
+.claude/worktrees/
+.playwright-mcp/
+# `make site`: the assembled Pages artifact (landing + docs + demo).
+/site/

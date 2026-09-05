@@ -1,0 +1,53 @@
+{
+  "skill_name": "hermes-gitops-template",
+  "baseline": "no-skill (fresh agent with a harness-hg checkout, no skill loaded)",
+  "evals": [
+    {
+      "id": 0,
+      "name": "sre-sentinel-direct",
+      "prompt": "I need to spin up a new SRE agent for our Hermes GitOps platform. Set me up a distributed-profile repo I can install with `hermes profile install`. The org is `acme`, the repo is `agents`, and call the agent `sre-sentinel`. It uses Anthropic for its model. Put the scaffolded repo under my output directory.",
+      "files": [],
+      "assertions": [
+        {"text": "distributions/sre-sentinel/ contains distribution.yaml, hermes-gitops.yaml, SOUL.md, and config.yaml", "kind": "layout"},
+        {"text": "charts/sre-sentinel-app/ and charts/sre-sentinel-dashboard/ each exist with a Chart.yaml whose name matches the directory", "kind": "layout"},
+        {"text": "No unresolved <ANGLE_BRACKET> placeholder tokens remain anywhere in the scaffolded repo", "kind": "completeness"},
+        {"text": "helm lint on both charts reports 0 charts failed", "kind": "chart-valid"},
+        {"text": "The dashboard chart's embedded *-dashboard.json parses as valid JSON", "kind": "dashboard-valid"},
+        {"text": "cli/render_record.py (with the monitoring webhook app-value) exits 0 and the rendered record contains all three apps: app, monitoring, dashboard", "kind": "render-valid"},
+        {"text": "The dashboard teaches conventions: CONVENTIONS.md exists AND the dashboard JSON has a text panel referencing the grafana_dashboard sidecar label and the prometheus datasource", "kind": "teaching"},
+        {"text": "SOUL.md describes a site-reliability agent (reasons about alerts/dashboards), not an unrelated persona", "kind": "persona-fit"}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "nightwatch-dashboard",
+      "prompt": "We're onboarding a new on-call assistant persona called `nightwatch` under github.com/globex/hermes-agents. It watches our services and helps the on-call engineer. Can you scaffold the whole distributed-profile repo for it, including a starter Grafana dashboard chart that follows our ecosystem's dashboard conventions? Anthropic key for the model. Scaffold it under my output directory.",
+      "files": [],
+      "assertions": [
+        {"text": "distributions/nightwatch/ contains distribution.yaml, hermes-gitops.yaml, SOUL.md, and config.yaml", "kind": "layout"},
+        {"text": "charts/nightwatch-app/ and charts/nightwatch-dashboard/ each exist with a Chart.yaml whose name matches the directory", "kind": "layout"},
+        {"text": "No unresolved <ANGLE_BRACKET> placeholder tokens remain anywhere in the scaffolded repo", "kind": "completeness"},
+        {"text": "helm lint on both charts reports 0 charts failed", "kind": "chart-valid"},
+        {"text": "The dashboard chart's embedded *-dashboard.json parses as valid JSON", "kind": "dashboard-valid"},
+        {"text": "cli/render_record.py (with the monitoring webhook app-value) exits 0 and the rendered record contains all three apps: app, monitoring, dashboard", "kind": "render-valid"},
+        {"text": "CONVENTIONS.md exists in the dashboard chart and explains sidecar discovery, the datasource uid, stable uids, and namespace-scoped queries", "kind": "teaching"},
+        {"text": "install command uses github.com/globex/hermes-agents and subdirectory=distributions/nightwatch", "kind": "handoff"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "finops-owl-custom",
+      "prompt": "Scaffold a Hermes GitOps profile repo for a cost-reporting agent named `finops-owl` (org: `initech`, repo: `agents`). It reports our cloud spend, needs an Anthropic API key, and should expose a small web UI on port 8080. Put it under my output directory.",
+      "files": [],
+      "assertions": [
+        {"text": "distributions/finops-owl/ contains distribution.yaml, hermes-gitops.yaml, SOUL.md, and config.yaml", "kind": "layout"},
+        {"text": "charts/finops-owl-app/ and charts/finops-owl-dashboard/ each exist with a Chart.yaml whose name matches the directory", "kind": "layout"},
+        {"text": "No unresolved <ANGLE_BRACKET> placeholder tokens remain anywhere in the scaffolded repo", "kind": "completeness"},
+        {"text": "helm lint on both charts reports 0 charts failed", "kind": "chart-valid"},
+        {"text": "cli/render_record.py (with the monitoring webhook app-value) exits 0 and the record contains three apps", "kind": "render-valid"},
+        {"text": "The exposed service port is 8080 in hermes-gitops.yaml AND the app chart's service.port is 8080 (they agree)", "kind": "port-consistency"},
+        {"text": "SOUL.md describes a cost/FinOps-reporting agent, NOT the SRE template text (the skill's 'rewrite SOUL for a different role' path was followed)", "kind": "persona-fit"}
+      ]
+    }
+  ]
+}

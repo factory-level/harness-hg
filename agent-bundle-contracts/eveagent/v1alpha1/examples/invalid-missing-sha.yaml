@@ -1,0 +1,4 @@
+spec:
+  persona: echo
+  runtime: eve
+  source: https://github.com/factorylevel/eve-agents.git

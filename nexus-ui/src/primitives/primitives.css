@@ -1,0 +1,313 @@
+/* Primitive styles - tokens only (the style-gates test bans palette
+   literals outside the generated theme). Geometry lives here, never in
+   inline style objects. */
+
+/* ── Drawer: the ONE right-drawer grammar (replaces four hand-rolled
+   copies in dashboard/src). Composes Astryx Dialog (native <dialog>,
+   top layer, focus + Escape built in). */
+/* Specificity matches Astryx's atomic bump (three chained class refs) so
+   the drawer geometry beats the library's centered-dialog defaults. */
+.nx-drawer.nx-drawer.nx-drawer.nx-drawer {
+  inset-inline-end: 0;
+  inset-inline-start: auto;
+  inset-block: 0;
+  block-size: 100dvh;
+  max-block-size: 100dvh;
+  inline-size: min(472px, 92vw);
+  margin: 0;
+  border: none;
+  border-inline-start: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--sf);
+  color: var(--ink);
+  box-shadow: var(--shx);
+}
+/* The Astryx header pads its own text 16px inside the dialog's 16px; the
+   body does not - so the title sat a step right of everything under it.
+   One inline edge for both. */
+.nx-drawer .astryx-layout-header > * { padding-inline: 0; }
+/* --scrim is dark in BOTH themes - an ink-based mix turned the dark-mode
+   backdrop into a light haze (dark ink is near-white). */
+.nx-drawer::backdrop {
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nx-drawer[open] {
+    animation: nx-drawer-in var(--ease-standard);
+  }
+  @keyframes nx-drawer-in {
+    from { translate: 24px 0; opacity: 0.6; }
+    to { translate: 0 0; opacity: 1; }
+  }
+}
+
+/* ── Health grammar (custom - tested contracts, never Astryx). */
+.nx-dot {
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.nx-dot-healthy { background: var(--ok); }
+.nx-dot-degraded { background: var(--warn); }
+.nx-dot-unhealthy { background: var(--crit); }
+.nx-dot-paused { background: var(--pau); }
+/* Unknown is a hollow dashed ring - it must never read as healthy. */
+.nx-dot-unknown {
+  background: var(--paper);
+  border: 1.5px dashed var(--unkc);
+}
+.nx-dot-small { inline-size: 8px; block-size: 8px; }
+
+/* Bead: the card's corner status fixture; the paper halo is the knockout
+   that keeps it legible over any art (Paper Knockout Rule). */
+.nx-bead {
+  box-shadow: 0 0 0 3px var(--paper);
+}
+
+.nx-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.15em 0.7em;
+  border-radius: var(--radius-pill);
+  line-height: var(--lh-snug);
+  font-family: var(--nx-body);
+  font-weight: 650;
+}
+.nx-pill-healthy { color: var(--ok); background: var(--oksf); }
+.nx-pill-degraded { color: var(--warn); background: var(--warnsf); }
+.nx-pill-unhealthy { color: var(--crit); background: var(--critsf); }
+.nx-pill-unknown { color: var(--unkc); background: var(--unksf); }
+.nx-pill-paused { color: var(--pau); background: var(--pausf); }
+
+/* Save-state word (#423): quiet when clean, louder only when actionable. */
+.nx-savestate { color: var(--mut); font-family: var(--nx-body); }
+.nx-savestate-attention { color: var(--acc); }
+.nx-savestate-alarm { color: var(--crit); }
+
+/* ── Identity marks (ADR-58 §15/16): rings fallback + monogram tile.
+   Colour rides currentColor / the consumer's --kindhue so the marks
+   carry the card's hue without owning a palette of their own. */
+.nx-rings { flex: none; color: var(--kindhue, var(--ink2)); }
+.nx-face {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex: none;
+  background: color-mix(in srgb, var(--kindhue, var(--ink2)) 12%, var(--sf));
+  color: var(--kindhue, var(--ink2));
+}
+.nx-face-mono {
+  font-family: var(--nx-display);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+.nx-face-img {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* Ownership sphere: ownership marker, never a health color (#554). */
+.nx-own-sphere {
+  inline-size: 12px;
+  block-size: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  background: radial-gradient(circle at 35% 30%, var(--accsf), var(--acc));
+  flex: none;
+}
+
+/* The Astryx toast viewport (LayerProvider) enters the top layer as a
+   manual popover even with no toasts, and UA popover chrome paints it
+   as a phantom square over the corner lockup. An empty notifications
+   region has nothing to say - hide it until a toast exists. */
+.nx-root [popover][role="region"]:empty { display: none; }
+
+/* ── Structural utilities (the sanctioned positioning homes - the
+   style-gates test confines fixed/absolute to this directory). */
+.nx-app-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.nx-pin-corner {
+  position: fixed;
+  inset-block-end: 10px;
+  inset-inline-end: 14px;
+  pointer-events: none;
+}
+
+/* ── Anchored layout: the sanctioned coordinate-positioning pair. A
+   container is the anchor layer; children are placed by percentage
+   coordinates computed from real math (polar, canvas world) - the
+   measured-layout alternative to bespoke absolute positioning. */
+.nx-anchor-layer { position: relative; }
+.nx-anchored { position: absolute; translate: -50% -50%; }
+/* World-space placement: a .nx-world-item is coordinate-anchored content
+   inside a transformed world (top-left anchored - left/top set by the
+   component from real math); a .nx-fixture is a card-corner overhang
+   whose insets the component declares. */
+.nx-world-item { position: absolute; }
+.nx-fixture { position: absolute; }
+/* Inline-end panel pin (the Insert library's home): floats over its
+   anchor layer instead of reflowing the content beside it. */
+.nx-pin-inline-end { position: absolute; inset-block: 0; inset-inline-end: 0; }
+/* Top-start island pin (the canvas zoom controls' home). */
+.nx-pin-top-start { position: absolute; inset-block-start: 10px; inset-inline-start: 10px; }
+/* Bottom-centre island pin (the canvas control island's home). */
+.nx-pin-bottom-center { position: absolute; inset-block-end: 12px; inset-inline-start: 50%; translate: -50% 0; }
+/* Bottom-start plate pin (the sheets plate's home - flush corner). */
+.nx-pin-bottom-start { position: absolute; inset-block-end: 0; inset-inline-start: 0; }
+/* The drag-to-place ghost: follows the pointer, never intercepts it. */
+.nx-drag-ghost { position: fixed; translate: -50% -50%; pointer-events: none; }
+/* Corner resize grip: the one fixture on a selected resizable member -
+   paper-ringed like the bead so it stays legible over any fill. */
+.nx-grip {
+  position: absolute;
+  inset-inline-end: -7px;
+  inset-block-end: -7px;
+  inline-size: 12px;
+  block-size: 12px;
+  border-radius: 3px;
+  background: var(--edit-acc);
+  box-shadow: 0 0 0 2px var(--paper);
+  cursor: nwse-resize;
+}
+/* Top-center chrome pin (the contextual bar's home). */
+.nx-pin-top-center {
+  position: fixed;
+  inset-block-start: calc(var(--nx-header-h) + var(--sp-4));
+  inset-inline-start: 50%;
+  translate: -50% 0;
+}
+/* Pointer-anchored chrome (the context menu's home). */
+.nx-pin-pointer { position: fixed; }
+
+/* ── Type ramp + shared shells (design pass, 2026-09-01). The named
+   steps (--fs-*, --lh-*, --track-*, --radius-*, --sp-*) replace the
+   per-rule px that had grown two incompatible size systems (em in the
+   list views, px on the canvas). A view composes THESE; it does not
+   restate them. */
+.nx-h1 {
+  font-family: var(--nx-display);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  letter-spacing: var(--track-tight);
+  line-height: var(--lh-tight);
+  margin: 0;
+}
+.nx-h2 {
+  font-family: var(--nx-display);
+  font-size: var(--fs-xl);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: var(--lh-snug);
+  margin: 0;
+}
+.nx-h3 {
+  font-family: var(--nx-display);
+  font-size: var(--fs-md);
+  font-weight: 650;
+  line-height: var(--lh-snug);
+  margin: 0;
+}
+/* Eyebrow: the ONE tracked-uppercase label (section kickers, facts
+   keys, kind captions). Colour is the consumer's - default muted. */
+.nx-eyebrow {
+  font-family: var(--nx-display);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--mut);
+}
+/* View header: every top-level view opens with one - title row, then
+   the lede or controls. Static; the list beneath scrolls. */
+.nx-view-head { display: flex; flex-direction: column; gap: var(--sp-2); margin-block-end: var(--sp-3); flex: none; }
+.nx-view-title { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+.nx-lede { color: var(--mut); margin: 0; }
+/* State line: the one muted sentence for a loading / empty / error
+   note inside a view body (the EmptyState primitive is the framed
+   version for a whole empty view). */
+.nx-state { color: var(--mut); margin: 0; padding: var(--sp-3) var(--sp-1); }
+.nx-state-error { color: var(--crit); }
+/* Chip: the toggle pill (filters, folds, section tabs). Pressed or
+   selected wears the accent wash. */
+.nx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  border: 1px solid var(--line);
+  background: var(--sf);
+  color: var(--ink2);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+  font: inherit;
+  line-height: var(--lh-snug);
+}
+.nx-chip:hover { color: var(--ink); }
+.nx-chip[aria-pressed="true"], .nx-chip[aria-selected="true"] { color: var(--acc); background: var(--accsf); border-color: transparent; }
+/* Field: the text input pill, the chip's height. */
+.nx-field {
+  border: 1px solid var(--line);
+  background: var(--sf);
+  color: var(--ink);
+  border-radius: var(--radius-pill);
+  padding: 3px 12px;
+  font: inherit;
+  line-height: var(--lh-snug);
+}
+.nx-field::placeholder { color: var(--mut); }
+/* Tag: the small inline qualifier ("bundle", a code). */
+.nx-tag { color: var(--mut); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0 6px; font-size: var(--fs-xs); line-height: var(--lh-body); }
+/* Island: the floating chrome shell (header islands, canvas controls). */
+.nx-island {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shl);
+}
+/* Shell: a bordered paper group that clips its rows (lists, shelves). */
+.nx-shell {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shl);
+  overflow: hidden;
+}
+/* Back link: the one way up a drill-in. */
+.nx-back { color: var(--ink2); text-decoration: none; display: inline-flex; align-items: center; gap: var(--sp-1); margin-block-end: var(--sp-2); }
+.nx-back:hover { color: var(--ink); }
+/* Facts list: eyebrow keys over values. */
+.nx-facts dt {
+  font-family: var(--nx-display);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--mut);
+  margin-block-start: var(--sp-3);
+}
+.nx-facts dd { margin: 2px 0 0; }
+/* Icon: the lucide glyph box - sized by the type step around it. */
+.nx-icon { flex: none; vertical-align: -0.2em; }
+/* Focus: one ring, everywhere. Selection on the canvas owns a louder
+   ring (workspace.css) and stays above this by cascade. */
+.nx-root :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }

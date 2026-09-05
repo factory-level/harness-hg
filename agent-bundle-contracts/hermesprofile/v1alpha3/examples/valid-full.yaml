@@ -1,0 +1,44 @@
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  ref: v1.3.0
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  distributionVersion: 1.3.0
+  deployment:
+    baseImageTag: hermes-base-2026-07
+    diskSizeGb: 100
+  apps:
+    # A resolved REMOTE app: values already merged (author + fleet defaults
+    # + per-instance overrides), valuesRequired satisfied and dropped.
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm
+      version: 1.9.1
+      values:
+        replicas: 1
+        auth:
+          apiKeySecretRef: hermes-support-agent-qdrant-api-key
+    # A resolved LOCAL app: chart path into the platform tree, no version.
+    - name: docs-site
+      chart: charts/test-page
+      repo: local
+  # v1alpha3: entries carry their metadata (#141). Both shapes are
+  # accepted, and this fixture uses both deliberately - a bare name is
+  # still legal, and means required + secret by the conservative default.
+  envRequires:
+    - DISCORD_BOT_TOKEN
+    - name: OPENAI_API_KEY
+      description: Model access for the research pass
+      required: true
+      secret: true
+    - name: NEXUS_PUBLIC_URL
+      description: Where operators reach this fleet's dashboard
+      required: false
+      secret: false
+  expose:
+    services:
+      - name: tools
+        port: 8080
+        path: /
+    access:
+      policy: service-token

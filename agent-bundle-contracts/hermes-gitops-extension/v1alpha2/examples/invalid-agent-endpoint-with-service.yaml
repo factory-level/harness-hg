@@ -1,0 +1,8 @@
+# Agent endpoints are backed by the agent pod's own Service - naming a
+# service is an app-endpoint concept and is rejected at the agent level.
+contractVersion: 2
+endpoints:
+  - name: dashboard
+    service: some-other-service
+    port: 9119
+    type: authenticated

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/harness-declaration/v1alpha1/harness.schema.json",
+  "title": "HarnessDeclaration",
+  "description": "What a harness declares about itself to the platform. One file per harness at harness/<name>/harness.yaml. The gateway declaration is mandatory: the platform ships no universal gateway, so every harness must state how its agents are reached for model connectivity — natively (the harness ships its own), through an external service, or not at all. Descriptive and validated, never a second configuration language.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract", "spec"],
+  "properties": {
+    "contract": { "const": "harness-declaration/v1alpha1" },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "gateway"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,30}$",
+          "description": "The harness's registry name — must match its directory under harness/ and the runtime key the CLI dispatches on."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "frozen-legacy"],
+          "default": "active",
+          "description": "frozen-legacy: works, gains nothing; see the harness's README for the freeze terms."
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": ["native", "external-service", "none"],
+              "description": "native: the harness ships its own gateway. external-service: model connectivity resolves through a named external gateway. none: the harness makes no model connections."
+            },
+            "provider": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1, "description": "The external gateway, e.g. vercel-ai-gateway." },
+                "notes": { "type": "string", "description": "How selection/config flows through it — prose, for the reader." }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "kind": { "const": "external-service" } } },
+              "then": { "required": ["kind", "provider"] }
+            },
+            {
+              "if": { "properties": { "kind": { "enum": ["native", "none"] } } },
+              "then": { "not": { "required": ["provider"] } }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

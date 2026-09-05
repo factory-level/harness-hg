@@ -1,0 +1,13 @@
+/* Utility routes (avatar gallery, embed debug) - tokens only; they wear
+   the same view header as every other screen. */
+.nx-ut { max-inline-size: var(--nx-measure); margin-inline: auto; display: flex; flex-direction: column; gap: var(--sp-3); }
+.nx-ut-mut { color: var(--mut); margin: 0; }
+.nx-ut-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin: 0; }
+.nx-ut-link { color: var(--acc); display: inline-flex; align-items: center; gap: var(--sp-1); }
+.nx-ava-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--sp-3); }
+.nx-ava-tile { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3); text-align: center; }
+.nx-ava-tile img { inline-size: 96px; block-size: 96px; object-fit: contain; }
+.nx-ava-tile figcaption { display: flex; justify-content: center; align-items: center; gap: 6px; margin-block-start: 6px; }
+.nx-ut-frame { inline-size: 100%; block-size: 480px; border: 1px solid var(--line); border-radius: var(--radius); }
+.nx-ut-frame-short { block-size: 220px; }
+.nx-ut select { background: var(--sf); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px 8px; font: inherit; }

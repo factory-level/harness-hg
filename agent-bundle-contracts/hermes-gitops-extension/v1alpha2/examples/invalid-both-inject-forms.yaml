@@ -1,0 +1,11 @@
+# inject is exactly one destination - env OR appValue, never both.
+contractVersion: 2
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+requires:
+  - capability: alert-receiver
+    inject:
+      env: HERMES_CAP_ALERT_RECEIVER_URL
+      appValue: {app: monitoring, path: alert.webhookUrl}

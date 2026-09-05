@@ -1,0 +1,21 @@
+# Test-only supplemental values layer, used for the profile-full renders
+# (tests/chart/golden/valid-full.yaml / valid-full-cloudflare.yaml).
+#
+# fixtures/profile-full.yaml declares a REMOTE helm app
+# (spec.apps[vector-db], repo https://qdrant.github.io/qdrant-helm), but
+# infra/gitops-template/bootstrap/values/cluster-values.yaml (the scaffold
+# template, deliberately a minimal illustrative example) ships an EMPTY
+# appProject.sourceRepos allowlist - exactly the state a fresh fleet starts
+# in. This file layers the allowlist entry on top for golden-render
+# purposes only, the same way a real cluster operator would: add the repo
+# to cluster-values' appProject.sourceRepos (this file) AND to the
+# scaffolded repo's bootstrap/project.yaml sourceRepos (not modeled here -
+# server-side, not a chart input).
+appProject:
+  sourceRepos:
+    - https://qdrant.github.io/qdrant-helm
+    # oci:// form: the repo's identity in records and in THIS render-time
+    # allowlist. The rendered child Application drops the scheme (Argo's
+    # helm-OCI contract, #187), so bootstrap/project.yaml must ALSO list
+    # the scheme-less twin server-side.
+    - oci://ghcr.io/factory-level/charts

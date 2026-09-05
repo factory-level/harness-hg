@@ -1,0 +1,7 @@
+# Runtime settings for persona-echo. Real distributions typically tune
+# model / provider / toolset selection here; kept minimal for this example.
+# config.yaml is USER-OWNED: an update never clobbers it (use
+# --force-config to replace it on purpose).
+model:
+  provider: anthropic
+  name: claude-sonnet-4-5

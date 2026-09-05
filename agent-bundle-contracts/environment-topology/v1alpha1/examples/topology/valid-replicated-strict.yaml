@@ -1,0 +1,12 @@
+# Strict sovereignty is a valid DECLARATION for any layout - whether the
+# deployed profiles survive it is the compiler's verdict, not the schema's.
+version: 1
+layout: replicated
+sovereignty:
+  mode: strict
+regions:
+  - name: eu-west
+    jurisdiction: EU
+    targets:
+      - name: eu-west-a
+        argoDestination: eu-west-a

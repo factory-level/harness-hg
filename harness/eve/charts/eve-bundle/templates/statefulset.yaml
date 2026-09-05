@@ -1,0 +1,271 @@
+{{- include "eve-bundle.guard" . -}}
+{{- $image := include "eve-bundle.image" . -}}
+{{- $repoByName := dict -}}
+{{- range .Values.spec.repositories -}}{{- $_ := set $repoByName .name . -}}{{- end -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "eve-bundle.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    {{- include "eve-bundle.labels" . | nindent 4 }}
+spec:
+  # One replica: every member's local Workflow world is single-process
+  # (eve-agent/templates/statefulset.yaml says why).
+  replicas: 1
+  serviceName: {{ include "eve-bundle.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "eve-bundle.selectorLabels" . | nindent 6 }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    # The shared data claim: /app/members/<name>/{src,state,home,.npm,
+    # .hermes-gitops} per member - each member's world store is its own.
+    - metadata:
+        name: data
+        labels:
+          {{- include "eve-bundle.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.spec.deployment.diskSizeGb }}Gi
+    # The bundle's workspaces claim (always rendered, like hermes-bundle's,
+    # so adding a first repository never hits ADR-76's immutable-template
+    # rule).
+    - metadata:
+        name: workspaces
+        labels:
+          {{- include "eve-bundle.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.spec.deployment.workspaceSizeGb }}Gi
+  template:
+    metadata:
+      labels:
+        {{- include "eve-bundle.labels" . | nindent 8 }}
+      annotations:
+        checksum/spec: {{ .Values.spec | toJson | sha256sum }}
+        checksum/boot: {{ include (print $.Template.BasePath "/configmap-boot.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "eve-bundle.fullname" . }}
+      terminationGracePeriodSeconds: {{ .Values.shutdown.gracePeriodSeconds }}
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        {{- range $i, $p := .Values.spec.profiles }}
+        - name: build-{{ $p.name }}
+          image: {{ $image }}
+          imagePullPolicy: {{ $.Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_DATA_ROOT
+              value: /app/members/{{ $p.name }}
+            - name: EVE_DIST_SOURCE
+              value: {{ include "eve-bundle.cloneURLOf" $p.source | quote }}
+            - name: EVE_DIST_SHA
+              value: {{ $p.sha | quote }}
+            - name: EVE_DIST_SUBDIR
+              value: {{ $p.sourceSubdir | default "" | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            {{- if $p.gitAuthSecretRef }}
+            - name: member-{{ $p.name }}-git
+              mountPath: /git-auth
+              readOnly: true
+            {{- end }}
+        {{- end }}
+        {{- if .Values.spec.repositories }}
+        - name: workspaces
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_BOOT_MODE
+              value: workspaces
+            - name: EVE_DATA_ROOT
+              value: /app/bundle
+            - name: EVE_WORKSPACES_DIR
+              value: /workspaces
+            - name: EVE_WORKSPACE_BINDINGS
+              value: {{ include "eve-bundle.workspaceBindings" .Values.spec.repositories | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: workspaces
+              mountPath: /workspaces
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            {{- range .Values.spec.repositories }}
+            {{- if .gitAuthSecretRef }}
+            - name: repository-{{ .name }}-git
+              mountPath: /run/secrets/repositories/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+        {{- end }}
+      containers:
+        {{- range $i, $p := .Values.spec.profiles }}
+        {{- if ne ($p.gatewayEnabled | default true | toString) "false" }}
+        {{- $port := include "eve-bundle.memberPort" (dict "index" $i "profile" $p) }}
+        {{- $root := printf "/app/members/%s" $p.name }}
+        {{- $projectDir := printf "%s/src%s" $root (ternary (printf "/%s" $p.sourceSubdir) "" (ne ($p.sourceSubdir | default "") "")) }}
+        {{- $secret := include "eve-bundle.routeAuthSecretName" (dict "root" $ "member" $p.name) }}
+        - name: {{ $p.name }}
+          image: {{ $image }}
+          imagePullPolicy: {{ $.Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          workingDir: {{ $projectDir }}
+          command: ["./node_modules/.bin/eve"]
+          args: ["start", "--host", "0.0.0.0"]
+          env:
+            - name: HOME
+              value: {{ $root }}/home
+            - name: PORT
+              value: {{ $port | quote }}
+            - name: NODE_ENV
+              value: production
+            - name: EVE_PROJECT_DIR
+              value: {{ $projectDir | quote }}
+            {{- if $.Values.routePrefix }}
+            - name: EVE_PUBLIC_ROUTE_PREFIX
+              value: {{ $.Values.routePrefix | quote }}
+            {{- end }}
+            - name: ROUTE_AUTH_BASIC_USERNAME
+              value: {{ $.Values.routeAuth.username | quote }}
+            - name: ROUTE_AUTH_BASIC_PASSWORD_FILE
+              value: /run/secrets/route-auth/password
+            - name: ROUTE_AUTH_BASIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secret }}
+                  key: password
+            {{- if $p.repositoryRefs }}
+            - name: EVE_WORKSPACES_ROOT
+              value: /workspaces
+            {{- range $p.repositoryRefs }}
+            - name: {{ include "eve-bundle.workspaceEnvName" . }}
+              value: /workspaces/{{ . }}
+            {{- end }}
+            {{- end }}
+          {{- if or $p.envSecretRef $p.connections }}
+          envFrom:
+            {{- if $p.envSecretRef }}
+            - secretRef:
+                name: {{ $p.envSecretRef }}
+            {{- end }}
+            {{- range $p.connections | default list }}
+            - secretRef:
+                name: {{ include "eve-bundle.fullname" $ }}-{{ $p.name }}-connection-{{ .name }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: {{ $p.name | trunc 15 | trimSuffix "-" }}
+              containerPort: {{ $port }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: {{ $port }}
+            failureThreshold: {{ $.Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ $.Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: {{ $port }}
+            periodSeconds: {{ $.Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ $.Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: {{ $port }}
+            periodSeconds: {{ $.Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ $.Values.probes.readiness.failureThreshold }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          {{- with $.Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            {{- if $p.repositoryRefs }}
+            # The sync stamps (.stamps/<name> = converged sha, <name>.unavailable
+            # = degraded), read-only, so `hg workspace verify` can read the
+            # routine's own verdict from inside the member container.
+            - name: workspaces
+              mountPath: /workspaces/.stamps
+              subPath: .stamps
+              readOnly: true
+            {{- end }}
+            {{- range $p.repositoryRefs }}
+            {{- $repo := index $repoByName . }}
+            - name: workspaces
+              mountPath: /workspaces/{{ . }}
+              subPath: {{ . }}
+              readOnly: {{ eq ($repo.access | default "read-write") "read-only" }}
+            {{- end }}
+            # /hg: what the platform resolved for THIS member (ADR-153).
+            # Read-only and outside /app deliberately - it describes the
+            # deployment, it is not part of it.
+            - name: runtime-manifest-{{ $p.name }}
+              mountPath: /hg
+              readOnly: true
+            - name: route-auth-{{ $p.name }}
+              mountPath: /run/secrets/route-auth
+              readOnly: true
+        {{- end }}
+        {{- end }}
+      volumes:
+        - name: boot-script
+          configMap:
+            name: {{ include "eve-bundle.fullname" . }}-boot
+            defaultMode: 0755
+        {{- range .Values.spec.profiles }}
+        - name: runtime-manifest-{{ .name }}
+          configMap:
+            name: {{ include "eve-bundle.fullname" $ }}-{{ .name }}-runtime-manifest
+        - name: route-auth-{{ .name }}
+          secret:
+            secretName: {{ include "eve-bundle.routeAuthSecretName" (dict "root" $ "member" .name) }}
+            defaultMode: 0440
+        {{- if .gitAuthSecretRef }}
+        - name: member-{{ .name }}-git
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}
+        {{- range .Values.spec.repositories }}
+        {{- if .gitAuthSecretRef }}
+        - name: repository-{{ .name }}-git
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}

@@ -1,0 +1,19 @@
+# The plane convention (#660, ADR 0164): which namespaces are control
+# plane, how workload namespaces derive, and the label scheme every
+# platform-owned resource carries. This file is the convention AS DATA -
+# hg validate and the plane-label test both read it; a new control-plane
+# namespace declares itself here or nothing recognizes it.
+labels:
+  plane: hermes-gitops.factorylevel.dev/plane          # control-plane | workload
+  component: hermes-gitops.factorylevel.dev/component  # the owning control-plane/<dir> or chart
+controlPlaneNamespaces:
+  - argocd
+  - external-secrets
+  - hermes-secrets
+  - hermes-system          # the event router (global scope)
+  - hermes-monitoring      # the monitoring stack + singleton dashboards
+controlPlaneNamespacePrefixes:
+  - hermes-system-         # scoped router instances (hermes-system-<scope>)
+workloadNamespacePrefixes:
+  - hermes-                # Hermes profiles (nsOf); exact control-plane names above win
+  - ag-eve-                # Eve agents

@@ -1,0 +1,6 @@
+# A Hermes profile may adopt contractVersion: 5 without a runtime block - it
+# is exactly a v4 file under the new marker (distribution.yaml stays the
+# manifest).
+contractVersion: 5
+topology:
+  supportedLayouts: [single, hub-spoke]

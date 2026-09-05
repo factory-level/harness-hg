@@ -1,0 +1,14 @@
+# INVALID: an agent card binds a whole profile, never an app.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: broken
+  title: Broken
+spec:
+  components:
+    - id: marketing-manager
+      kind: agent
+      title: Marketing Manager
+      bind:
+        profile: marketing-manager
+        app: content-kanban

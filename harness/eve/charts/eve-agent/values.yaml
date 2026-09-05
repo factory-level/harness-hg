@@ -1,0 +1,126 @@
+# Default values for eve-agent (ADR-149). Standalone `helm template` renders
+# from these; in a cluster the ApplicationSet layers, in order:
+#   1. bootstrap/values/cluster-values.yaml        (WHERE - the environment)
+#   2. environment/targets/<target>/values.yaml     (the target's values)
+#   3. profiles/<name>/profile.yaml                 (WHAT - the EveAgent record)
+#   4. deployments/agents/<id>/values.yaml          (the compiled spec.env overlay)
+# cluster-values is the SAME file the hermes-profile chart consumes, so keys
+# this chart does not read (image, platformRepo, appProject, secretBackend,
+# cloudflare, ...) land here too and are ignored - which is why this chart
+# ships no strict values.schema.json. The Eve image lives under its own
+# `runtimeImage` key, never `image` (cluster-values' image IS the Hermes one).
+
+# -- providers: which backend implements each concern for this cluster.
+# Only compute (pod) and ingress are read. ingress and cloudflare BOTH render
+# the same plain Ingress (ADR-156): an Eve agent has no per-instance tunnel, it
+# rides the environment's shared control-plane tunnel, which rewrites the host
+# header to this chart's Ingress host. "none" renders no Ingress at all.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+  # backup: which backend implements spec.backup intent. "pvc" archives the
+  # instance's data volume into a per-instance backups PVC on the declared
+  # schedule (templates/backup.yaml); "none" means the platform offers no
+  # destination - an agent declaring spec.backup then fails the render
+  # loudly (eve.backupGuard) instead of silently skipping backups.
+  backup: none
+
+# -- platformRepo / appProject / appsManagedExternally: the child-Application
+# contract, IDENTICAL to hermes-profile's (templates/apps.yaml renders one
+# Argo CD Application per spec.apps[] entry; ADR-150). platformRepo is the
+# Application source for `repo: local` charts; appProject.sourceRepos is the
+# remote helm repo allow-list (kept in sync with bootstrap/project.yaml);
+# appsManagedExternally suppresses the template when the hermes-gitops-apps
+# ApplicationSet owns the children (#498).
+platformRepo:
+  url: https://github.com/factory-level/harness-hg.git
+  revision: main
+appProject:
+  name: hermes-gitops
+  sourceRepos: []
+appsManagedExternally: false
+
+# -- backup: platform-side configuration for providers.backup=pvc
+# (templates/backup.yaml). Same block as hermes-profile's so one
+# cluster-values file serves both charts.
+backup:
+  image:
+    repository: python
+    tag: "3.12-slim"
+  pvc:
+    size: 5Gi
+    storageClassName: ""
+
+# -- shutdown: eve stops every open sandbox on SIGTERM and a turn's durable
+# step must reach its checkpoint; a short grace period turns a rolling
+# restart into re-run steps. 120s is eve's self-hosting guidance, not a
+# tuning knob for the record.
+shutdown:
+  gracePeriodSeconds: 120
+
+# -- routePrefix: set when the agent is mounted behind a public prefix that
+# is not "/" (eve mints OAuth-connection and remote-subagent callback URLs
+# from it - EVE_PUBLIC_ROUTE_PREFIX). Empty = the Ingress forwards / as-is.
+routePrefix: ""
+
+# -- runtimeImage: the eve-runtime container image (harness/eve/image:
+# Node + git + the pinned eve CLI), used by both the build initContainer and
+# the main container. The tag is the eve release; spec.deployment.
+# runtimeImageTag on the record overrides it. DRIFT-GATED: the tag here and
+# Chart.yaml's appVersion must equal versions.json runtimes.eve.version
+# (cli/tests/versions.test.ts).
+runtimeImage:
+  repository: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime
+  tag: "0.42.0"
+  pullPolicy: IfNotPresent
+
+# -- routeAuth: the Basic credential the chart mints per instance
+# (templates/route-auth-secret.yaml) and hands to the pod as
+# ROUTE_AUTH_BASIC_USERNAME / ROUTE_AUTH_BASIC_PASSWORD. The boot script
+# writes a default agent/channels/eve.ts that verifies it when the agent
+# authored none.
+routeAuth:
+  username: agent
+
+# -- spec: the EveAgent instance record - PLAIN HELM VALUES (no
+# apiVersion/kind/metadata; there is no EveAgent CRD). Real values come from
+# profiles/<name>/profile.yaml; the record's identity is its directory name,
+# delivered via the Helm release name ("ag-eve-<name>", ADR-151 - see
+# _helpers.tpl's eve.name). Placeholder-but-schema-valid defaults for standalone lint.
+spec:
+  persona: unset
+  runtime: eve
+  source: example.invalid/unset/unset
+  sha: "0000000000000000000000000000000000000000"
+
+# -- ingress: chart-owned knobs not covered by cluster-values. The host is
+# <name>.<baseDomain>; the path set (/eve/ and /.well-known/workflow/) is
+# fixed by the runtime and never authored. Under providers.ingress=cloudflare
+# this host is also the control-plane tunnel's rewrite target, so baseDomain
+# must equal the environment's controlPlaneIngress.agentHostHeaderDomain or
+# the tunnel forwards a host no Ingress claims. Both default to hermes.local.
+ingress:
+  baseDomain: hermes.local
+
+# -- networkPolicy: opt-in NetworkPolicy restricting ingress to the pod's
+# port 3000. Off by default (same reasoning as hermes-profile).
+networkPolicy:
+  enabled: false
+
+# -- probes: startup/liveness/readiness tuning for GET /eve/v1/health:3000
+# (public by design - eve's route auth never covers the health route). The
+# build runs in the initContainer, so startup only waits for `eve start`.
+probes:
+  startup:
+    failureThreshold: 60
+    periodSeconds: 5
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 10
+    failureThreshold: 3
+
+# -- resources: the main container's requests/limits. Empty by default.
+resources: {}

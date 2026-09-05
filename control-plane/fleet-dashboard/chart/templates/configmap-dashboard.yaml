@@ -1,0 +1,217 @@
+{{- /*
+The fleet budget/TCO Grafana dashboard, delivered as a ConfigMap: the
+platform Grafana's dashboards sidecar (bootstrap/monitoring-stack.yaml,
+label grafana_dashboard: "1", all namespaces) loads it. Six panels:
+budget used (%) per persona, MTD estimated spend per profile, MTD spend
+over time, hourly burn rate, token usage by type, and observer health
+(seconds since each budgeted profile's last observer event).
+
+All spend numbers are the in-pod observer plugin's ESTIMATES (the fork's
+canonical usage pricing persisted in state.db), not provider billing.
+Budget math reads hermes_cost_usd_mtd - the persisted month-to-date
+gauge - never long-range sums over the *_total counters: Prometheus here
+keeps 2d and no persistence, so the MTD gauge is the only restart- and
+retention-proof series (same series the alert rules evaluate, so what
+fires is what you see).
+
+Template gotchas, learned the hard way elsewhere in this repo:
+  - `keys` returns map-random order -> ALWAYS `sortAlpha`, or the
+    ConfigMap churns on every render and the sidecar re-imports forever.
+  - JSON commas inside range loops use the index form:
+    `{{ if $i }},{{ end }}` BEFORE each element.
+  - Grafana's own legend templates ({{profile}}) collide with Helm ->
+    emit them as string literals via toJson.
+*/ -}}
+{{- if .Values.dashboard.enabled }}
+{{- $ds := printf "{\"type\":\"prometheus\",\"uid\":%s}" (.Values.datasourceUid | toJson) -}}
+{{- $budgets := default dict .Values.budgets -}}
+{{- $personas := keys $budgets | sortAlpha -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: fleet-dashboard
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    grafana_folder: Control Plane
+data:
+  {{ .Release.Name }}-dashboard.json: |
+    {
+      "uid": "hermes-fleet-tco",
+      "title": "Hermes — Fleet budget & TCO",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "1m",
+      "time": { "from": "now-24h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "bargauge",
+          "title": "Budget used (%, month to date)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 9 },
+          "datasource": {{ $ds }},
+          "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 120,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 80 },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {{- range $i, $persona := $personas }}
+            {{- $budget := index $budgets $persona | float64 }}
+            {{ if $i }},{{ end }}{
+              "refId": {{ $persona | toJson }},
+              "datasource": {{ $ds }},
+              "instant": true,
+              "expr": {{ printf "100 * (max(hermes_cost_usd_mtd{profile=%q}) or vector(0)) / %v" $persona $budget | toJson }},
+              "legendFormat": {{ $persona | toJson }}
+            }
+            {{- end }}
+          ]
+        },
+        {
+          "id": 2,
+          "type": "bargauge",
+          "title": "MTD estimated spend (USD)",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 9 },
+          "datasource": {{ $ds }},
+          "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [ { "color": "green", "value": null } ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "instant": true,
+              "expr": "sum by (profile) (hermes_cost_usd_mtd)",
+              "legendFormat": {{ `{{profile}}` | toJson }}
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "MTD spend over time (USD)",
+          "gridPos": { "x": 0, "y": 9, "w": 12, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": { "unit": "currencyUSD" },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": "sum by (profile) (hermes_cost_usd_mtd)",
+              "legendFormat": {{ `{{profile}}` | toJson }}
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Burn rate (USD/h)",
+          "gridPos": { "x": 12, "y": 9, "w": 12, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": { "unit": "currencyUSD" },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": "sum by (profile) (rate(hermes_estimated_cost_usd_total[1h])) * 3600",
+              "legendFormat": {{ `{{profile}}` | toJson }}
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Token usage by type (tokens/h)",
+          "gridPos": { "x": 0, "y": 18, "w": 12, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "stacking": { "mode": "normal" } }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": "sum by (type) (rate(hermes_usage_tokens_total[1h])) * 3600",
+              "legendFormat": {{ `{{type}}` | toJson }}
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Observer health: seconds since last event",
+          "gridPos": { "x": 12, "y": 18, "w": 12, "h": 9 },
+          "datasource": {{ $ds }},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 3600 },
+                  { "color": "red", "value": 86400 }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": { "-1": { "text": "no data ever", "color": "red" } }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "targets": [
+            {{- range $i, $persona := $personas }}
+            {{ if $i }},{{ end }}{
+              "refId": {{ $persona | toJson }},
+              "datasource": {{ $ds }},
+              "instant": true,
+              "expr": {{ printf "(time() - max(hermes_observer_last_event_timestamp_seconds{profile=%q})) or vector(-1)" $persona | toJson }},
+              "legendFormat": {{ $persona | toJson }}
+            }
+            {{- end }}
+          ]
+        }
+      ]
+    }
+{{- end }}

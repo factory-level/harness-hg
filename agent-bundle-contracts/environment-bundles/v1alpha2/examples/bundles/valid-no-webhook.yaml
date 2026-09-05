@@ -1,0 +1,8 @@
+# The common case: a bundle nothing routes TO. No webhookPort, because
+# declaring a port nothing addresses would be a promise with no consumer.
+version: 2
+bundles:
+  - name: marketing-core
+    profiles:
+      - name: manager
+      - name: research

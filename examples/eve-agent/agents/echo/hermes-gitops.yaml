@@ -1,0 +1,35 @@
+# The deployment contract for an Eve agent (ADR-149/150). It sits beside
+# package.json; `runtime.kind: eve` tells the platform this directory is an
+# Eve project, and runtime.envRequires is the whole environment contract -
+# there is no distribution.yaml. The other v4 blocks keep their meaning:
+# backup becomes the platform's archive routine over the agent's data
+# volume, apps become child Applications, topology/endpoints/requires/
+# communication go to the topology compiler; deployment.runtimeImageTag is
+# Eve's image knob (baseImageTag is Hermes's and is refused).
+contractVersion: 5
+runtime:
+  kind: eve
+  envRequires:
+    - name: ANTHROPIC_API_KEY
+      description: Anthropic API key; agent.ts calls the provider directly.
+    # The Discord and GitHub channels (agent/channels/{discord,github}.ts)
+    # read DISCORD_* / GITHUB_* from the environment - supplied NOT here but
+    # by the platform connections bound to this agent
+    # (environment/connections.yaml, ADR-152), projected as env.
+# Archive intent only: schedule + retention. The destination is the
+# platform's (providers.backup in cluster-values); `hg backup run|verify|
+# restore` drive the routine, and what it protects is the Workflow world
+# (every session), the checkout and the build stamp.
+backup:
+  schedule: "0 3 * * *"
+  retention: 7
+# A supporting workload: one child Argo CD Application per entry, rendered
+# by the eve-agent chart exactly as the hermes-profile chart does (repo:
+# local = a chart in the platform repository, versioned with it).
+apps:
+  - name: docs-site
+    chart: cli/test-env/charts/test-page
+    repo: local
+    values:
+      page:
+        title: echo's page

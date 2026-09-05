@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/examples/communication-plane/events/observability-alert/v1.schema.json",
+  "title": "observability.alert/v1",
+  "description": "A Grafana-shaped alert notification: the webhook contact point's native payload, unmodified. groupKey is the incident identity (the output's subject dot-path) - firing and resolved notifications for one incident share it.",
+  "type": "object",
+  "required": [
+    "status",
+    "groupKey",
+    "alerts"
+  ],
+  "properties": {
+    "receiver": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "firing",
+        "resolved"
+      ]
+    },
+    "groupKey": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "message": {
+      "type": "string"
+    },
+    "alerts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "object"
+          },
+          "annotations": {
+            "type": "object"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

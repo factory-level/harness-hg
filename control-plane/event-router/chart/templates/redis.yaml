@@ -1,0 +1,88 @@
+{{- include "hermes-event-router.spec" . -}}
+{{- if .Values.spec.durableProvider }}
+# The durable transport backing queued delivery (redis-streams plugin).
+# Append-only + PVC: a queued event survives BOTH consumer (router) and
+# broker restarts. Gated on the environment declaring a durableProvider -
+# a direct-only plane runs no broker.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hermes-event-router.service" . }}-redis
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # one PVC, one writer
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-event-router-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-event-router-redis
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "hermes-event-router.service" . }}-redis
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hermes-event-router.service" . }}-redis
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hermes-event-router.service" . }}-redis
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+{{- end }}

@@ -1,0 +1,16 @@
+# Workspace-runtime fixture (#362): the minimal profile plus ONE pinned
+# read-only workspace repository with a private-source credential - the
+# shape deployments/workspaces/profiles/<name>.yaml layers onto a release.
+# Chart-test-owned, like profile-minimal.yaml (see its header).
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  workspace:
+    repositories:
+      - name: strategy-context
+        source: git@github.com:factorylevel/strategy-context.git
+        sha: 0123456789abcdef0123456789abcdef01234567
+        mountPath: /workspaces/strategy-context
+        access: read-only
+        gitAuthSecretRef: hermes-strategy-context-git

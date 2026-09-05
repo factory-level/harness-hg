@@ -1,0 +1,4 @@
+# Invalid: spec.sha is required and missing here.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent

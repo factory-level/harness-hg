@@ -1,0 +1,14 @@
+version: 1
+layout: hub-spoke
+sovereignty: permissive
+inputsHash: "0000000000000000000000000000000000000000000000000000000000000000"
+agents: [marketing-manager@ca-west]
+apps: [marketing-manager/content-kanban@global]
+bindings:
+  - capability: content-board
+    consumer: marketing-manager@ca-west
+    provider: marketing-manager/content-kanban@global#api
+    url: http://content-kanban.ns.svc.cluster.local:80/api
+    crossRegion: false
+environment:
+  synthesized: false

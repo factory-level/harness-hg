@@ -1,0 +1,9 @@
+# Valid: a record whose source repo carries the distribution in a
+# subdirectory (the fork's --subdir / #subdirectory= install form). The
+# pod boot path installs /tmp/dist/<sourceSubdir> from its clone.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  ref: main
+  sourceSubdir: .hermes-dist/distribution-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d

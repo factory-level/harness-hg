@@ -1,0 +1,137 @@
+{{- /*
+hg-backup-history: every backup RUN - succeeded, failed, active - as
+history, not just the staleness of the schedule (that is overview panel
+7's job). Two rows keep the control plane's own routines (hermes-nexus,
+hermes-system) apart from the agents' - the platform must never grade
+its own homework in the same list it grades the fleet.
+
+All series come from kube-state-metrics' default job collectors; the
+kube_job_owner join is what ties a Job back to the CronJob routine that
+spawned it (the routine label lives on CronJob metadata only, so labels
+cannot make this join). Nothing here queries a series nobody emits.
+
+The uid is a constant the platform PROMISES (fleetRegister asserts it,
+Nexus's panel catalog embeds it); it never derives from release or
+namespace.
+*/ -}}
+{{- if .Values.backupHistory.enabled }}
+{{- $ds := printf "{\"type\":\"prometheus\",\"uid\":%s}" (.Values.datasourceUid | toJson) -}}
+{{- $cpNs := "hermes-nexus|hermes-system" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-backup-history
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: observability
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    grafana_folder: Control Plane
+data:
+  {{ .Release.Name }}-backup-history.json: |
+    {
+      "uid": "hg-backup-history",
+      "title": "Hermes — Backup history",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "1m",
+      "time": { "from": "now-7d", "to": "now" },
+      "templating": { "list": [
+        {
+          "name": "namespace",
+          "label": "Namespace",
+          "type": "textbox",
+          "hide": 0,
+          "query": "hermes-.*",
+          "current": { "text": "hermes-.*", "value": "hermes-.*" }
+        }
+      ] },
+      "panels": [
+        {
+          "id": 100,
+          "type": "row",
+          "title": "Control plane",
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 },
+          "panels": []
+        },
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Backup runs — control plane (succeeded / failed / active)",
+          "description": "One series per backup Job, joined to its owning routine CronJob. kube_job_* series exist while the Job objects are retained (the routines' history limits); Prometheus keeps the emitted samples for its 15d retention — this window IS the history.",
+          "gridPos": { "x": 0, "y": 1, "w": 14, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "max by (namespace, job_name) (kube_job_status_succeeded{namespace=~\"{{ $cpNs }}\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"{{ $cpNs }}\"})",
+              "legendFormat": "ok {{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" },
+            { "refId": "B", "datasource": {{ $ds }},
+              "expr": "max by (namespace, job_name) (kube_job_status_failed{namespace=~\"{{ $cpNs }}\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"{{ $cpNs }}\"})",
+              "legendFormat": "fail {{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" },
+            { "refId": "C", "datasource": {{ $ds }},
+              "expr": "max by (namespace, job_name) (kube_job_status_active{namespace=~\"{{ $cpNs }}\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"{{ $cpNs }}\"})",
+              "legendFormat": "active {{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Run duration (s) — control plane",
+          "description": "completion_time - start_time per finished backup Job. Active Jobs have no completion series yet and do not plot here.",
+          "gridPos": { "x": 14, "y": 1, "w": 10, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "(max by (namespace, job_name) (kube_job_status_completion_time{namespace=~\"{{ $cpNs }}\"}) - max by (namespace, job_name) (kube_job_status_start_time{namespace=~\"{{ $cpNs }}\"})) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"{{ $cpNs }}\"})",
+              "legendFormat": "{{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" }
+          ]
+        },
+        {
+          "id": 200,
+          "type": "row",
+          "title": "Agents",
+          "gridPos": { "x": 0, "y": 10, "w": 24, "h": 1 },
+          "panels": []
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Backup runs — agents (succeeded / failed / active)",
+          "description": "Per-profile, bundle and app-chart routines in the agent namespaces. Same join and same retention caveat as the control-plane panel.",
+          "gridPos": { "x": 0, "y": 11, "w": 14, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "max by (namespace, job_name) (kube_job_status_succeeded{namespace=~\"$namespace\", namespace!~\"{{ $cpNs }}|hermes-monitoring|hermes-gitops\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "ok {{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" },
+            { "refId": "B", "datasource": {{ $ds }},
+              "expr": "max by (namespace, job_name) (kube_job_status_failed{namespace=~\"$namespace\", namespace!~\"{{ $cpNs }}|hermes-monitoring|hermes-gitops\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "fail {{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" },
+            { "refId": "C", "datasource": {{ $ds }},
+              "expr": "max by (namespace, job_name) (kube_job_status_active{namespace=~\"$namespace\", namespace!~\"{{ $cpNs }}|hermes-monitoring|hermes-gitops\"}) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "active {{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Run duration (s) — agents",
+          "gridPos": { "x": 14, "y": 11, "w": 10, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "unit": "s", "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "(max by (namespace, job_name) (kube_job_status_completion_time{namespace=~\"$namespace\", namespace!~\"{{ $cpNs }}|hermes-monitoring|hermes-gitops\"}) - max by (namespace, job_name) (kube_job_status_start_time{namespace=~\"$namespace\", namespace!~\"{{ $cpNs }}|hermes-monitoring|hermes-gitops\"})) * on(namespace, job_name) group_left(owner_name) max by (namespace, job_name, owner_name) (kube_job_owner{owner_kind=\"CronJob\", namespace=~\"$namespace\"})",
+              "legendFormat": "{{`{{namespace}}/{{owner_name}}/{{job_name}}`}}" }
+          ]
+        }
+      ]
+    }
+{{- end }}

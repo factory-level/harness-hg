@@ -1,0 +1,116 @@
+{{- include "hermes.computeGuard" . -}}
+{{- include "hermes.ingressGuard" . -}}
+{{- if eq .Values.providers.ingress "cloudflare" -}}
+{{- include "hermes.cloudflareConfigGuard" . -}}
+{{/*
+Pulumi Kubernetes Operator (PKO) Stack CR - provisions this instance's
+Cloudflare Tunnel ingress path by pointing PKO at
+infra/pulumi/programs/cloudflare-tunnel (this repo, repoDir below). PKO itself is
+installed conditionally by infra/src/components/pulumi-operator
+(gated on `providers.ingress == cloudflare` - its only trigger, see that
+module's docstring).
+
+An INDEPENDENT Stack from the pod workload - deliberately: this Stack's
+name (hermes.tunnelStackName, "hermes-<name>-tunnel"), its own Pulumi
+state-backend ExternalSecret (templates/tunnel/
+pulumi-backend-cloudflare.yaml, hermes.tunnelPulumiBackendSecretName),
+and every `cloudflare:`-block config key it reads are all its own, with
+its own lifecycle (destroyOnFinalize on ITS OWN Stack object only -
+decommissioning it never implicitly touches the pod workload).
+
+Config plumbing contract: this file's `spec.config` map and
+infra/pulumi/programs/cloudflare-tunnel/cloudflare_tunnel/config.py's `load()`
+MUST byte-match key-for-key - see that module's header comment for the
+reverse half of this contract.
+
+hermes:expose carries spec.expose.services VERBATIM as a JSON-encoded
+string (pulumi.Config.get_object() JSON-decodes it on the program side).
+hermes.cloudflareConfigGuard (_helpers.tpl) already
+asserts spec.expose is set before this renders, so `services` is always a
+non-empty list here.
+
+Ingress hostname pattern: ONE hostname per instance
+(`<name>.agents.<zoneName>`), with PATH-based routing across
+spec.expose.services (each service's own `path`, default "/") - the SAME
+shape templates/pod/ingress.yaml already uses for the plain-Ingress
+provider (one host, per-service path routing), chosen here for parity
+rather than minting one DNS record + Access application per exposed
+service. This repo's original planning spec (referenced in this task's
+brief as "spec section 6.2") was not present in this checkout to consult
+directly; this is a reasoned, documented pick consistent with the
+existing ingress.yaml precedent, not a blind guess - see
+_docs/wiki/platform/tunneling.md's "Hostname pattern" section for the full writeup
+(including the same caveat ingress.yaml already has: two services that
+both omit `path`, or both set the same one, collide - operator error, not
+new to this task).
+*/}}
+{{- $cf := .Values.cloudflare -}}
+{{- $tunnelCfg := $cf.tunnel -}}
+{{- $mode := ($cf.pulumiBackend | default dict).mode -}}
+{{- $expose := .Values.spec.expose -}}
+{{- $access := $expose.access | default dict -}}
+{{- $policy := $access.policy | default "service-token" -}}
+{{- $accessCfg := $cf.access | default dict -}}
+{{- $secretProvider := .Values.providers.secret -}}
+{{- $secretBackend := .Values.secretBackend | default dict -}}
+{{- $k8sBackend := $secretBackend.k8s | default dict -}}
+apiVersion: pulumi.com/v1
+kind: Stack
+metadata:
+  name: {{ include "hermes.tunnelStackName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  stack: {{ include "hermes.tunnelStackName" . | quote }}
+  projectRepo: {{ $tunnelCfg.projectRepo | quote }}
+  repoDir: infra/pulumi/programs/cloudflare-tunnel
+  {{- if $tunnelCfg.commit }}
+  commit: {{ $tunnelCfg.commit | quote }}
+  {{- else }}
+  branch: {{ $tunnelCfg.branch | default "main" | quote }}
+  {{- end }}
+  destroyOnFinalize: true
+  {{- /* The default-to-hermes.fullname fallback below is only ever
+       reached for providers.compute=pod (where that ServiceAccount IS
+       created - see templates/serviceaccount.yaml) -
+       hermes.cloudflareConfigGuard (called above) already fails at
+       template time if workspaceServiceAccountName is unset for any
+       OTHER compute provider, where no fallback SA exists. */}}
+  serviceAccountName: {{ $tunnelCfg.workspaceServiceAccountName | default (include "hermes.fullname" .) }}
+  envRefs:
+    CLOUDFLARE_API_TOKEN:
+      type: Secret
+      secret:
+        name: {{ include "hermes.cloudflareApiTokenSecretName" . }}
+        key: apiToken
+    {{- if eq $mode "pulumi-cloud" }}
+    PULUMI_ACCESS_TOKEN:
+      type: Secret
+      secret:
+        name: {{ include "hermes.tunnelPulumiBackendSecretName" . }}
+        key: accessToken
+    {{- else }}
+    PULUMI_BACKEND_URL:
+      type: Literal
+      literal:
+        value: {{ $cf.pulumiBackend.selfManaged.backendUrl | quote }}
+    PULUMI_CONFIG_PASSPHRASE:
+      type: Secret
+      secret:
+        name: {{ include "hermes.tunnelPulumiBackendSecretName" . }}
+        key: passphrase
+    {{- end }}
+  config:
+    cloudflare:accountId: {{ $cf.accountId | quote }}
+    cloudflare:zoneId: {{ $cf.zoneId | quote }}
+    cloudflare:zoneName: {{ $cf.zoneName | quote }}
+    cloudflare:idpId: {{ $accessCfg.idpId | default "" | quote }}
+    hermes:name: {{ include "hermes.name" . | quote }}
+    hermes:expose: {{ $expose.services | toJson | quote }}
+    hermes:accessPolicy: {{ $policy | quote }}
+    hermes:secretProvider: {{ $secretProvider | quote }}
+    hermes:secretNamespace: {{ $k8sBackend.namespace | default "hermes-secrets" | quote }}
+{{- end -}}

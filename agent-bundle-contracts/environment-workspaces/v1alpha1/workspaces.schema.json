@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-workspaces/v1alpha1/workspaces.schema.json",
+  "title": "Hermes workspace repository bindings",
+  "description": "Operator-authored, deployment-neutral assignment of immutable Git checkouts to Hermes profiles. A repository is available to a profile only when a binding names both; bundle membership, distribution source, credentials, prompts, and event sources grant nothing. The default access for every profile is none. In an agent-team repository this file lives at `harness-hg/workspaces.yaml`; the legacy path stays readable for repositories not yet migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "repositories", "bindings"],
+  "$defs": {
+    "secretName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+    },
+    "shortName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40
+    }
+  },
+  "properties": {
+    "apiVersion": { "const": "hermes.gitops/v1alpha1", "description": "Contract identifier this document is validated against; unknown versions are refused loudly." },
+    "kind": { "const": "WorkspaceBindings", "description": "Document kind - always WorkspaceBindings." },
+    "repositories": {
+      "description": "The catalogue of mountable repositories. Declaring one grants nothing: a repository reaches a profile only through a binding.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "source", "mount"],
+        "properties": {
+          "name": { "$ref": "#/$defs/shortName", "description": "Short name bindings reference this repository by." },
+          "source": {
+            "description": "Where the checkout comes from: self (the bound profile's own distribution repository) or an explicit url with a pinned or application-resolved revision.",
+            "oneOf": [
+              {
+                "const": "self",
+                "description": "The bound profile's OWN distribution repository, resolved per profile from its deployed record: url from spec.source, revision from spec.sha, credential from spec.gitAuthSecretRef. Still an explicit grant - installing a distribution mounts nothing until a binding says self."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["url", "revision"],
+                "properties": {
+                  "url": { "type": "string", "minLength": 1, "description": "Git URL of the repository to clone. The compiler refuses an ssh URL (git@ or ssh://) that carries no authSecretRef." },
+                  "revision": {
+                    "description": "How the checkout's commit is chosen: pinned to an explicit SHA, or resolved from a named application's deployed record.",
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mode", "sha"],
+                        "properties": {
+                          "mode": { "const": "pinned", "description": "Pins the checkout to an explicit commit." },
+                          "sha": {
+                            "description": "Full 40-hex commit SHA the checkout is pinned at.",
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{40}$"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mode", "application"],
+                        "properties": {
+                          "mode": { "const": "application-revision", "description": "Resolves the checkout from a deployed application record." },
+                          "application": { "$ref": "#/$defs/shortName", "description": "Name of the deployed profile whose record spec.sha this checkout resolves to; that record must name this same repository as its source." }
+                        }
+                      }
+                    ]
+                  },
+                  "authSecretRef": { "$ref": "#/$defs/secretName", "description": "Name of the Kubernetes Secret holding the Git credential the clone authenticates with. A reference only - the value never appears in this file." }
+                }
+              }
+            ]
+          },
+          "mount": {
+            "description": "Where and how the checkout appears inside a granted profile's runtime.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "access"],
+            "properties": {
+              "path": {
+                "description": "Absolute mount path under /workspaces/ the checkout appears at.",
+                "type": "string",
+                "pattern": "^/workspaces/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*$"
+              },
+              "access": {
+                "description": "Whether the profile can write to the checkout: read-only or read-write.",
+                "type": "string",
+                "enum": ["read-only", "read-write"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "bindings": {
+      "description": "Explicit repository-to-profile grants - the only thing that makes a repository reach a profile, independent of bundle membership.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["repository", "profiles", "purpose"],
+        "properties": {
+          "repository": { "$ref": "#/$defs/shortName", "description": "Name of a declared repository this binding grants." },
+          "profiles": {
+            "description": "The profiles granted this repository's mount.",
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/shortName" }
+          },
+          "purpose": { "$ref": "#/$defs/shortName", "description": "Short label naming why the grant exists (e.g. strategy-context); carried through to the compiled binding." }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,161 @@
+{{- /*
+hg-control-plane-reconciliation (design 15): "is what Git says
+converging into the cluster?" The Argo CD half of that question, plus
+the delivery and backup machinery that reconciliation depends on.
+
+The destination-server (Pulumi) half deliberately has NO panels here:
+the host reconciler publishes a ConfigMap record, not a Prometheus
+exposition, so its state lives in the Nexus overlay's reconciliation
+source - a Grafana panel over a series nobody emits would render
+permanently empty and train operators to ignore this page. The text
+panel says where to look instead (recorded in ADR-55 Cost).
+*/ -}}
+{{- if .Values.reconciliation.enabled }}
+{{- $ds := printf "{\"type\":\"prometheus\",\"uid\":%s}" (.Values.datasourceUid | toJson) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-reconciliation
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: observability
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    grafana_folder: Control Plane
+data:
+  {{ .Release.Name }}-reconciliation.json: |
+    {
+      "uid": "hg-control-plane-reconciliation",
+      "title": "Hermes — GitOps reconciliation",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "table",
+          "title": "Applications by exact identity",
+          "description": "namespace/name is the identity - never a card title. Anything not Synced+Healthy is what the overlay's argocd source is red about.",
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 9 },
+          "datasource": {{ $ds }},
+          "options": {},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "instant": true, "format": "table",
+              "expr": "argocd_app_info" }
+          ],
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "Time": true, "Value": true, "__name__": true, "instance": true, "job": true, "service": true } } }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Out of sync",
+          "gridPos": { "x": 0, "y": 9, "w": 6, "h": 5 },
+          "datasource": {{ $ds }},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "instant": true,
+              "expr": "count(argocd_app_info{sync_status=\"OutOfSync\"}) or vector(0)" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Degraded / Missing",
+          "gridPos": { "x": 6, "y": 9, "w": 6, "h": 5 },
+          "datasource": {{ $ds }},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ] }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "instant": true,
+              "expr": "count(argocd_app_info{health_status=~\"Degraded|Missing\"}) or vector(0)" }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Sync operations (per hour)",
+          "gridPos": { "x": 12, "y": 9, "w": 12, "h": 5 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "sum by (phase) (rate(argocd_app_sync_total[1h])) * 3600",
+              "legendFormat": "{{`{{phase}}`}}" }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Backup routine staleness (h since last success)",
+          "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "unit": "h" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "(time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{namespace=~\"hermes-.*\"})) / 3600",
+              "legendFormat": "{{`{{namespace}}/{{cronjob}}`}}" }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Failed jobs in hermes namespaces",
+          "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "sum by (namespace) (kube_job_status_failed{namespace=~\"hermes-.*\"}) or vector(0)",
+              "legendFormat": "{{`{{namespace}}`}}" }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Dead-letter depth by edge",
+          "gridPos": { "x": 0, "y": 22, "w": 12, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": {}, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }},
+              "expr": "hermes_event_dlq_depth", "legendFormat": "{{`{{edge}}`}}" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "text",
+          "title": "Destination-server reconciliation",
+          "gridPos": { "x": 12, "y": 22, "w": 12, "h": 8 },
+          "options": {
+            "mode": "markdown",
+            "content": "The host reconciler (`hg reconcile`, M01) publishes its state as a ConfigMap record, not a Prometheus exposition - desired / attempted / applied SHAs, phase, and the retry gate live in **Nexus** under the reconciliation source. No panel here queries it, deliberately: a chart over a series nobody emits reads as permanently broken, which teaches you to ignore this page."
+          }
+        }
+      ]
+    }
+{{- end }}

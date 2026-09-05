@@ -1,0 +1,2099 @@
+---
+# Source: hermes-event-router/templates/configmap-code.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-event-router-code
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: router-test
+data:
+  router.ts: |
+    // The hermes event router (ADR-39): publisher adapter + delivery worker +
+    // session router + ChatOps adapter + external gateway, one bun process.
+    //
+    // SELF-CONTAINED by necessity: this file ships as a ConfigMap and runs on
+    // a stock bun image with no node_modules, so it cannot import the CLI's
+    // modules. The envelope identities, session keys, and signature scheme
+    // are the SAME shapes cli/src/topology/envelope.ts produces - pinned by
+    // parity tests in cli/tests (which import this file directly), so the
+    // duplication cannot drift silently.
+    //
+    // The router delivers TO each profile's own Hermes agent gateway (an
+    // HMAC-signed POST to the handler the profile's contract declares). It is
+    // NOT a replacement for the gateway: it never hosts an agent handler, and
+    // its routing table is the compiled configuration mounted at CONFIG_PATH
+    // - a payload can never select a destination the compiler did not emit.
+    
+    import * as crypto from "node:crypto";
+    import * as fs from "node:fs";
+    import * as path from "node:path";
+    import { RedisClient } from "bun";
+    
+    // ---------------------------------------------------------------------------
+    // Config (the emitted deployments/communication/<router>/values.yaml spec,
+    // verbatim, wrapped with environment + provider endpoints by the chart)
+    
+    interface Delivery {
+      mode: "direct" | "queued";
+      retry: { maxAttempts: number; backoff: "fixed" | "exponential" };
+      deadLetter: { enabled: boolean; retention?: string };
+      ordering?: { mode: "fifo"; key: string; onFailure: "block" | "dead-letter-and-continue" };
+    }
+    
+    interface Edge {
+      id: string;
+      route: string;
+      profile: string;
+      from: { producer?: string; externalInput?: string };
+      event: string;
+      filter?: Record<string, string | number | boolean>;
+      kind: "agent" | "chatops";
+      agent?: {
+        profile: string;
+        handler: string;
+        instance: string;
+        url: string;
+        signature: string;
+        secretName: string;
+        session: { mode: "per-event" | "keyed" | "route"; key?: string };
+      };
+      chatops?: { space: string; alias: string; destination: string; provider: string };
+      delivery: Delivery;
+    }
+    
+    interface Producer {
+      id: string;
+      name: string;
+      profile: string;
+      app: string;
+      output: string;
+      event: string;
+      subject?: string;
+      ingestPath: string;
+      routes: string[];
+    }
+    
+    interface ExternalInput {
+      id: string;
+      profile: string;
+      name: string;
+      event: string;
+      subject?: string;
+      verification: { type: string; secretRef: { name: string; key: string } };
+      accepts?: string[];
+      hookPath: string;
+      routes: string[];
+    }
+    
+    /** One platform connection's gateway configuration (ADR-152). */
+    interface ConnectionGateway {
+      name: string;
+      provider: "discord" | "github";
+      secretName: string;
+      verifyKey: string;
+      routes: { profile: string; url: string; match: { guilds?: string[]; channels?: string[]; repositories?: string[] } }[];
+    }
+    
+    interface Config {
+      environment: string;
+      recordingBase: string; // the local sink; recording provider posts here
+      spec: {
+        router: { id: string; scope: string; namespace: string; service: string };
+        durableProvider?: { plugin: string; config?: Record<string, unknown> };
+        chatopsConnections: Record<string, { provider: string; credentialRef?: { name?: string; key?: string; env?: string } }>;
+        producers: Producer[];
+        externalInputs: ExternalInput[];
+        edges: Edge[];
+        connections?: ConnectionGateway[];
+      };
+    }
+    
+    const CONFIG_PATH = process.env["CONFIG_PATH"] ?? "/config/config.json";
+    const SECRETS_DIR = process.env["SECRETS_DIR"] ?? "/secrets";
+    const PORT = Number(process.env["PORT"] ?? 8080);
+    const MAX_BODY = 1024 * 1024; // 1 MiB, the relay's cap
+    
+    const config: Config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    
+    // The durable transport (redis-streams). REDIS_URL is set by the chart
+    // exactly when the environment declares durableProvider; without it,
+    // queued edges deliver synchronously and their receipts say
+    // direct-fallback - a guarantee downgrade that is VISIBLE, never silent.
+    const REDIS_URL = process.env["REDIS_URL"];
+    const RETRY_BASE_MS = Number(
+      (config.spec.durableProvider?.config?.["retryBaseMs"] as number | undefined) ?? 1000,
+    );
+    // maxRetries defaults to 10 in Bun's client, which means a Redis pod
+    // restart - an ordinary Kubernetes event - permanently kills the durable
+    // transport: every queued delivery then fails forever and only a router
+    // restart recovers it. Observed live. Retry effectively without bound
+    // instead; the worker loop already tolerates per-iteration errors, so a
+    // reconnection resumes delivery on its own. (The option is a uint32 -
+    // anything larger throws at construction and the router never boots.)
+    const REDIS_MAX_RETRIES = 4_294_967_295;
+    const newRedis = () => new RedisClient(REDIS_URL!, { maxRetries: REDIS_MAX_RETRIES });
+    // The shared client serves the publish path, /v1/dlq and /metrics: short
+    // commands only. Blocking reads get their own connections (WorkerRedis).
+    const redis = REDIS_URL ? newRedis() : undefined;
+    
+    /** Each worker loop gets its OWN connection for its blocking reads.
+     *
+     * Two reasons, both learned the hard way against a live cluster. A
+     * BLOCKing XREADGROUP holds the whole socket, so N edges sharing one
+     * connection serialize their reads behind each other. And when one edge's
+     * read wedges and has to rebuild the connection, doing that to a SHARED
+     * client tears down every other edge's in-flight command too - N-1
+     * spurious "Connection closed" failures per recovery, which is a cascade
+     * dressed up as a fix. The publish path and /metrics keep the shared
+     * client: their commands are short and never block. */
+    class WorkerRedis {
+      private client: RedisClient;
+      constructor() {
+        this.client = newRedis();
+      }
+      send(command: string, args: string[]): Promise<unknown> {
+        return redisCmd(command, args, this.client);
+      }
+      reset(): void {
+        try {
+          this.client.close();
+        } catch {
+          /* already gone */
+        }
+        this.client = newRedis();
+      }
+    }
+    const CONSUMER_GROUP = "router";
+    const CONSUMER_NAME = `router-${process.pid}`;
+    
+    function streamOf(edge: Edge): string {
+      return `hermes:edge:${edge.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    }
+    
+    function secretFor(name: string): string | undefined {
+      const file = path.join(SECRETS_DIR, name);
+      return fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : undefined;
+    }
+    
+    /** A connection's key, from its mounted platform Secret
+     * (/secrets/connections/<name>/<KEY>, chart templates/connections.yaml).
+     * Read per request: a rotated Secret takes effect without a restart. */
+    function connectionKey(connection: string, key: string): string | undefined {
+      const file = path.join(SECRETS_DIR, "connections", connection, key);
+      if (!fs.existsSync(file)) return undefined;
+      const value = fs.readFileSync(file, "utf8").trim();
+      return value === "" ? undefined : value;
+    }
+    
+    // ---------------------------------------------------------------------------
+    // The inbound connection gateway (ADR-152): POST /v1/connect/<provider>/<name>
+    //
+    // One public route per platform connection. The gateway verifies the
+    // provider's signature with the connection's platform-held key, picks the
+    // bound agent by the first matching route, and forwards the request
+    // VERBATIM - raw body bytes and the provider's signature headers - so the
+    // agent's own eve channel verifies again with its projected copy of the
+    // same key and does its own threading and replies. Synchronous by design:
+    // Discord's interactions expect the answer (PONG, or the deferred ACK)
+    // inside three seconds from THIS response. Nothing here parses the payload
+    // beyond the match fields, nothing is re-signed, nothing is queued.
+    
+    /** Discord: Ed25519 over `${timestamp}${body}` with the application's
+     * public key (32 bytes hex), per Discord's interactions contract. The raw
+     * key is wrapped in a SubjectPublicKeyInfo so node:crypto can verify it. */
+    export function verifyDiscordSignature(publicKeyHex: string, timestamp: string, body: string, signatureHex: string): boolean {
+      if (!/^[0-9a-f]{64}$/i.test(publicKeyHex) || !/^[0-9a-f]{128}$/i.test(signatureHex)) return false;
+      const spki = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(publicKeyHex, "hex")]);
+      try {
+        const key = crypto.createPublicKey({ key: spki, format: "der", type: "spki" });
+        return crypto.verify(null, Buffer.from(timestamp + body, "utf8"), key, Buffer.from(signatureHex, "hex"));
+      } catch {
+        return false;
+      }
+    }
+    
+    /** GitHub: HMAC-SHA256 of the raw body with the App's webhook secret,
+     * `X-Hub-Signature-256: sha256=<hex>`. */
+    export function verifyGithubSignature(secret: string, body: string, header: string): boolean {
+      const sig = header.startsWith("sha256=") ? header.slice(7) : "";
+      if (!/^[0-9a-f]{64}$/i.test(sig)) return false;
+      const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
+      return expected.length === sig.length && crypto.timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(sig, "hex"));
+    }
+    
+    /** The route a verified payload goes to: first match wins; an empty match
+     * is a catch-all. Pure, for the unit tests. */
+    export function selectConnectionRoute(
+      connection: ConnectionGateway,
+      payload: Record<string, unknown>,
+    ): ConnectionGateway["routes"][number] | undefined {
+      const str = (v: unknown): string | undefined => (typeof v === "string" ? v : typeof v === "number" ? String(v) : undefined);
+      const guild = str(payload["guild_id"]);
+      const channel = str(payload["channel_id"]);
+      const repo = str((payload["repository"] as Record<string, unknown> | undefined)?.["full_name"]);
+      for (const route of connection.routes) {
+        const m = route.match ?? {};
+        const rules: boolean[] = [];
+        if (m.guilds) rules.push(guild !== undefined && m.guilds.includes(guild));
+        if (m.channels) rules.push(channel !== undefined && m.channels.includes(channel));
+        if (m.repositories) rules.push(repo !== undefined && m.repositories.includes(repo));
+        if (rules.length === 0 || rules.every(Boolean)) return route;
+      }
+      return undefined;
+    }
+    
+    /** Replay memory for the gateway: process-local, bounded (the same
+     * posture as the external-webhook path's seenSignatures - a Redis SETNX
+     * replaces it when the gateway is exposed to the internet). Returns false
+     * when the key was already seen. */
+    const seenDeliveries = new Set<string>();
+    function rememberDelivery(key: string): boolean {
+      if (seenDeliveries.has(key)) return false;
+      if (seenDeliveries.size >= 10_000) seenDeliveries.clear();
+      seenDeliveries.add(key);
+      return true;
+    }
+    
+    /** Headers forwarded verbatim to the agent: the provider's signature and
+     * identity headers, and the content type. Nothing else crosses. */
+    const FORWARDED_HEADERS = [
+      "content-type",
+      "x-signature-ed25519",
+      "x-signature-timestamp",
+      "x-hub-signature-256",
+      "x-github-event",
+      "x-github-delivery",
+      "x-github-hook-id",
+      "x-github-hook-installation-target-id",
+      "x-github-hook-installation-target-type",
+      "user-agent",
+    ];
+    
+    async function handleConnectionGateway(req: Request, url: URL): Promise<Response> {
+      const reject = (status: number, reason: string, connection?: string): Response => {
+        bump("hermes_connection_rejections_total");
+        observe("connection.rejected", { path: url.pathname, reason, ...(connection ? { connection } : {}) });
+        return json(status, { status: "rejected", reason });
+      };
+      const m = url.pathname.match(/^\/v1\/connect\/(discord|github)\/([a-z0-9][-a-z0-9]*)$/);
+      if (!m) return reject(404, "unknown-connection");
+      const provider = m[1] as ConnectionGateway["provider"];
+      const connection = (config.spec.connections ?? []).find((c) => c.name === m[2] && c.provider === provider);
+      if (!connection) return reject(404, "unknown-connection");
+      // The cap is enforced BEFORE the body is buffered (Content-Length) and
+      // again on the bytes actually read - an unauthenticated caller must not
+      // be able to make the gateway allocate freely.
+      const declared = Number(req.headers.get("content-length") ?? "0");
+      if (declared > MAX_BODY) return reject(413, "payload-too-large", connection.name);
+      const rawBytes = new Uint8Array(await req.arrayBuffer());
+      if (rawBytes.byteLength > MAX_BODY) return reject(413, "payload-too-large", connection.name);
+      const raw = Buffer.from(rawBytes).toString("utf8");
+      const key = connectionKey(connection.name, connection.verifyKey);
+      if (!key) return reject(503, "no-connection-key", connection.name);
+    
+      // ---- verify, the provider's way
+      if (provider === "discord") {
+        const sig = req.headers.get("x-signature-ed25519") ?? "";
+        const ts = req.headers.get("x-signature-timestamp") ?? "";
+        if (!sig || !ts) return reject(401, "missing-signature", connection.name);
+        // Freshness: Discord's timestamp is signed, so a captured request is
+        // replayable forever unless its age is bounded (the platform's own
+        // ±300 s window, envelope.ts).
+        const age = Math.abs(Math.floor(Date.now() / 1000) - Number(ts));
+        if (!/^\d+$/.test(ts) || !Number.isFinite(age) || age > 300) return reject(401, "stale-signature", connection.name);
+        if (!verifyDiscordSignature(key, ts, raw, sig)) return reject(401, "invalid-signature", connection.name);
+        if (!rememberDelivery(`${connection.name}:${sig}`)) return reject(409, "replay", connection.name);
+      } else {
+        const header = req.headers.get("x-hub-signature-256") ?? "";
+        if (!header) return reject(401, "missing-signature", connection.name);
+        if (!verifyGithubSignature(key, raw, header)) return reject(401, "invalid-signature", connection.name);
+        // GitHub signs no timestamp; the delivery id is the replay key (the
+        // external-webhook path's rule), falling back to the signature.
+        const delivery = req.headers.get("x-github-delivery") ?? header;
+        if (!rememberDelivery(`${connection.name}:${delivery}`)) return reject(409, "replay", connection.name);
+      }
+    
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(raw) as Record<string, unknown>;
+        if (!payload || typeof payload !== "object") throw new Error("not an object");
+      } catch {
+        return reject(400, "invalid-json", connection.name);
+      }
+    
+      // ---- the provider's liveness checks are answered here, verified: a
+      // Discord PING (type 1) and a GitHub `ping` event need no agent.
+      if (provider === "discord" && payload["type"] === 1) {
+        bump("hermes_connection_pings_total");
+        return json(200, { type: 1 });
+      }
+      if (provider === "github" && req.headers.get("x-github-event") === "ping") {
+        bump("hermes_connection_pings_total");
+        return json(200, { ok: true, connection: connection.name });
+      }
+    
+      // ---- route
+      const route = selectConnectionRoute(connection, payload);
+      if (!route) return reject(422, "no-matching-route", connection.name);
+    
+      // ---- forward verbatim, synchronously
+      const headers: Record<string, string> = {};
+      for (const h of FORWARDED_HEADERS) {
+        const v = req.headers.get(h);
+        if (v) headers[h] = v;
+      }
+      headers["x-hermes-connection"] = connection.name;
+      const startedAt = Date.now();
+      try {
+        const upstream = await fetch(route.url, { method: "POST", headers, body: raw, signal: AbortSignal.timeout(25_000) });
+        bump("hermes_connection_forwards_total");
+        observe("connection.forwarded", { connection: connection.name, profile: route.profile, status: upstream.status, ms: Date.now() - startedAt });
+        const outHeaders: Record<string, string> = {};
+        const ct = upstream.headers.get("content-type");
+        if (ct) outHeaders["content-type"] = ct;
+        return new Response(await upstream.arrayBuffer(), { status: upstream.status, headers: outHeaders });
+      } catch (e) {
+        bump("hermes_connection_forward_failures_total");
+        observe("connection.forward_failed", { connection: connection.name, profile: route.profile, reason: (e as Error).name });
+        return json(502, { status: "rejected", reason: "agent-unreachable" });
+      }
+    }
+    
+    // ---------------------------------------------------------------------------
+    // Envelope + identities (parity with cli/src/topology/envelope.ts)
+    
+    const rand = () => crypto.randomBytes(13).toString("hex");
+    const newEventId = () => `evt_${rand()}`;
+    const newCorrelationId = () => `corr_${rand()}`;
+    const newDeliveryId = () => `delivery_${rand()}`;
+    
+    interface Envelope {
+      specversion: "1.0";
+      id: string;
+      type: string;
+      source: string;
+      subject?: string;
+      time: string;
+      datacontenttype: "application/json";
+      hermes: {
+        environment: string;
+        producerProfile?: string;
+        producerApplication?: string;
+        producerOutput?: string;
+        externalInput?: string;
+        correlationId: string;
+        causationId?: string;
+        orderingKey?: string;
+        schema: string;
+      };
+      data: unknown;
+    }
+    
+    function dotGet(data: unknown, dotPath: string): string | undefined {
+      let node: unknown = data;
+      for (const seg of dotPath.split(".")) {
+        if (typeof node !== "object" || node === null) return undefined;
+        node = (node as Record<string, unknown>)[seg];
+      }
+      return node === undefined || node === null ? undefined : String(node);
+    }
+    
+    function envelopeField(envelope: Envelope, field: string): string | undefined {
+      if (field === "subject") return envelope.subject;
+      if (!field.startsWith("data.")) return undefined;
+      return dotGet(envelope.data, field.slice(5));
+    }
+    
+    function sessionKey(envelope: Envelope, profile: string, route: string, session: { mode: string; key?: string }): string {
+      const base = `${config.environment}/${profile}/${route}`;
+      if (session.mode === "route") return base;
+      if (session.mode === "keyed") {
+        const value = session.key ? envelopeField(envelope, session.key) : undefined;
+        return `${base}/${value ?? envelope.id}`;
+      }
+      return `${base}/${envelope.id}`;
+    }
+    
+    function signHeaders(secret: string, body: string): Record<string, string> {
+      const ts = Math.floor(Date.now() / 1000).toString();
+      const sig = crypto.createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
+      return { "content-type": "application/json", "x-webhook-timestamp": ts, "x-webhook-signature-v2": sig };
+    }
+    
+    // ---------------------------------------------------------------------------
+    // Logical ChatOps message (parity with cli/src/communication.ts)
+    
+    function renderLogicalMessage(envelope: Envelope): Record<string, unknown> {
+      const data = (envelope.data ?? {}) as Record<string, unknown>;
+      const firstAlert = Array.isArray(data["alerts"]) ? (data["alerts"][0] as Record<string, unknown>) : undefined;
+      const labels = (firstAlert?.["labels"] ?? {}) as Record<string, unknown>;
+      const annotations = (firstAlert?.["annotations"] ?? {}) as Record<string, unknown>;
+      const rawSeverity = String(data["severity"] ?? labels["severity"] ?? "info");
+      const severity = rawSeverity === "critical" ? "critical" : rawSeverity === "warning" ? "warning" : "info";
+      const facts: Record<string, string> = { event: envelope.type, environment: config.environment };
+      if (envelope.subject) facts["subject"] = envelope.subject;
+      if (envelope.hermes.producerProfile) facts["profile"] = envelope.hermes.producerProfile;
+      return {
+        title: String(data["title"] ?? annotations["summary"] ?? envelope.type),
+        summary: String(data["summary"] ?? data["message"] ?? annotations["description"] ?? "(no summary)"),
+        severity,
+        status: data["status"] !== undefined ? String(data["status"]) : undefined,
+        facts,
+        links: [],
+      };
+    }
+    
+    // ---------------------------------------------------------------------------
+    // Receipts - the observable evidence surface. In-memory ring; high-volume
+    // state deliberately does NOT live in Kubernetes objects.
+    
+    export interface Receipt {
+      deliveryId: string;
+      edge: string;
+      kind: "agent" | "chatops";
+      eventId: string;
+      correlationId: string;
+      route: string;
+      status: "accepted" | "delivered" | "failed" | "skipped" | "queued" | "dead-lettered" | "duplicate";
+      classification?: string; // destination-4xx | destination-5xx | unreachable | no-secret | filtered | retry-exhausted
+      httpStatus?: number;
+      sessionKey?: string;
+      orderingKey?: string;
+      space?: string;
+      provider?: string;
+      providerMessageId?: string;
+      transport: "direct" | "direct-fallback" | "queued";
+      time: string;
+      attempt: number;
+    }
+    
+    const receipts: Receipt[] = [];
+    const counters: Record<string, number> = {};
+    // Per-edge "when did this route last work / last break", as unix seconds.
+    // Counters answer "how many since boot"; an operator looking at a route
+    // needs "and was that five seconds or five days ago". Keyed edge -> outcome
+    // -> seconds. ponytail: in-memory like the receipts ring, so a router
+    // restart clears it; the successor is the durable delivery record #278
+    // needs, and both should land together.
+    const lastDelivery: Record<string, Record<"success" | "failure", number>> = {};
+    
+    /** success | failure | undefined for statuses that are neither (queued,
+     * duplicate, skipped) - a queued event has not been delivered yet, and
+     * stamping it would date the route by its intake, not its outcome. */
+    function outcomeOf(status: Receipt["status"]): "success" | "failure" | undefined {
+      if (status === "accepted" || status === "delivered") return "success";
+      if (status === "failed" || status === "dead-lettered") return "failure";
+      return undefined;
+    }
+    
+    function bump(name: string): void {
+      counters[name] = (counters[name] ?? 0) + 1;
+    }
+    
+    // ---------------------------------------------------------------------------
+    // Business outcomes (#408).
+    //
+    // The router already counts EVENTS - how many arrived, how many were
+    // delivered. Those are transport facts. A business-health alert needs a
+    // different fact: did the operation this event describes actually succeed.
+    // The distinction matters because the two can disagree in both directions
+    // - a perfectly delivered event can report a failed publication, and a
+    // dead-lettered one says nothing about whether the work happened.
+    //
+    // Generic on purpose: any producer whose payload carries a top-level
+    // `outcome` in the closed vocabulary below gets counted, and nothing here
+    // knows what "content" or "publishing" is. Cardinality is bounded by
+    // construction - the event label can only be a DECLARED producer's event
+    // type (they live in Git), and outcome only takes two values.
+    const BUSINESS_OUTCOMES = new Set(["succeeded", "failed"]);
+    const businessOutcomes: Record<string, Record<string, number>> = {};
+    
+    // Ingest-level idempotency for the COUNTER only, never for delivery.
+    //
+    // Envelope ids are minted here, so the same logical outcome POSTed twice -
+    // a webhook retry, an agent re-running a step - would arrive as two
+    // distinct envelopes and count twice. Delivery keeps its at-least-once
+    // semantics (the delivery-time dedupe is per edge, on the envelope id);
+    // this bounds the LEDGER, which is the thing an alert reads.
+    //
+    // A producer that supplies no `eventId` is counted every time. That is
+    // honest rather than clever: you cannot deduplicate what was never
+    // identified, and silently guessing at a key would be worse.
+    const seenBusinessIds = new Set<string>();
+    const SEEN_BUSINESS_MAX = 5000;
+    // Ledger windows in Redis (#444): dedupe and drift-detection keys expire
+    // after 7 days - longer than any plausible retry horizon, bounded so an
+    // abandoned event type cannot grow keys forever.
+    const BIZ_WINDOW_SEC = String(7 * 86400);
+    
+    async function recordBusinessOutcome(eventType: string, subject: string | undefined, data: unknown): Promise<void> {
+      if (typeof data !== "object" || data === null) return;
+      const payload = data as { outcome?: unknown; eventId?: unknown };
+      const outcome = typeof payload.outcome === "string" ? payload.outcome : "";
+      if (!BUSINESS_OUTCOMES.has(outcome)) return;
+      const id = typeof payload.eventId === "string" && payload.eventId ? payload.eventId : "";
+      if (id) {
+        const key = `${eventType}\n${id}`;
+        if (redis) {
+          // Durable dedupe (#444): the same SETNX-with-expiry shape as the
+          // delivery done-marker, so a retry that crosses a router restart no
+          // longer double-counts the ledger an alert reads. Redis failures
+          // fall through to the in-memory window - a broken dedupe store must
+          // degrade to the old behaviour, never block ingest.
+          try {
+            // Through redisCmd for its timeout (Codex catch): a reconnecting
+            // client leaves raw send() pending, and ingest must never hang on
+            // the ledger.
+            const fresh = await redisCmd("SET", [`hermes:bizseen:${key}`, "1", "NX", "EX", BIZ_WINDOW_SEC]);
+            if (fresh === null) {
+              bump("hermes_business_outcome_duplicates_total");
+              return;
+            }
+            // Mirror into the memory window too, so a later Redis outage's
+            // fallback still recognises ids Redis already counted (Codex
+            // catch - the two windows must not disagree on what was seen).
+            seenBusinessIds.add(key);
+            if (seenBusinessIds.size > SEEN_BUSINESS_MAX) {
+              const oldest = seenBusinessIds.values().next().value as string | undefined;
+              if (oldest !== undefined) seenBusinessIds.delete(oldest);
+            }
+            // Drift detection (#444's second half): a producer that mints a
+            // FRESH eventId for the same subject within the window has lost
+            // idempotency by convention drift - every retry would look like
+            // another outcome. The router never learns what a "release" is;
+            // the subject is the stable handle it already carries. Reported,
+            // never repaired. SETNX-then-GET so two concurrent fresh ids
+            // cannot both claim first (Codex catch).
+            if (subject) {
+              const subjKey = `hermes:bizsubj:${eventType}\n${outcome}\n${subject}`;
+              const claimed = await redisCmd("SET", [subjKey, id, "NX", "EX", BIZ_WINDOW_SEC]);
+              if (claimed === null) {
+                const first = await redisCmd("GET", [subjKey]);
+                if (first !== id) bump("hermes_business_eventid_varied_total");
+              }
+            }
+          } catch {
+            if (!memoryBizSeen(key)) return;
+          }
+        } else if (!memoryBizSeen(key)) {
+          return;
+        }
+      }
+      const slot = (businessOutcomes[eventType] ??= {});
+      slot[outcome] = (slot[outcome] ?? 0) + 1;
+    }
+    
+    /** The in-memory window - the no-Redis fallback (a local loop without a
+     * durable provider). True = fresh, count it; false = duplicate. */
+    function memoryBizSeen(key: string): boolean {
+      if (seenBusinessIds.has(key)) {
+        // Suppressed, and SAID so - a silent drop is indistinguishable from
+        // an event that never arrived.
+        bump("hermes_business_outcome_duplicates_total");
+        return false;
+      }
+      seenBusinessIds.add(key);
+      if (seenBusinessIds.size > SEEN_BUSINESS_MAX) {
+        // ponytail: FIFO trim on a Set relies on insertion order, which is
+        // specified. A restart clears it - which is exactly what the Redis
+        // path above exists to remove where a durable provider is declared.
+        const oldest = seenBusinessIds.values().next().value as string | undefined;
+        if (oldest !== undefined) seenBusinessIds.delete(oldest);
+      }
+      return true;
+    }
+    function record(r: Receipt): void {
+      receipts.push(r);
+      if (receipts.length > 2000) receipts.splice(0, receipts.length - 2000);
+      const outcome = outcomeOf(r.status);
+      if (outcome) {
+        const slot = (lastDelivery[r.edge] ??= { success: 0, failure: 0 });
+        slot[outcome] = Math.floor(Date.parse(r.time) / 1000) || Math.floor(Date.now() / 1000);
+      }
+      // Structured JSONL to stdout - the pod log is the delivery journal.
+      console.log(JSON.stringify({ receipt: r }));
+      observe(`delivery.${r.status.replace(/-/g, "_")}`, r as unknown as Record<string, unknown>);
+    }
+    
+    // Passive debug mirror (ADR-74): when a recording base is configured, every
+    // lifecycle record is ALSO posted to `<recordingBase>/observer` -
+    // fire-and-forget, 2s cap, metadata only. Receipts already carry no payload,
+    // no headers and no secret material, and ingress records are built the same
+    // way. A dead observer bumps a counter and never touches a delivery, its
+    // retry budget, or an ingress response.
+    function observe(kind: string, fields: Record<string, unknown>): void {
+      if (!config.recordingBase) return;
+      fetch(`${config.recordingBase}/observer`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        // Stamps LAST: a mirrored receipt carries its own `kind` (agent|chatops)
+        // which must not clobber the lifecycle kind.
+        body: JSON.stringify({ ...fields, ts: new Date().toISOString(), kind, router: config.spec.router.id }),
+        signal: AbortSignal.timeout(2000),
+      }).catch(() => bump("hermes_router_observer_failures_total"));
+    }
+    
+    // ---------------------------------------------------------------------------
+    // Delivery
+    
+    function filterMatches(edge: Edge, envelope: Envelope): boolean {
+      if (!edge.filter) return true;
+      return Object.entries(edge.filter).every(([field, expected]) => envelopeField(envelope, field) === String(expected));
+    }
+    
+    async function deliverAgent(
+      edge: Edge,
+      envelope: Envelope,
+      deliveryId: string,
+      attempt: number,
+      transport: Receipt["transport"],
+    ): Promise<Receipt> {
+      const agent = edge.agent!;
+      const key = sessionKey(envelope, agent.profile, edge.route, agent.session);
+      const base: Omit<Receipt, "status"> = {
+        deliveryId,
+        edge: edge.id,
+        kind: "agent",
+        eventId: envelope.id,
+        correlationId: envelope.hermes.correlationId,
+        route: edge.route,
+        sessionKey: key,
+        orderingKey: envelope.hermes.orderingKey,
+        transport,
+        time: new Date().toISOString(),
+        attempt,
+      };
+      const secret = secretFor(agent.secretName);
+      if (!secret) {
+        bump("hermes_event_delivery_attempts_total");
+        bump("hermes_events_publish_failures_total");
+        return { ...base, status: "failed", classification: "no-secret" };
+      }
+      const body = JSON.stringify({ ...envelope, hermes: { ...envelope.hermes }, });
+      try {
+        bump("hermes_event_delivery_attempts_total");
+        const resp = await fetch(agent.url, {
+          method: "POST",
+          headers: { ...signHeaders(secret, body), "x-hermes-session-key": key, "x-hermes-delivery-id": deliveryId },
+          body,
+          signal: AbortSignal.timeout(30_000),
+        });
+        const text = await resp.text();
+        if (resp.ok) {
+          bump("hermes_event_deliveries_total");
+          bump("hermes_session_routes_total");
+          let gatewayDeliveryId: string | undefined;
+          try {
+            gatewayDeliveryId = (JSON.parse(text) as { delivery_id?: string }).delivery_id;
+          } catch {
+            /* non-JSON acceptance is still acceptance */
+          }
+          return { ...base, status: "accepted", httpStatus: resp.status, providerMessageId: gatewayDeliveryId };
+        }
+        bump("hermes_session_route_failures_total");
+        return {
+          ...base,
+          status: "failed",
+          httpStatus: resp.status,
+          classification: resp.status >= 500 ? "destination-5xx" : "destination-4xx",
+        };
+      } catch {
+        bump("hermes_session_route_failures_total");
+        return { ...base, status: "failed", classification: "unreachable" };
+      }
+    }
+    
+    async function deliverChatops(
+      edge: Edge,
+      envelope: Envelope,
+      deliveryId: string,
+      attempt: number,
+      transport: Receipt["transport"],
+    ): Promise<Receipt> {
+      const chatops = edge.chatops!;
+      const base: Omit<Receipt, "status"> = {
+        deliveryId,
+        edge: edge.id,
+        kind: "chatops",
+        eventId: envelope.id,
+        correlationId: envelope.hermes.correlationId,
+        route: edge.route,
+        space: chatops.space,
+        provider: chatops.provider,
+        orderingKey: envelope.hermes.orderingKey,
+        transport,
+        time: new Date().toISOString(),
+        attempt,
+      };
+      const logical = renderLogicalMessage(envelope);
+      bump("hermes_event_delivery_attempts_total");
+      if (chatops.provider === "recording") {
+        // The recording plugin: capture at the local sink, never send. Same
+        // route declarations run against Discord in the sandbox environment.
+        const url = `${config.recordingBase}/chatops/${encodeURIComponent(chatops.alias)}/${encodeURIComponent(chatops.destination)}`;
+        try {
+          const resp = await fetch(url, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              space: chatops.space,
+              provider: "recording",
+              deliveryId,
+              event: { id: envelope.id, type: envelope.type, subject: envelope.subject, correlationId: envelope.hermes.correlationId },
+              message: logical,
+            }),
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (resp.ok) {
+            bump("hermes_chatops_deliveries_total");
+            return { ...base, status: "delivered", httpStatus: resp.status, providerMessageId: `recording-${deliveryId}` };
+          }
+          bump("hermes_chatops_delivery_failures_total");
+          return { ...base, status: "failed", httpStatus: resp.status, classification: resp.status >= 500 ? "destination-5xx" : "destination-4xx" };
+        } catch {
+          bump("hermes_chatops_delivery_failures_total");
+          return { ...base, status: "failed", classification: "unreachable" };
+        }
+      }
+      // The logical message projected to a Discord-shaped embed - ONE shape
+      // for the bot-token plugin and the webhook plugin, so the two channels
+      // can never drift in what they show.
+      const embedOf = () => {
+        const severity = String(logical["severity"] ?? "info");
+        const color = severity === "critical" ? 0xe01e5a : severity === "warning" ? 0xecb22e : 0x2eb67d;
+        return {
+          embeds: [
+            {
+              title: logical["title"],
+              description: logical["summary"],
+              color,
+              fields: Object.entries((logical["facts"] ?? {}) as Record<string, string>).map(([name, value]) => ({
+                name,
+                value,
+                inline: true,
+              })),
+              ...(logical["status"] ? { footer: { text: `status: ${logical["status"]}` } } : {}),
+            },
+          ],
+        };
+      };
+      if (chatops.provider === "generic-webhook") {
+        // The webhook plugin: the URL IS the credential (a Discord/Slack
+        // compatible webhook), resolved through the same credential
+        // REFERENCE as every other provider and appearing nowhere in
+        // receipts or logs. `?wait=true` makes Discord return the created
+        // message so the receipt can carry a provider id; other webhook
+        // hosts ignore the query.
+        const cred = config.spec.chatopsConnections[chatops.alias]?.credentialRef;
+        const url = cred?.env ? process.env[cred.env] : cred?.name ? secretFor(cred.name) : undefined;
+        if (!url) {
+          bump("hermes_chatops_delivery_failures_total");
+          return { ...base, status: "failed", classification: "no-credential" };
+        }
+        try {
+          const target = `${url.trim()}${url.includes("?") ? "&" : "?"}wait=true`;
+          const resp = await fetch(target, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(embedOf()),
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (resp.ok) {
+            const posted = (await resp.json().catch(() => ({}))) as { id?: string };
+            bump("hermes_chatops_deliveries_total");
+            return { ...base, status: "delivered", httpStatus: resp.status, providerMessageId: posted.id };
+          }
+          bump("hermes_chatops_delivery_failures_total");
+          return {
+            ...base,
+            status: "failed",
+            httpStatus: resp.status,
+            classification:
+              resp.status === 401 || resp.status === 403
+                ? "credential-rejected"
+                : resp.status === 404
+                  ? "unknown-channel"
+                  : resp.status >= 500
+                    ? "destination-5xx"
+                    : "destination-4xx",
+          };
+        } catch {
+          bump("hermes_chatops_delivery_failures_total");
+          return { ...base, status: "failed", classification: "unreachable" };
+        }
+      }
+      if (chatops.provider === "discord") {
+        // The live Discord plugin: the logical message projected to an embed,
+        // posted with the bot token from the connection's credential
+        // REFERENCE (a mounted Secret key, or an env var). The token appears
+        // in the Authorization header only - never in receipts or logs.
+        const cred = config.spec.chatopsConnections[chatops.alias]?.credentialRef;
+        const token = cred?.env ? process.env[cred.env] : cred?.name ? secretFor(cred.name) : undefined;
+        if (!token) {
+          bump("hermes_chatops_delivery_failures_total");
+          return { ...base, status: "failed", classification: "no-credential" };
+        }
+        const embed = embedOf();
+        try {
+          const discordApi = process.env["DISCORD_API_BASE"] ?? "https://discord.com/api/v10";
+          const resp = await fetch(`${discordApi}/channels/${encodeURIComponent(chatops.destination)}/messages`, {
+            method: "POST",
+            headers: { authorization: `Bot ${token}`, "content-type": "application/json" },
+            body: JSON.stringify(embed),
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (resp.ok) {
+            const posted = (await resp.json()) as { id?: string };
+            bump("hermes_chatops_deliveries_total");
+            return { ...base, status: "delivered", httpStatus: resp.status, providerMessageId: posted.id };
+          }
+          bump("hermes_chatops_delivery_failures_total");
+          return {
+            ...base,
+            status: "failed",
+            httpStatus: resp.status,
+            classification:
+              resp.status === 401 || resp.status === 403
+                ? "credential-rejected"
+                : resp.status === 404
+                  ? "unknown-channel"
+                  : resp.status >= 500
+                    ? "destination-5xx"
+                    : "destination-4xx",
+          };
+        } catch {
+          bump("hermes_chatops_delivery_failures_total");
+          return { ...base, status: "failed", classification: "unreachable" };
+        }
+      }
+      // Any other provider (slack, teams, ...) is a later plugin; an
+      // unimplemented provider fails closed and says so.
+      bump("hermes_chatops_delivery_failures_total");
+      return { ...base, status: "failed", classification: `provider-${chatops.provider}-unavailable` };
+    }
+    
+    async function attemptDelivery(
+      edge: Edge,
+      envelope: Envelope,
+      deliveryId: string,
+      attempt: number,
+      transport: Receipt["transport"],
+    ): Promise<Receipt> {
+      return edge.kind === "agent"
+        ? deliverAgent(edge, envelope, deliveryId, attempt, transport)
+        : deliverChatops(edge, envelope, deliveryId, attempt, transport);
+    }
+    
+    async function fanOut(
+      envelope: Envelope,
+      sourceKey: { producer?: string; externalInput?: string },
+      narrowing: { toAgent?: string; toChatops?: string },
+    ): Promise<Receipt[]> {
+      const edges = config.spec.edges.filter((e) => {
+        if (sourceKey.producer && e.from.producer !== sourceKey.producer) return false;
+        if (sourceKey.externalInput && e.from.externalInput !== sourceKey.externalInput) return false;
+        if (narrowing.toAgent && (e.kind !== "agent" || e.agent!.profile !== narrowing.toAgent)) return false;
+        if (narrowing.toChatops && (e.kind !== "chatops" || e.chatops!.space !== narrowing.toChatops)) return false;
+        return true;
+      });
+      const out: Receipt[] = [];
+      // Every edge is INDEPENDENT: a failure on one never blocks another.
+      for (const edge of edges) {
+        if (!filterMatches(edge, envelope)) {
+          out.push({
+            deliveryId: newDeliveryId(),
+            edge: edge.id,
+            kind: edge.kind,
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            route: edge.route,
+            status: "skipped",
+            classification: "filtered",
+            transport: "direct",
+            time: new Date().toISOString(),
+            attempt: 0,
+          });
+          continue;
+        }
+        const deliveryId = newDeliveryId();
+        if (edge.delivery.mode === "queued" && redis) {
+          // Durable acceptance: the publish succeeds only once XADD returns
+          // an entry id - the worker owns everything after that.
+          await redis.send("XADD", [
+            streamOf(edge),
+            "*",
+            "message",
+            JSON.stringify({ deliveryId, envelope }),
+          ]);
+          bump("hermes_event_pending");
+          const receipt: Receipt = {
+            deliveryId,
+            edge: edge.id,
+            kind: edge.kind,
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            route: edge.route,
+            orderingKey: envelope.hermes.orderingKey,
+            space: edge.chatops?.space,
+            status: "queued",
+            transport: "queued",
+            time: new Date().toISOString(),
+            attempt: 0,
+          };
+          record(receipt);
+          out.push(receipt);
+          continue;
+        }
+        const receipt = await attemptDelivery(
+          edge,
+          envelope,
+          deliveryId,
+          1,
+          edge.delivery.mode === "queued" ? "direct-fallback" : "direct",
+        );
+        record(receipt);
+        out.push(receipt);
+      }
+      return out;
+    }
+    
+    // ---------------------------------------------------------------------------
+    // The delivery worker: consumes queued edges' streams, preserves same-key
+    // FIFO (per-orderingKey serial chains; different keys process
+    // concurrently), retries with backoff, dead-letters on exhaustion, and
+    // suppresses duplicate side effects with a done-marker - at-least-once
+    // delivery + stable event IDs + idempotent destinations, exactly the
+    // guarantee the platform sells.
+    
+    const seenSignatures = new Set<string>(); // external-gateway replay guard
+    
+    const blockedKeys = new Set<string>(); // `${edge.id}\n${orderingKey}` - the block poison policy
+    const keyChains = new Map<string, Promise<void>>();
+    // Entries claimed but not yet settled: XAUTOCLAIM legitimately re-claims
+    // an entry whose chain is stuck behind a long retry cycle - without this
+    // guard every re-claim appended ANOTHER closure for the same entry,
+    // flooding the chain with duplicate work and starving newer messages
+    // (observed live: a 5-minute destination outage produced an unbounded
+    // duplicate-receipt loop).
+    const inFlight = new Set<string>();
+    
+    async function processMessage(edge: Edge, entryId: string, payload: { deliveryId: string; envelope: Envelope }): Promise<void> {
+      const { deliveryId, envelope } = payload;
+      const stream = streamOf(edge);
+      const orderingKey = envelope.hermes.orderingKey ?? envelope.id;
+      const blockKey = `${edge.id}\n${orderingKey}`;
+      if (edge.delivery.ordering?.onFailure === "block" && blockedKeys.has(blockKey)) {
+        // A blocked group: leave the entry pending (unacked) so nothing
+        // overtakes the poison message; XAUTOCLAIM retries the group later.
+        return;
+      }
+      const doneKey = `hermes:done:${edge.id}:${envelope.id}`;
+      if ((await redis!.send("EXISTS", [doneKey])) === 1) {
+        // The at-least-once duplicate: the side effect already happened -
+        // acknowledge without repeating it.
+        bump("hermes_event_duplicates_total");
+        record({
+          deliveryId,
+          edge: edge.id,
+          kind: edge.kind,
+          eventId: envelope.id,
+          correlationId: envelope.hermes.correlationId,
+          route: edge.route,
+          orderingKey,
+          space: edge.chatops?.space,
+          status: "duplicate",
+          classification: "already-delivered",
+          transport: "queued",
+          time: new Date().toISOString(),
+          attempt: 0,
+        });
+        await redis!.send("XACK", [stream, CONSUMER_GROUP, entryId]);
+        return;
+      }
+      const maxAttempts = edge.delivery.retry.maxAttempts;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const receipt = await attemptDelivery(edge, envelope, deliveryId, attempt, "queued");
+        if (receipt.status === "accepted" || receipt.status === "delivered") {
+          await redis!.send("SET", [doneKey, "1", "EX", "86400"]);
+          await redis!.send("XACK", [stream, CONSUMER_GROUP, entryId]);
+          record(receipt);
+          return;
+        }
+        if (attempt < maxAttempts) {
+          // Intermediate attempts are deliberately not receipts (only the
+          // terminal one is) - but the observer sees each retry as it happens.
+          observe("delivery.retrying", receipt as unknown as Record<string, unknown>);
+          const delay =
+            edge.delivery.retry.backoff === "exponential" ? RETRY_BASE_MS * 2 ** (attempt - 1) : RETRY_BASE_MS;
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        } else {
+          record(receipt); // the terminal failed attempt stays visible
+          if (edge.delivery.ordering?.onFailure === "block") {
+            blockedKeys.add(blockKey);
+            bump("hermes_fifo_blocked_groups");
+            // Unacked on purpose: order beats progress for this group.
+            return;
+          }
+          // dead-letter-and-continue (and non-FIFO exhaustion): the DLQ entry
+          // carries everything replay needs, the group moves on.
+          await redis!.send("XADD", [
+            `${stream}:dlq`,
+            "*",
+            "message",
+            JSON.stringify({ deliveryId, envelope, attempts: maxAttempts, lastClassification: receipt.classification }),
+          ]);
+          await redis!.send("XACK", [stream, CONSUMER_GROUP, entryId]);
+          bump("hermes_event_dlq_total");
+          record({
+            deliveryId,
+            edge: edge.id,
+            kind: edge.kind,
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            route: edge.route,
+            orderingKey,
+            space: edge.chatops?.space,
+            status: "dead-lettered",
+            classification: "retry-exhausted",
+            transport: "queued",
+            time: new Date().toISOString(),
+            attempt: maxAttempts,
+          });
+          return;
+        }
+      }
+    }
+    
+    function enqueueOrdered(edge: Edge, entryId: string, payload: { deliveryId: string; envelope: Envelope }): void {
+      const flightKey = `${edge.id}\n${entryId}`;
+      if (inFlight.has(flightKey)) return; // already chained - a re-claim adds nothing
+      inFlight.add(flightKey);
+      // FIFO scope = one edge + one ordering key: same-key messages chain
+      // serially, different keys run concurrently. Without FIFO the edge
+      // still chains per event id (each message independent).
+      const orderingKey = edge.delivery.ordering
+        ? (payload.envelope.hermes.orderingKey ?? payload.envelope.id)
+        : payload.envelope.id;
+      const chainKey = `${edge.id}\n${orderingKey}`;
+      const prior = keyChains.get(chainKey) ?? Promise.resolve();
+      const next = prior
+        .then(() => processMessage(edge, entryId, payload))
+        .catch((e) => {
+          console.log(JSON.stringify({ workerError: String(e), edge: edge.id, entryId }));
+        })
+        .finally(() => inFlight.delete(flightKey));
+      keyChains.set(chainKey, next);
+    }
+    
+    /** A redis command that can never hang the worker forever.
+     *
+     * BLOCKing reads are the trap: when the server goes away mid-command the
+     * in-flight promise NEVER settles - it does not reject, and the client's
+     * own reconnection does not settle it either. The worker then sits in an
+     * await that will not return, with no error, no log and no recovery,
+     * until the pod is restarted. Observed live: the durable transport was
+     * dead for hours while the process looked healthy. A bounded wait turns
+     * that silent hang into an ordinary iteration failure, which the loop
+     * already knows how to recover from. */
+    const REDIS_CMD_TIMEOUT_MS = 10_000;
+    
+    async function redisCmd(command: string, args: string[], client?: RedisClient): Promise<unknown> {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          (client ?? redis!).send(command, args),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`redis ${command} timed out after ${REDIS_CMD_TIMEOUT_MS}ms`)),
+              REDIS_CMD_TIMEOUT_MS,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+    
+    /** Normalize XREADGROUP replies across RESP2 (array of [stream, entries])
+     * and RESP3 (map of stream -> entries). */
+    function readEntries(reply: unknown): [string, string[]][] {
+      if (!reply) return [];
+      if (Array.isArray(reply)) {
+        return (reply as [string, [string, string[]][]][]).flatMap(([, entries]) => entries ?? []);
+      }
+      if (reply instanceof Map) {
+        return ([...reply.values()] as [string, string[]][][]).flat();
+      }
+      if (typeof reply === "object") {
+        return (Object.values(reply) as [string, string[]][][]).flat();
+      }
+      return [];
+    }
+    
+    async function workerLoop(edge: Edge): Promise<void> {
+      const stream = streamOf(edge);
+      const conn = new WorkerRedis();
+      /** Idempotent: BUSYGROUP when it already exists. Called before the loop
+       * AND after every failed iteration, because Redis losing its state
+       * (a restart without persistence, a failover to an empty replica) takes
+       * the group with it and every later XREADGROUP answers NOGROUP forever.
+       * Creating it once at boot left the router in exactly that silent
+       * infinite-error loop; observed live. */
+      const ensureGroup = async (): Promise<void> => {
+        try {
+          await conn.send("XGROUP", ["CREATE", stream, CONSUMER_GROUP, "0", "MKSTREAM"]);
+        } catch {
+          /* BUSYGROUP - already exists, or redis still unreachable */
+        }
+      };
+      await ensureGroup();
+      // Restart recovery FIRST: reclaim deliveries a dead consumer left
+      // pending, then settle into the read loop.
+      let claimCursor = "0-0";
+      for (;;) {
+        try {
+          const claimed = (await conn.send("XAUTOCLAIM", [
+            stream, CONSUMER_GROUP, CONSUMER_NAME, "5000", claimCursor, "COUNT", "16",
+          ])) as [string, [string, string[]][]] | null;
+          if (claimed) {
+            claimCursor = claimed[0];
+            for (const [entryId, fields] of claimed[1] ?? []) {
+              const raw = fields?.[1];
+              if (raw) enqueueOrdered(edge, entryId, JSON.parse(raw));
+            }
+            if (claimCursor === "0-0") {
+              // wrapped around - nothing older pending
+            }
+          }
+          const batches = await conn.send("XREADGROUP", [
+            "GROUP", CONSUMER_GROUP, CONSUMER_NAME, "COUNT", "16", "BLOCK", "1000", "STREAMS", stream, ">",
+          ]);
+          for (const [entryId, fields] of readEntries(batches)) {
+            const raw = fields?.[1];
+            if (raw) enqueueOrdered(edge, entryId, JSON.parse(raw));
+          }
+        } catch (e) {
+          console.log(JSON.stringify({ workerError: String(e), edge: edge.id }));
+          // A timed-out command means THIS loop's socket is wedged, not merely
+          // busy: rebuild it, or every later command queues behind the dead
+          // one. Only this edge's connection - see WorkerRedis.
+          if (String(e).includes("timed out")) conn.reset();
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          // Re-establish the group before retrying: the usual cause of a
+          // failed iteration is Redis having gone away, and it may have come
+          // back empty. Cheap (one BUSYGROUP round-trip) and it is the whole
+          // difference between recovering and looping forever.
+          await ensureGroup();
+          claimCursor = "0-0";
+        }
+      }
+    }
+    
+    if (redis) {
+      for (const edge of config.spec.edges.filter((e) => e.delivery.mode === "queued")) {
+        void workerLoop(edge);
+      }
+    }
+    
+    // ---------------------------------------------------------------------------
+    // HTTP surface
+    
+    function json(status: number, body: unknown): Response {
+      return new Response(JSON.stringify(body, null, 2), { status, headers: { "content-type": "application/json" } });
+    }
+    
+    export const server = Bun.serve({
+      port: PORT,
+      async fetch(req: Request): Promise<Response> {
+        const url = new URL(req.url);
+    
+        if (req.method === "GET" && url.pathname === "/healthz") {
+          return json(200, { ok: true, router: config.spec.router.id, environment: config.environment });
+        }
+    
+        if (req.method === "GET" && url.pathname === "/v1/status") {
+          const correlation = url.searchParams.get("correlation");
+          const delivery = url.searchParams.get("delivery");
+          const matched = receipts.filter(
+            (r) => (!correlation || r.correlationId === correlation) && (!delivery || r.deliveryId === delivery),
+          );
+          return json(200, {
+            router: config.spec.router.id,
+            environment: config.environment,
+            counters,
+            receipts: correlation || delivery ? matched : matched.slice(-500),
+          });
+        }
+    
+        if (req.method === "GET" && url.pathname === "/metrics") {
+          // The same counters /v1/status serves, as Prometheus text - so the
+          // overlay's communication source reads them through the scrape path
+          // instead of needing a route to every router pod. Counter names are
+          // already Prometheus-shaped (hermes_*_total).
+          const esc = (v: string) => v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+          const lines: string[] = [];
+          // Presence marker: lets a reader distinguish "router scraped, no
+          // queued edges" from "no router at all" - counters alone can't,
+          // because an idle router has bumped none of them yet.
+          lines.push("# TYPE hermes_router_up gauge", "hermes_router_up 1");
+          for (const name of Object.keys(counters).sort()) {
+            lines.push(`# TYPE ${name} counter`, `${name} ${counters[name]}`);
+          }
+          // Business outcomes: what the operation DID, beside what the
+          // transport did. Bounded by the declared producer set x two.
+          const outcomeEvents = Object.keys(businessOutcomes).sort();
+          if (outcomeEvents.length) {
+            lines.push("# HELP hermes_business_outcome_total Business operations reported by their producer, by outcome. Producer-asserted, not independently confirmed.");
+            lines.push("# TYPE hermes_business_outcome_total counter");
+            for (const event of outcomeEvents) {
+              for (const outcome of Object.keys(businessOutcomes[event]!).sort()) {
+                lines.push(
+                  `hermes_business_outcome_total{event="${esc(event)}",outcome="${esc(outcome)}"} ${businessOutcomes[event]![outcome]}`,
+                );
+              }
+            }
+          }
+          // Per-edge recency: which route last delivered, and which last broke.
+          const stamped = Object.keys(lastDelivery).sort();
+          if (stamped.length) {
+            lines.push("# TYPE hermes_event_last_delivery_timestamp_seconds gauge");
+            for (const edge of stamped) {
+              for (const outcome of ["success", "failure"] as const) {
+                const at = lastDelivery[edge]![outcome];
+                if (at) {
+                  lines.push(
+                    `hermes_event_last_delivery_timestamp_seconds{edge="${esc(edge)}",outcome="${outcome}"} ${at}`,
+                  );
+                }
+              }
+            }
+          }
+          // The LIVE queue facts: counters are cumulative, but XLEN answers
+          // "how many are waiting NOW" - dead-lettered (dlq) and undelivered
+          // (pending, the real lag signal).
+          //
+          // A dead Redis used to 503 the whole scrape. That made the platform
+          // blind exactly when it was broken: Prometheus lost hermes_router_up
+          // too, so the overlay reported the router "not configured" - which
+          // reads as "nothing here", the opposite of the truth. Now the router
+          // always reports itself up and reports the durable transport's state
+          // as its own gauge, so a dead queue is a VISIBLE fact.
+          if (redis) {
+            let redisUp = 1;
+            const dlq: string[] = [];
+            const pending: string[] = [];
+            for (const edge of config.spec.edges.filter((e) => e.delivery.mode === "queued")) {
+              const stream = streamOf(edge);
+              try {
+                const depth = (await redis.send("XLEN", [`${stream}:dlq`])) as number;
+                dlq.push(`hermes_event_dlq_depth{edge="${esc(edge.id)}"} ${depth}`);
+                // XPENDING's summary form returns [count, ...] - the entries
+                // delivered to the group and not yet acked.
+                const summary = (await redis.send("XPENDING", [stream, CONSUMER_GROUP])) as
+                  | [number, ...unknown[]]
+                  | null;
+                const waiting = Array.isArray(summary) ? Number(summary[0]) || 0 : 0;
+                pending.push(`hermes_event_pending_depth{edge="${esc(edge.id)}"} ${waiting}`);
+              } catch {
+                // One unreachable Redis makes every depth unknowable; report
+                // the transport down and omit the depths rather than publish
+                // a zero that would read as "queue empty".
+                redisUp = 0;
+                break;
+              }
+            }
+            lines.push("# TYPE hermes_router_redis_up gauge", `hermes_router_redis_up ${redisUp}`);
+            if (redisUp) {
+              if (dlq.length) lines.push("# TYPE hermes_event_dlq_depth gauge", ...dlq);
+              if (pending.length) lines.push("# TYPE hermes_event_pending_depth gauge", ...pending);
+            }
+          }
+          return new Response(lines.join("\n") + "\n", {
+            status: 200,
+            headers: { "content-type": "text/plain; version=0.0.4" },
+          });
+        }
+    
+        if (req.method === "POST" && url.pathname.startsWith("/v1/events/")) {
+          const producer = config.spec.producers.find((p) => p.ingestPath === url.pathname);
+          if (!producer) {
+            bump("hermes_events_publish_failures_total");
+            return json(404, { status: "rejected", reason: "unknown-producer" });
+          }
+          const raw = await req.text();
+          if (raw.length > MAX_BODY) return json(413, { status: "rejected", reason: "payload-too-large" });
+          let data: unknown;
+          try {
+            data = JSON.parse(raw);
+          } catch {
+            bump("hermes_event_schema_failures_total");
+            return json(400, { status: "rejected", reason: "invalid-json" });
+          }
+          const subject = producer.subject ? dotGet(data, producer.subject) : undefined;
+          const envelope: Envelope = {
+            specversion: "1.0",
+            id: newEventId(),
+            type: producer.event,
+            source: `hermes://${producer.profile}/apps/${producer.app}`,
+            subject,
+            time: new Date().toISOString(),
+            datacontenttype: "application/json",
+            hermes: {
+              environment: config.environment,
+              producerProfile: producer.profile,
+              producerApplication: producer.app,
+              producerOutput: producer.output,
+              correlationId: newCorrelationId(),
+              orderingKey: subject,
+              schema: producer.event,
+            },
+            data,
+          };
+          bump("hermes_events_published_total");
+          // The business half: transport counted above, outcome counted here.
+          await recordBusinessOutcome(producer.event, subject, data);
+          observe("event.received", {
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            producer: producer.id,
+            type: envelope.type,
+            subject,
+          });
+          const deliveries = await fanOut(
+            envelope,
+            { producer: producer.id },
+            { toAgent: url.searchParams.get("toAgent") ?? undefined, toChatops: url.searchParams.get("toChatops") ?? undefined },
+          );
+          return json(202, {
+            status: "accepted",
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            subject,
+            deliveries,
+          });
+        }
+    
+        // The ONE shared external webhook gateway (spec: no per-profile
+        // public endpoint, ever). The binding id in the path is the ONLY
+        // routing input - the payload can name profiles all it wants, the
+        // compiled graph decides, and ignored selector keys are reported so
+        // the non-effect is visible.
+        if (req.method === "POST" && url.pathname.startsWith("/v1/connect/")) {
+          return handleConnectionGateway(req, url);
+        }
+    
+        if (req.method === "POST" && url.pathname.startsWith("/v1/hooks/")) {
+          // Every rejection is one funnel: counter + observer record (reason
+          // and path only - never the payload or any signature material).
+          const rejectHook = (status: number, reason: string): Response => {
+            bump("hermes_external_webhook_rejections_total");
+            observe("event.rejected", { path: url.pathname, reason });
+            return json(status, { status: "rejected", reason });
+          };
+          const input = config.spec.externalInputs.find((x) => x.hookPath === url.pathname);
+          if (!input) {
+            return rejectHook(404, "unknown-binding");
+          }
+          const raw = await req.text();
+          if (raw.length > MAX_BODY) {
+            return rejectHook(413, "payload-too-large");
+          }
+          const contentType = req.headers.get("content-type") ?? "";
+          if (!contentType.includes("application/json")) {
+            return rejectHook(415, "content-type");
+          }
+          // Signature verification: per-binding secret, mandatory. The
+          // generic hmac-sha256 scheme is the platform's own
+          // (ts + "." + body); provider-specific schemes are later
+          // normalizer plugins.
+          const secret = secretFor(input.verification.secretRef.name);
+          if (!secret) {
+            return rejectHook(503, "no-binding-secret");
+          }
+          // GitHub signs differently from the platform's own scheme and the
+          // contract has always allowed saying so (`github-hmac-sha256`); the
+          // runtime simply never read verification.type. It sends
+          // `X-Hub-Signature-256: sha256=<hex>` over the RAW BODY with no
+          // timestamp at all, and names the event in `X-GitHub-Event`.
+          const isGithub = input.verification.type === "github-hmac-sha256";
+          let sig: string | null;
+          let signedPayload: string;
+          if (isGithub) {
+            const header = req.headers.get("x-hub-signature-256");
+            sig = header && header.startsWith("sha256=") ? header.slice(7) : null;
+            signedPayload = raw;
+            if (!sig) {
+              return rejectHook(401, "missing-signature");
+            }
+          } else {
+            const ts = req.headers.get("x-webhook-timestamp");
+            sig = req.headers.get("x-webhook-signature-v2");
+            if (!ts || !sig) {
+              return rejectHook(401, "missing-signature");
+            }
+            const tsNum = Number(ts);
+            if (!Number.isFinite(tsNum)) {
+              return rejectHook(401, "malformed-timestamp");
+            }
+            if (Math.abs(Date.now() / 1000 - tsNum) > 300) {
+              return rejectHook(401, "stale-signature");
+            }
+            signedPayload = `${ts}.${raw}`;
+          }
+          const expected = crypto.createHmac("sha256", secret).update(signedPayload).digest("hex");
+          const a = Buffer.from(expected, "utf8");
+          const b = Buffer.from(sig, "utf8");
+          if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+            return rejectHook(401, "invalid-signature");
+          }
+          // Replay protection: an already-seen signature is a replay, not a
+          // retry. For GitHub the delivery guid is the better key - it is
+          // stable across GitHub's own redelivery button, which is exactly
+          // the duplicate an idempotent consumer must absorb.
+          //
+          // ponytail: the generic scheme bounds replay exposure with its
+          // freshness window; GitHub's has NO timestamp, so the window here
+          // is the process lifetime (10k-entry eviction). A Redis SETNX
+          // replaces it when this gateway is exposed to the internet.
+          const githubDelivery = req.headers.get("x-github-delivery");
+          const replayKey = `${input.id}:${(isGithub && githubDelivery) || sig}`;
+          if (seenSignatures.has(replayKey)) {
+            return rejectHook(409, "replay");
+          }
+          seenSignatures.add(replayKey);
+          if (seenSignatures.size > 10_000) {
+            seenSignatures.clear(); // ponytail: coarse eviction; the ts window bounds the real exposure
+          }
+          let data: unknown;
+          try {
+            data = JSON.parse(raw);
+          } catch {
+            return rejectHook(400, "invalid-json");
+          }
+          if (input.accepts) {
+            // GitHub names the event in its own header; a push carries no
+            // `action`, so the header IS the kind.
+            const kind = (isGithub ? req.headers.get("x-github-event") : req.headers.get("x-event-kind")) ?? "";
+            if (!input.accepts.includes(kind)) {
+              return rejectHook(422, "event-kind-not-accepted");
+            }
+          }
+          const ignoredSelectors = ["profile", "route", "target"].filter(
+            (k) => typeof data === "object" && data !== null && k in (data as Record<string, unknown>),
+          );
+          const subject = input.subject ? dotGet(data, input.subject) : undefined;
+          const envelope: Envelope = {
+            specversion: "1.0",
+            id: newEventId(),
+            type: input.event,
+            source: `hermes://external/${input.id}`,
+            subject,
+            time: new Date().toISOString(),
+            datacontenttype: "application/json",
+            hermes: {
+              environment: config.environment,
+              externalInput: input.id,
+              correlationId: newCorrelationId(),
+              // The provider's own delivery id, preserved: it is what lets an
+              // operator match a Nexus execution back to a row in GitHub's
+              // webhook deliveries list.
+              ...(githubDelivery ? { causationId: githubDelivery } : {}),
+              orderingKey: subject,
+              schema: input.event,
+            },
+            data,
+          };
+          bump("hermes_events_published_total");
+          observe("event.received", {
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            externalInput: input.id,
+            type: envelope.type,
+            subject,
+          });
+          const deliveries = await fanOut(envelope, { externalInput: input.id }, {});
+          return json(202, {
+            status: "accepted",
+            binding: input.id,
+            eventId: envelope.id,
+            correlationId: envelope.hermes.correlationId,
+            subject,
+            // Selector-shaped payload keys had NO routing effect - stated,
+            // not silent.
+            ...(ignoredSelectors.length > 0 ? { ignoredSelectors, routing: "compiled-iac-only" } : {}),
+            deliveries,
+          });
+        }
+    
+        if (req.method === "GET" && url.pathname === "/v1/dlq") {
+          if (!redis) return json(200, { entries: [], note: "no durable provider configured" });
+          const entries: { stream: string; entryId: string; edge: string; deliveryId: string; eventId: string; attempts: number; lastClassification?: string }[] = [];
+          for (const edge of config.spec.edges.filter((e) => e.delivery.mode === "queued")) {
+            const dlq = `${streamOf(edge)}:dlq`;
+            const rows = (await redis.send("XRANGE", [dlq, "-", "+", "COUNT", "200"])) as [string, string[]][] | null;
+            for (const [entryId, fields] of rows ?? []) {
+              const raw = fields?.[1];
+              if (!raw) continue;
+              const parsed = JSON.parse(raw) as { deliveryId: string; envelope: Envelope; attempts: number; lastClassification?: string };
+              entries.push({
+                stream: dlq,
+                entryId,
+                edge: edge.id,
+                deliveryId: parsed.deliveryId,
+                eventId: parsed.envelope.id,
+                attempts: parsed.attempts,
+                lastClassification: parsed.lastClassification,
+              });
+            }
+          }
+          return json(200, { entries });
+        }
+    
+        if (req.method === "POST" && url.pathname === "/v1/dlq/replay") {
+          if (!redis) return json(400, { status: "rejected", reason: "no-durable-provider" });
+          const body = (await req.json().catch(() => ({}))) as { deliveryId?: string; edge?: string };
+          let replayed = 0;
+          for (const edge of config.spec.edges.filter((e) => e.delivery.mode === "queued")) {
+            if (body.edge && edge.id !== body.edge) continue;
+            const stream = streamOf(edge);
+            const rows = (await redis.send("XRANGE", [`${stream}:dlq`, "-", "+", "COUNT", "200"])) as [string, string[]][] | null;
+            for (const [entryId, fields] of rows ?? []) {
+              const raw = fields?.[1];
+              if (!raw) continue;
+              const parsed = JSON.parse(raw) as { deliveryId: string; envelope: Envelope };
+              if (body.deliveryId && parsed.deliveryId !== body.deliveryId) continue;
+              // Replay = a fresh delivery cycle for the same event identity;
+              // the done-marker is absent (it never succeeded), so dedup
+              // does not suppress it.
+              await redis.send("XADD", [stream, "*", "message", JSON.stringify({ deliveryId: parsed.deliveryId, envelope: parsed.envelope })]);
+              await redis.send("XDEL", [`${stream}:dlq`, entryId]);
+              replayed++;
+            }
+          }
+          return json(replayed > 0 ? 200 : 404, { status: replayed > 0 ? "replayed" : "not-found", replayed });
+        }
+    
+        // The ChatOps test surface: deliver a synthetic (or supplied) payload
+        // to ONE space through its real provider binding.
+        if (req.method === "POST" && url.pathname === "/v1/test/chatops") {
+          const body = (await req.json().catch(() => undefined)) as
+            | { space?: string; event?: string; payload?: unknown }
+            | undefined;
+          if (!body?.space) return json(400, { status: "rejected", reason: "space-required" });
+          const hash = body.space.indexOf("#");
+          const alias = body.space.slice(0, hash);
+          const destination = body.space.slice(hash + 1);
+          const connection = config.spec.chatopsConnections[alias];
+          if (hash <= 0 || !connection) return json(404, { status: "rejected", reason: "unknown-alias" });
+          const envelope: Envelope = {
+            specversion: "1.0",
+            id: newEventId(),
+            type: body.event ?? "hermes.chatops.test/v1",
+            source: `hermes://router/${config.spec.router.id}`,
+            subject: "chatops-test",
+            time: new Date().toISOString(),
+            datacontenttype: "application/json",
+            hermes: {
+              environment: config.environment,
+              correlationId: newCorrelationId(),
+              orderingKey: "chatops-test",
+              schema: body.event ?? "hermes.chatops.test/v1",
+            },
+            data: body.payload ?? { title: "hg chatops test", summary: `test message to ${body.space}`, severity: "info" },
+          };
+          const edge: Edge = {
+            id: `test:chatops:${body.space}`,
+            route: "chatops-test",
+            profile: "router",
+            from: {},
+            event: envelope.type,
+            kind: "chatops",
+            chatops: { space: body.space, alias, destination, provider: connection.provider },
+            delivery: {
+              mode: "direct",
+              retry: { maxAttempts: 1, backoff: "fixed" },
+              deadLetter: { enabled: false },
+            },
+          };
+          const receipt = await deliverChatops(edge, envelope);
+          record(receipt);
+          return json(receipt.status === "delivered" ? 200 : 502, {
+            status: receipt.status,
+            space: body.space,
+            provider: connection.provider,
+            deliveryId: receipt.deliveryId,
+            providerMessageId: receipt.providerMessageId,
+            classification: receipt.classification,
+          });
+        }
+    
+        return json(404, { status: "rejected", reason: "unknown-path" });
+      },
+    });
+    
+    console.log(
+      JSON.stringify({
+        started: {
+          router: config.spec.router.id,
+          port: PORT,
+          producers: config.spec.producers.length,
+          edges: config.spec.edges.length,
+          environment: config.environment,
+        },
+      }),
+    );
+---
+# Source: hermes-event-router/templates/configmap-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-event-router-config
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: router-test
+data:
+  # The router's ENTIRE configuration: the compiled spec plus the two
+  # environment knobs. Credential references only - a secret value has no
+  # path into this ConfigMap.
+  config.json: |
+    {
+      "environment": "local",
+      "recordingBase": "http://sink.invalid",
+      "spec": {
+        "chatopsConnections": {
+          "company_discord": {
+            "provider": "recording"
+          }
+        },
+        "durableProvider": {
+          "plugin": "redis-streams"
+        },
+        "edges": [
+          {
+            "agent": {
+              "handler": "alerts",
+              "instance": "platform-sre",
+              "namespace": "hermes-platform-sre",
+              "path": "/webhooks/alerts",
+              "port": 8644,
+              "profile": "platform-sre",
+              "secretName": "hermes-platform-sre-env",
+              "service": "hermes-platform-sre",
+              "session": {
+                "key": "subject",
+                "mode": "keyed"
+              },
+              "signature": "hmac-sha256",
+              "url": "http://hermes-platform-sre.hermes-platform-sre.svc.cluster.local:8644/webhooks/alerts"
+            },
+            "delivery": {
+              "deadLetter": {
+                "enabled": true,
+                "retention": "14d"
+              },
+              "mode": "queued",
+              "ordering": {
+                "key": "subject",
+                "mode": "fifo",
+                "onFailure": "dead-letter-and-continue"
+              },
+              "retry": {
+                "backoff": "exponential",
+                "maxAttempts": 5
+              }
+            },
+            "event": "observability.alert/v1",
+            "from": {
+              "producer": "platform-sre/monitoring#alerts"
+            },
+            "id": "platform-sre/operational-alerts@global-\u003e0:agent:platform-sre",
+            "kind": "agent",
+            "profile": "platform-sre",
+            "route": "operational-alerts"
+          },
+          {
+            "chatops": {
+              "alias": "company_discord",
+              "destination": "channel-1",
+              "provider": "recording",
+              "space": "company_discord#channel-1"
+            },
+            "delivery": {
+              "deadLetter": {
+                "enabled": false
+              },
+              "mode": "direct",
+              "retry": {
+                "backoff": "exponential",
+                "maxAttempts": 5
+              }
+            },
+            "event": "observability.alert/v1",
+            "from": {
+              "producer": "platform-sre/monitoring#alerts"
+            },
+            "id": "platform-sre/operational-alerts@global-\u003e1:chatops:company_discord-channel-1",
+            "kind": "chatops",
+            "profile": "platform-sre",
+            "route": "operational-alerts"
+          }
+        ],
+        "externalInputs": [
+          {
+            "event": "source.demo.alert/v1",
+            "hookPath": "/v1/hooks/platform-sre-demo-alert-source",
+            "id": "platform-sre/demo-alert-source",
+            "name": "demo-alert-source",
+            "profile": "platform-sre",
+            "routes": [
+              "external-triage"
+            ],
+            "verification": {
+              "secretRef": {
+                "key": "secret",
+                "name": "demo-alert-source-webhook"
+              },
+              "type": "hmac-sha256"
+            }
+          }
+        ],
+        "producers": [
+          {
+            "app": "monitoring",
+            "appInstance": "platform-sre/monitoring",
+            "event": "observability.alert/v1",
+            "id": "platform-sre/monitoring#alerts",
+            "ingestPath": "/v1/events/platform-sre-monitoring-alerts",
+            "name": "platform-sre/monitoring#alerts",
+            "output": "alerts",
+            "profile": "platform-sre",
+            "routes": [
+              "operational-alerts"
+            ],
+            "schema": "events/observability-alert/v1.schema.json"
+          }
+        ],
+        "router": {
+          "id": "router",
+          "namespace": "hermes-system",
+          "scope": "global",
+          "service": "hermes-event-router"
+        }
+      }
+    }
+---
+# Source: hermes-event-router/templates/backup-dlq.yaml
+# The dead-letter backup (#303, ADR-52's convention).
+#
+# Gated on spec.durableProvider as well as its own switch, because the
+# dead-letter queue IS the broker's: no durableProvider renders no Redis
+# (templates/redis.yaml), and a routine whose restore hook names a
+# Deployment nothing rendered fails the whole platform restore. Found the
+# hard way - `hg platform verify-restore` restored both agent volumes and
+# then died on `deployment/hermes-event-router-redis, which does not
+# exist`, on a router that connections alone had brought up (ADR-152).
+# A direct-only plane has no dead letters to archive.
+#
+# The Redis volume holds three things with three different values: stream
+# entries in flight (fine to lose - `hg up` re-creates the streams and
+# design 13 does not promise them), consumer offsets (rebuilt on the next
+# delivery), and the DEAD-LETTER QUEUE, which is neither.
+#
+# Dead letters are the record of what failed and the only input `hg event
+# dlq replay` has. So this routine archives exactly those - not the whole
+# volume, which would restore stale in-flight entries alongside them and
+# replay deliveries that already succeeded elsewhere.
+#
+# It follows the ordinary routine convention (labelled CronJob, sink
+# volume named `backups`, protects annotation), so `hg backup list|run|
+# verify` and the Nexus Backups view discover it like any other.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-event-router-dlq-backups
+  namespace: hermes-system
+  annotations:
+    argocd.argoproj.io/ignore-healthcheck: "true"
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Source: hermes-event-router/templates/redis.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-event-router-redis
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: router-test
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Source: hermes-event-router/templates/redis.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hermes-event-router-redis
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: router-test
+spec:
+  selector:
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: router-test
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+# Source: hermes-event-router/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  # The compiled DNS identity - producers' generated ingest URLs resolve
+  # to exactly this name.
+  name: hermes-event-router
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: router-test
+spec:
+  selector:
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: router-test
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: hermes-event-router/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-event-router
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: router-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-event-router
+      app.kubernetes.io/instance: router-test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-event-router
+        app.kubernetes.io/instance: router-test
+      annotations:
+        # Roll the pod whenever the code or the compiled config changes.
+        checksum/code: 6097a7c88999647361d5f4ac26e48004aa888278f973e372040a0b0a65823836
+        checksum/config: 07783a01e283d3c6b0801049d80042b17270664c3ee71884529341f221f5d5d8
+        # The annotation scrape job the monitoring stack already runs
+        # (the same convention as the agent exporter) - no ServiceMonitor.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: router
+          image: oven/bun:1-alpine
+          command: ["bun", "/app/router.ts"]
+          env:
+            - name: CONFIG_PATH
+              value: /config/config.json
+            - name: SECRETS_DIR
+              value: /secrets
+            - name: PORT
+              value: "8080"
+            - name: REDIS_URL
+              value: redis://hermes-event-router-redis:6379
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: code
+          configMap:
+            name: hermes-event-router-code
+        - name: config
+          configMap:
+            name: hermes-event-router-config
+        - name: secrets
+          secret:
+            secretName: hermes-event-router-secrets
+            optional: true
+---
+# Source: hermes-event-router/templates/redis.yaml
+# The durable transport backing queued delivery (redis-streams plugin).
+# Append-only + PVC: a queued event survives BOTH consumer (router) and
+# broker restarts. Gated on the environment declaring a durableProvider -
+# a direct-only plane runs no broker.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes-event-router-redis
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router-redis
+    app.kubernetes.io/instance: router-test
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # one PVC, one writer
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-event-router-redis
+      app.kubernetes.io/instance: router-test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-event-router-redis
+        app.kubernetes.io/instance: router-test
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hermes-event-router-redis
+---
+# Source: hermes-event-router/templates/backup-dlq.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hermes-event-router-dlq-backup
+  namespace: hermes-system
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    hermes.dev/backup-routine: "true"
+  annotations:
+    # An archive without this file backed up an empty Redis, which is
+    # indistinguishable from a fleet that has had no failures.
+    hermes.dev/backup-protects: "dead-letters.jsonl"
+    hermes.dev/backup-retention: "7"
+    hermes.dev/backup-destination: pvc
+    # No data PVC to restore INTO, and re-injection is deliberately NOT
+    # automatic: adding a dead letter back to a live stream re-delivers a
+    # failure, and whether that is wanted depends on why it failed. The
+    # hook therefore RESTORES THE RECORD - it puts the archive back where
+    # an operator (or `hg event dlq replay`) can act on it - and reports
+    # what it staged. A hook that silently re-drove every failed delivery
+    # after a disaster would be the wrong kind of helpful.
+    hermes.dev/backup-restore-hook: |
+      {"workload": "deployment/hermes-event-router-redis",
+       "container": "redis",
+       "stagePath": "/tmp/dead-letters.jsonl",
+       "command": ["sh","-c","test -s /tmp/dead-letters.jsonl && echo \"dead letters restored to /tmp/dead-letters.jsonl: $(wc -l < /tmp/dead-letters.jsonl) line(s) - replay with hg event dlq replay\""]}
+spec:
+  schedule: "20 3 * * *"
+  concurrencyPolicy: Forbid
+  # Keep enough finished Jobs for the Backups view's per-run strip to
+  # show real history (defaults are 3/1); the long window lives in
+  # Grafana's kube_job_* series, not in retained objects.
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dlq-backup
+              image: redis:7-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ts="$(date -u +%Y%m%d-%H%M%S)"
+                  out="/backups/dead-letters-${ts}"
+                  mkdir -p "$out"
+                  : > "$out/dead-letters.jsonl"
+                  # One line per dead letter, tagged with the stream it
+                  # came from - a replay has to know where to put it back.
+                  redis-cli -h hermes-event-router-redis --scan --pattern '*:dlq' | while read -r s; do
+                    [ -n "$s" ] || continue
+                    redis-cli -h hermes-event-router-redis XRANGE "$s" - + | \
+                      awk -v st="$s" 'NF{printf "{\"stream\":\"%s\",\"entry\":%s}\n", st, "\"" $0 "\""}' \
+                      >> "$out/dead-letters.jsonl"
+                  done
+                  n="$(wc -l < "$out/dead-letters.jsonl")"
+                  echo "[dlq-backup] archived ${n} dead letter line(s) -> ${out}"
+                  # Retention by directory count; timestamped names sort
+                  # chronologically, same rule every other routine uses.
+                  ls -1d /backups/dead-letters-* | sort -r | tail -n +8 | while read -r old; do
+                    rm -rf "$old"
+                  done
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: hermes-event-router-dlq-backups

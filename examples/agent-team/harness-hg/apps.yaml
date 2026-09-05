@@ -1,0 +1,18 @@
+# The team's supporting workloads (agent-team/v1alpha1 Apps): one chart
+# each, owned by one agent. `repo: local` names a chart in the platform
+# repository, versioned with it; a remote chart requires a pinned version.
+# This one is the demo's test page: edit values.page.body under `hg dev`
+# and watch the change converge through Git and Argo CD.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Apps
+apps:
+  - name: docs-site
+    agent: manager
+    chart: cli/test-env/charts/test-page
+    repo: local
+    values:
+      page:
+        title: manager's page
+        body: >-
+          If you can see this page, the loop worked:
+          Agent Team Repo -> record -> Argo CD -> this pod.

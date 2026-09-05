@@ -1,0 +1,30 @@
+# INVALID: seventeen metadata keys. The map is capped because an unbounded
+# one is an exfiltration path wearing a feature's clothes - a harness could
+# stream arbitrary process state into a browser-visible document.
+apiVersion: hermes.dev/eval-result/v1alpha1
+records:
+  - runId: run-1
+    componentId: marketing-sre
+    suite: sre-behaviour
+    scenario: acknowledges-alert
+    status: pass
+    harness: local-harness
+    ranAt: "2026-08-01T07:00:00Z"
+    metadata:
+      k01: "1"
+      k02: "2"
+      k03: "3"
+      k04: "4"
+      k05: "5"
+      k06: "6"
+      k07: "7"
+      k08: "8"
+      k09: "9"
+      k10: "10"
+      k11: "11"
+      k12: "12"
+      k13: "13"
+      k14: "14"
+      k15: "15"
+      k16: "16"
+      k17: "17"

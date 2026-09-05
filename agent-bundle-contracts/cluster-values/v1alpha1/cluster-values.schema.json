@@ -1,0 +1,333 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/cluster-values/v1alpha1/cluster-values.schema.json",
+  "title": "ClusterValues",
+  "description": "Per-cluster values file (bootstrap/values/cluster-values.yaml) consumed by the Harness Hg Helm chart.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "providers"
+  ],
+  "properties": {
+    "providers": {
+      "description": "Which backend implements each concern for this cluster. Environment-level decisions: a profile record cannot change a provider.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compute",
+        "secret",
+        "ingress"
+      ],
+      "properties": {
+        "compute": {
+          "description": "Compute backend for agent workloads. pod - the chart's StatefulSet - is the only compute path (hermes.computeGuard).",
+          "type": "string",
+          "enum": [
+            "pod"
+          ]
+        },
+        "secret": {
+          "description": "Secret backend. k8s materializes secrets via ExternalSecrets reading the in-cluster ClusterSecretStore; configured under secretBackend.k8s.",
+          "type": "string",
+          "enum": [
+            "k8s"
+          ]
+        },
+        "ingress": {
+          "description": "Ingress backend for exposed services: ingress (standard Ingress resources), cloudflare (a Cloudflare Tunnel per instance), or none. tailscale is retired - this frozen schema still accepts it, but the chart's own values schema refuses it at render time.",
+          "type": "string",
+          "enum": [
+            "ingress",
+            "cloudflare",
+            "tailscale",
+            "none"
+          ]
+        },
+        "backup": {
+          "description": "Which backend implements spec.backup intent. pvc archives the instance's data volume into a per-instance backups PVC on the declared schedule; none means the platform offers no backup destination and a profile declaring spec.backup fails the render loudly (hermes.backupGuard).",
+          "type": "string",
+          "enum": [
+            "pvc",
+            "none"
+          ]
+        }
+      }
+    },
+    "image": {
+      "description": "The Hermes agent container image, used by both the bootstrap initContainer and the main container. A record's spec.deployment.baseImageTag, when set, overrides image.tag.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "description": "Image repository for the Hermes agent container.",
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "description": "Image tag for the Hermes agent container; overridden per instance by spec.deployment.baseImageTag.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "platformRepo": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The platform (factory-level/harness-hg) repo + revision Argo CD renders the hermes-profile chart from - the profiles ApplicationSet's chart source, threaded here so the chart can reuse it as the Application source for spec.apps[] entries with repo: local (local charts ship inside the platform repo and version with it). Scaffolded as the __HERMES_GITOPS_REPO_URL__/__CHART_REVISION__ tokens.",
+      "properties": {
+        "url": {
+          "description": "Git URL of the platform repository the chart is rendered from. Scaffolded as the __HERMES_GITOPS_REPO_URL__ token.",
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "description": "Git revision (branch, tag or commit) the chart is rendered at. Scaffolded as the __CHART_REVISION__ token.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "appProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Argo CD AppProject configuration for the per-app child Applications the hermes-profile chart renders (one per spec.apps[] entry). sourceRepos is the platform's remote helm repo allowlist: a profile's spec.apps[].repo must appear here (render fails loudly otherwise - hermes.appsGuard); the scaffold renders this list into the sourceRepos of the GitOps repo's bootstrap/project.yaml (the server-side enforcement of the same allowlist) on every reconcile, twinning each oci:// entry with its scheme-less form. repo: local is always allowed and needs no entry.",
+      "properties": {
+        "name": {
+          "description": "Name of the Argo CD AppProject the per-app child Applications are created in.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRepos": {
+          "description": "Remote Helm repositories (https:// or oci://) profiles may pull spec.apps[] charts from. Declared once here; the scaffold renders them into bootstrap/project.yaml's sourceRepos in the GitOps repo (oci:// entries twinned scheme-less). repo: local needs no entry.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(https://|oci://)"
+          }
+        }
+      }
+    },
+    "secretBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-provider secret backend configuration; keys correspond to providers.secret values.",
+      "properties": {
+        "k8s": {
+          "description": "Configuration for providers.secret: k8s.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "description": "Namespace the seeded source Secrets live in. Carried for schema parity - the chart itself does not read it; the cluster-scoped ClusterSecretStore pins its own remoteNamespace server-side.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "cloudflare": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Cloudflare Tunnel ingress configuration (providers.ingress: cloudflare) - consumed by the chart's tunnel Stack CR templates and validated by hermes.cloudflareConfigGuard. Optional; required keys within it are enforced by the guard only when the cloudflare ingress provider is selected.",
+      "properties": {
+        "accountId": {
+          "description": "Cloudflare account every hermes-<name>-tunnel Stack provisions its tunnel, DNS and Access resources under. No safe default - the guard fails the render when unset under the cloudflare provider.",
+          "type": "string"
+        },
+        "zoneId": {
+          "description": "ID of the Cloudflare zone tunnel DNS records are created in. Required by the guard when providers.ingress is cloudflare.",
+          "type": "string"
+        },
+        "zoneName": {
+          "description": "Name of the Cloudflare zone (the public domain) tunnel hostnames live under. Required by the guard when providers.ingress is cloudflare.",
+          "type": "string"
+        },
+        "cloudflaredImage": {
+          "description": "The cloudflared sidecar image run beside the agent container under the cloudflare ingress provider.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "description": "Image repository for the cloudflared sidecar.",
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "description": "Image tag for the cloudflared sidecar.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "access": {
+          "description": "Cloudflare Access configuration for instances whose expose access policy is idp or mixed.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "idpId": {
+              "description": "ID of an existing Cloudflare Access identity-provider integration, created out of band in the Zero Trust dashboard - never created here. Needed only when an installed instance's access policy is idp or mixed; may stay empty for a fleet that only uses service tokens.",
+              "type": "string"
+            }
+          }
+        },
+        "apiToken": {
+          "description": "The Cloudflare API token the tunnel Stack workspaces authenticate to the Cloudflare API with - a fleet-wide shared secret, referenced by key, never by value.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remoteSecretKey": {
+              "description": "Key in the remote secret backend holding the shared Cloudflare API token; every instance's ExternalSecret reads the same key (seed once, read everywhere).",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "tunnel": {
+          "description": "Git identity and workspace settings for the cloudflare-tunnel Pulumi program the rendered tunnel Stack CRs point at.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "projectRepo": {
+              "description": "Git URL of the repository holding the cloudflare-tunnel Pulumi program. Defaults to the platform repository itself - override only if you vendor the program elsewhere.",
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "description": "Commit the tunnel program is pinned at. Takes precedence over branch when both are set (mutually exclusive on the Stack CRD).",
+              "type": "string"
+            },
+            "branch": {
+              "description": "Branch the tunnel program tracks when no commit is pinned.",
+              "type": "string"
+            },
+            "workspaceServiceAccountName": {
+              "description": "Kubernetes ServiceAccount the tunnel Stack's workspace pod runs as. Expected to already exist with Cloudflare API credentials and, for providers.secret k8s, RBAC to write Secrets - the chart creates neither. Empty defaults to the instance's own pod ServiceAccount.",
+              "type": "string"
+            }
+          }
+        },
+        "pulumiBackend": {
+          "description": "Pulumi state backend for the tunnel Stack workspaces, config-switched between Pulumi Cloud and a self-managed backend.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "description": "Which backend shape is active: pulumi-cloud (a PULUMI_ACCESS_TOKEN Secret) or self-managed (a backend URL plus a passphrase Secret).",
+              "type": "string",
+              "enum": [
+                "pulumi-cloud",
+                "self-managed"
+              ]
+            },
+            "pulumiCloud": {
+              "description": "Pulumi Cloud backend settings (mode: pulumi-cloud).",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "remoteSecretKey": {
+                  "description": "Key in the remote secret backend holding the shared PULUMI_ACCESS_TOKEN.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "selfManaged": {
+              "description": "Self-managed backend settings (mode: self-managed).",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "backendUrl": {
+                  "description": "Pulumi state backend URL, rendered as PULUMI_BACKEND_URL on the tunnel workspace.",
+                  "type": "string"
+                },
+                "remotePassphraseKey": {
+                  "description": "Key in the remote secret backend holding the shared Pulumi state passphrase.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tailscale": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Tailscale ingress configuration (providers.ingress: tailscale) - consumed by the chart's tailscale sidecar + ExternalSecret templates and validated by hermes.tailscaleConfigGuard. Optional; required keys within it are enforced by the guard only when the tailscale ingress provider is selected.",
+      "properties": {
+        "authKey": {
+          "description": "The Tailscale auth key the sidecar joins the tailnet with - referenced by remote key, never by value.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remoteSecretKey": {
+              "description": "Key in the remote secret backend holding the shared Tailscale auth key.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "tailscaleImage": {
+          "description": "The tailscale sidecar image run beside the agent container under the tailscale ingress provider.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "description": "Image repository for the tailscale sidecar.",
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "description": "Image tag for the tailscale sidecar.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "backup": {
+      "description": "Platform-side configuration for the providers.backup pvc destination. The profile record only declares intent (spec.backup schedule and retention); everything here is a cluster concern.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "description": "Image the archive CronJob runs (tar and sh are all it needs).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "description": "Image repository for the backup CronJob.",
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "description": "Image tag for the backup CronJob.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "pvc": {
+          "description": "The per-instance backups PVC (hermes-<name>-backups) archives are written to.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": {
+              "description": "Requested capacity of the backups PVC, as a Kubernetes quantity (e.g. 5Gi).",
+              "type": "string",
+              "pattern": "^[0-9]+(Ki|Mi|Gi|Ti)$"
+            },
+            "storageClassName": {
+              "description": "StorageClass of the backups PVC. Unset uses the cluster default StorageClass.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

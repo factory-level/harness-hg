@@ -1,0 +1,37 @@
+# Valid: a developer repo's hermes-gitops.yaml (beside distribution.yaml)
+# using every block. Plain Hermes ignores this file entirely; the
+# gitops-emitter reads it as the ONLY carrier of infra intent.
+#
+# Exercises BOTH app flavors:
+#   - a REMOTE app (helm repo URL + pinned version, required for
+#     deterministic deploys) with author values and an operator-supplied
+#     valuesRequired dot-path;
+#   - a LOCAL app (repo: local, the reserved word) whose chart lives in
+#     the platform chart tree and versions with the platform - no version
+#     field allowed.
+apps:
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm
+    version: 1.9.1
+    values:
+      replicas: 1
+    valuesRequired:
+      - auth.apiKeySecretRef
+  - name: docs-site
+    chart: charts/test-page
+    repo: local
+deployment:
+  baseImageTag: hermes-base-2026-07
+  diskSizeGb: 20
+expose:
+  services:
+    - name: tools
+      port: 8080
+      path: /
+  access:
+    policy: service-token
+backup:
+  schedule: "0 3 * * *"
+  retention: 7
+gitAuthSecretRef: hermes-my-agent-git-auth

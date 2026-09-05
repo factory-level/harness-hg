@@ -1,0 +1,149 @@
+# A fully populated overlay: one configured source with facts, one serving
+# last-good under a stale marker, one failed, and four honestly unconfigured.
+# Note what stays true throughout - every source that is not `configured`
+# reads `unknown`, never healthy, and the document-level `stale` flag is the
+# server telling the UI to raise its banner rather than the browser guessing
+# from a failed poll.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: RuntimeOverlay
+observedAt: "2026-07-31T09:14:00Z"
+stale: true
+sources:
+  argocd:
+    kind: argocd
+    status: configured
+    level: degraded
+    summary: 1 of 2 instances requires attention
+    observedAt: "2026-07-31T09:14:00Z"
+    reasons:
+      - message: OutOfSync / Healthy
+        instanceId: manager@eu-west
+    links:
+      - label: Open in Argo CD
+        kind: external
+        url: https://argocd.example.internal/applications/hermes-manager/hermes-manager-eu-west
+        instanceId: manager@eu-west
+  grafana:
+    kind: grafana
+    # observedAt is deliberately older than the document's - that difference
+    # IS the staleness the UI renders.
+    status: stale
+    level: unknown
+    summary: last observed 09:02 - Prometheus unreachable
+    observedAt: "2026-07-31T09:02:00Z"
+  uptime:
+    kind: uptime
+    status: not configured
+    level: unknown
+    summary: no external probe series in Prometheus
+  eval:
+    kind: eval
+    status: not configured
+    level: unknown
+    summary: eval results are not persisted
+  backup:
+    kind: backup
+    status: configured
+    level: healthy
+    summary: 3 of 3 routines succeeded
+    observedAt: "2026-07-31T09:14:00Z"
+    links:
+      - label: Backup detail
+        kind: internal
+        href: /#backups
+  communication:
+    kind: communication
+    status: failed
+    level: unknown
+    summary: router metrics unreachable
+  reconciliation:
+    kind: reconciliation
+    status: configured
+    level: healthy
+    summary: synced at 4f2c1ab
+    observedAt: "2026-07-31T09:13:00Z"
+components:
+  manager:
+    level: degraded
+    summary: 1 of 2 instances requires attention
+    # One entry per source kind, narrowed to this component. The browser
+    # renders these rows verbatim - it has no fallback that could fabricate
+    # a missing one.
+    sources:
+      - kind: argocd
+        status: configured
+        level: degraded
+        summary: 1 of 2 instances requires attention
+        observedAt: "2026-07-31T09:14:00Z"
+      - kind: grafana
+        status: stale
+        level: unknown
+        summary: last observed 09:02
+      - kind: uptime
+        status: not configured
+        level: unknown
+        summary: not configured
+      - kind: eval
+        status: not configured
+        level: unknown
+        summary: no runs
+      - kind: backup
+        status: configured
+        level: healthy
+        summary: last backup 2h ago
+      - kind: communication
+        status: failed
+        level: unknown
+        summary: router metrics unreachable
+      - kind: reconciliation
+        status: configured
+        level: healthy
+        summary: synced at 4f2c1ab
+instances:
+  manager@ca-west:
+    level: healthy
+    reasons:
+      - source: argocd
+        message: Synced / Healthy
+    observedAt: "2026-07-31T09:14:00Z"
+    links:
+      - label: Open in Argo CD
+        kind: external
+        url: https://argocd.example.internal/applications/hermes-manager/hermes-manager-ca-west
+  manager@eu-west:
+    level: degraded
+    reasons:
+      - source: argocd
+        message: OutOfSync / Healthy
+    observedAt: "2026-07-31T09:14:00Z"
+rollups:
+  # Quoted: the key itself contains a colon.
+  "kind:agent":
+    level: degraded
+    summary: 1 of 1 agent requires attention
+    members:
+      - manager
+  "kind:application":
+    level: unknown
+    summary: no applications
+    members: []
+  "group:marketing":
+    level: degraded
+    summary: 1 of 1 member requires attention
+    members:
+      - manager
+  # v1alpha2 (#565/#567): the canonical-Bundle scope and its unbundled
+  # counterpart.
+  "bundle:marketing-core":
+    level: degraded
+    summary: 1 of 1 member requires attention
+    members:
+      - manager
+  "bucket:unbundled":
+    level: healthy
+    summary: all unbundled agents healthy
+    members: []
+integrations:
+  argocd: true
+  grafana: false
+  hermesRuntime: false

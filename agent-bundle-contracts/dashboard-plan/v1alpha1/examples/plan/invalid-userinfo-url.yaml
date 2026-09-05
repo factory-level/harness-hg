@@ -1,0 +1,22 @@
+# INVALID: destination URLs never carry userinfo - embedded credentials are refused at the schema.
+version: 1
+inputsHash: "1111111111111111111111111111111111111111111111111111111111111111"
+sourceSha: "0000000000000000000000000000000000000000"
+components:
+  - id: content-kanban
+    kind: application
+    title: Content Kanban
+    resolved: true
+    instances:
+      - id: marketing-manager/content-kanban@global
+        scope: global
+        destinations:
+          deployed:
+            - name: ui
+              url: https://admin:hunter2@kanban.example.dev
+relationships: []
+view:
+  id: default
+  nodes:
+    - ref: content-kanban
+      position: {x: 0, y: 0}

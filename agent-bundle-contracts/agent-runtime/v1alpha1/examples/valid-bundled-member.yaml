@@ -1,0 +1,26 @@
+# One member of a bundle: `bundle` is present, the workspace is the bundle's
+# shared claim at its authored mountPath, and `apps` is empty by design - a
+# bundled member's apps deploy from deployments/apps, not from the bundle
+# chart (EVE020).
+contract: agent-runtime/v1alpha1
+spec:
+  name: echo
+  engine: eve
+  instance: ag-eve-team-echo
+  namespace: ag-eve-team
+  bundle: team
+  runtimeImage: ghcr.io/example/eve-runtime:0.42.0
+  source:
+    repository: https://github.com/factorylevel/eve-agents.git
+    revision: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+    subdir: agents/echo
+  workspaces:
+    - name: own-source
+      path: /workspaces/own-source
+      access: read-only
+      repository: https://github.com/factorylevel/eve-agents.git
+      revision: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  requiredSecrets:
+    - AI_GATEWAY_API_KEY
+  connections: []
+  apps: []

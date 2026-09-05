@@ -1,0 +1,6 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Agent
+harness: eve
+envRequires: [ANTHROPIC_API_KEY]
+deployment:
+  baseImageTag: wave-3

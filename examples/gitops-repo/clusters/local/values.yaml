@@ -1,0 +1,9 @@
+# Value layer 2 — settings for the one v1 cluster, named "local".
+# This is the k3d/minikube/k3s cluster the quickstart brings up.
+# Higher precedence than values/defaults.yaml, lower than the profile
+# record. Operator-owned: this is the file you edit to describe YOUR
+# cluster.
+cluster:
+  name: local
+ingress:
+  domain: agents.local.example   # replace with your real domain

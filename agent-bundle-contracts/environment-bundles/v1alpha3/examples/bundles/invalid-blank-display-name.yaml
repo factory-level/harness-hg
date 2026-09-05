@@ -1,0 +1,8 @@
+# INVALID: whitespace-only displayName renders as blank chrome - the
+# schema demands at least one visible character.
+version: 3
+bundles:
+  - name: marketing-core
+    displayName: "   "
+    profiles:
+      - name: manager

@@ -1,0 +1,13 @@
+version: 1
+routers:
+  - router
+producers:
+  - platform-sre/monitoring#alerts
+externalInputs:
+  - platform-sre/demo-alert-source
+edges:
+  - platform-sre/operational-alerts@global->0:agent:platform-sre
+chatopsSpaces:
+  - company_discord#channel-1
+  - company_discord#channel-2
+durableProvider: redis-streams

@@ -1,0 +1,13 @@
+# The two policies are closed enums. An unrecognised value must not fall
+# back to a default - "I asked for something the schema does not know" is
+# not the same as "I did not ask".
+version: 1
+chatopsConnections:
+  manager:
+    provider: discord
+    credentialRef:
+      name: hermes-manager-chatops
+      key: DISCORD_BOT_TOKEN
+    inbound:
+      approvedChannels: ["1402938475610293847"]
+      mentionPolicy: whenever

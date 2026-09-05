@@ -1,0 +1,57 @@
+# Per-cluster values file consumed by the hermes-profile Helm chart (as a
+# valueFiles layer ahead of each profile's own instance record — see
+# applicationset.yaml). Must validate against
+# schemas/cluster-values/v1alpha1/cluster-values.schema.json — this file's
+# structure is exercised by `make gitops-template-validate` (dummy-token
+# substitution has no effect on schema shape since every value here is
+# already a plain string/enum).
+#
+# Token syntax: `__DOUBLE_UNDERSCORE__` values are scaffold placeholders
+# (see README.md), substituted once when this template is rendered into a
+# real GitOps repo. They are opaque strings as far as the JSON Schema is
+# concerned, so the file validates both before and after substitution.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+  # The platform's backup destination. "pvc" costs nothing until a profile
+  # actually declares spec.backup (intent-driven: no CronJob renders
+  # otherwise), so the scaffold default makes backups available out of the
+  # box; set to "none" for clusters that must not offer one.
+  backup: pvc
+image:
+  repository: __IMAGE_REPOSITORY__
+  tag: __IMAGE_TAG__
+# The platform repo + revision the hermes-profile chart itself is rendered
+# from (the SAME source/revision the profiles ApplicationSet pins - see
+# applicationset.yaml). The chart reuses it as the Argo CD Application
+# source for spec.apps[] entries with `repo: local`: local charts ship
+# inside the platform repo (`chart` is a path into it) and version with
+# it - no per-app version field.
+platformRepo:
+  url: __HERMES_GITOPS_REPO_URL__
+  revision: __CHART_REVISION__
+# Per-app child Applications (one per spec.apps[] entry) are created in
+# this AppProject. sourceRepos is the platform's REMOTE HELM REPO
+# ALLOWLIST: every https:// or oci:// repo a profile's spec.apps[].repo
+# names must be listed here, or the chart fails the render loudly
+# (hermes.appsGuard). Declare them ONCE, here: the scaffold renders this
+# list into ../project.yaml's sourceRepos on every reconcile - that
+# AppProject is the server-side enforcement of the same allowlist - and
+# adds the scheme-less twin of each oci:// registry there (the rendered
+# child Application drops the scheme - Argo CD's helm-OCI contract, #187;
+# THIS list keeps only the oci:// identity the record names). `repo: local`
+# apps need no entry (the platform repo above is always allowed).
+appProject:
+  name: hermes-gitops
+  sourceRepos: []
+  # e.g.:
+  # sourceRepos:
+  #   - https://qdrant.github.io/qdrant-helm
+  #   - oci://registry-1.docker.io/bitnamicharts
+backup:
+  pvc:
+    size: 5Gi
+secretBackend:
+  k8s:
+    namespace: hermes-secrets

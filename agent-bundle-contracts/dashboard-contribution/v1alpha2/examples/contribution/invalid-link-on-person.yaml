@@ -1,0 +1,12 @@
+# INVALID: links live on components only (ADR-43) - people carry none.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: marketing
+  title: Marketing
+spec:
+  people:
+    - id: calvin
+      displayName: Calvin
+      links:
+        repository: https://github.com/factory-level

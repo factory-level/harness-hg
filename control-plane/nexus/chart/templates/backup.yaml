@@ -1,0 +1,80 @@
+# The overlay state's backup routine - the SAME convention every routine
+# follows (ADR-31/48): labelled CronJob, sink volume named `backups`,
+# protects annotation naming what the artifact must contain. hg backup
+# and hg platform backup discover it exactly like a profile's.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nexus-backups
+  labels: {hermes-gitops.factorylevel.dev/plane: control-plane, hermes-gitops.factorylevel.dev/component: nexus, app.kubernetes.io/name: nexus}
+  annotations:
+    argocd.argoproj.io/ignore-healthcheck: "true"
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.backup.pvcSize }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nexus-backup
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: nexus
+    app.kubernetes.io/name: nexus
+    hermes.dev/backup-routine: "true"
+  annotations:
+    hermes.dev/backup-protects: ".hermes/plugins/hermes-gitops/state"
+    # Retention and destination as READABLE facts (#282). Both are already
+    # true of this routine - retention is interpolated into the prune step
+    # below, the destination is the `backups` volume - but only as shell
+    # text and a volume name. A Backups view that has to parse a container
+    # command to tell an operator how many restore points exist would be
+    # reading the wrong thing; these annotations are the contract.
+    hermes.dev/backup-retention: {{ .Values.backup.retention | quote }}
+    hermes.dev/backup-destination: pvc
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  # Keep enough finished Jobs for the Backups view's per-run strip to
+  # show real history (defaults are 3/1); the long window lives in
+  # Grafana's kube_job_* series, not in retained objects.
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels: {app.kubernetes.io/name: nexus-backup}
+        spec:
+          restartPolicy: OnFailure
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels: {app.kubernetes.io/name: nexus}
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: backup
+              image: busybox:1.37
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ts="$(date -u +%Y%m%d-%H%M%S)"
+                  archive="/backups/nexus-state-${ts}.tar.gz"
+                  echo "[backup] archiving /data -> ${archive}"
+                  tar czf "${archive}" -C /data .
+                  ls -1 /backups/*.tar.gz | sort -r | tail -n +{{ add .Values.backup.retention 1 }} | while read -r old; do
+                    rm -f "${old}"
+                  done
+              volumeMounts:
+                - {name: data, mountPath: /data, readOnly: true}
+                - {name: backups, mountPath: /backups}
+          volumes:
+            - name: data
+              persistentVolumeClaim: {claimName: nexus-state, readOnly: true}
+            - name: backups
+              persistentVolumeClaim: {claimName: nexus-backups}

@@ -1,0 +1,350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/runtime-overlay/v1alpha2/overlay.schema.json",
+  "title": "Normalized runtime overlay (GET /nexus/health)",
+  "description": "UNLIKE every other schema in this tree, this one describes an API RESPONSE rather than an authored artifact: the one normalized operational document Nexus and the CLI both consume (design 12, design 15). It is never written to Git and never hand-edited. Every operational source - Argo CD, Grafana alerts, uptime, evals, backups, communication, server reconciliation - reports through one Source shape carrying its own adapter status and observation time, so a source that is unconfigured or failed reads unknown instead of disappearing into green. The rollup ladder (unhealthy > degraded > unknown > healthy) is applied HERE, at the producer, and nowhere else: browser and CLI read levels, they never compute them. v1alpha2 (#565/#567): the rollup key space gains the `bundle:<name>` scope (per canonical installed Bundle) and `bucket:unbundled` (agents outside every bundle).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "observedAt",
+    "stale",
+    "sources",
+    "components",
+    "instances",
+    "rollups"
+  ],
+  "$defs": {
+    "componentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "level": {
+      "description": "The severity ladder. `unknown` is NOT a synonym for healthy: it is what a source reports when it has no observation, and it outranks healthy in every rollup.",
+      "enum": [
+        "healthy",
+        "degraded",
+        "unhealthy",
+        "unknown"
+      ]
+    },
+    "sourceKind": {
+      "description": "Closed set. Adding a kind is a new schema version directory, never a silent widening - consumers switch on this exhaustively.",
+      "enum": [
+        "argocd",
+        "grafana",
+        "uptime",
+        "eval",
+        "backup",
+        "communication",
+        "reconciliation"
+      ]
+    },
+    "adapterStatus": {
+      "description": "`stale` IS the last-good marker: the current collection failed and what you see is the previous observation, whose age is the difference between this source's observedAt and the document's. `failed` means it failed with no last-good to fall back on. Both must carry level `unknown` or the previous level - never a fresh green.",
+      "enum": [
+        "configured",
+        "not configured",
+        "failed",
+        "stale"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "summary": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "reason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "message"
+      ],
+      "properties": {
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "instanceId": {
+          "type": "string",
+          "maxLength": 200
+        }
+      }
+    },
+    "link": {
+      "description": "Server-built and server-sanitized. `url` is an absolute allowlisted http(s) destination assembled from exact identity (an Argo Application's namespace AND name, never a card title); `href` is an in-Nexus route, safe by construction. Exactly one of the two.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "kind"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "kind": {
+          "enum": [
+            "external",
+            "internal"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https?://[^\\s@]+$",
+          "maxLength": 500
+        },
+        "href": {
+          "type": "string",
+          "pattern": "^/",
+          "maxLength": 500
+        },
+        "instanceId": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "href"
+          ]
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "status",
+        "level",
+        "summary"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "status": {
+          "$ref": "#/$defs/adapterStatus"
+        },
+        "level": {
+          "$ref": "#/$defs/level"
+        },
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "observedAt": {
+          "description": "When the DATA was observed, not when this response was built. Older than the document's observedAt exactly when the source is stale.",
+          "$ref": "#/$defs/timestamp"
+        },
+        "reasons": {
+          "description": "Bounded so a hostile upstream message cannot blow a popover open. A truncated list ends with a `+N more` reason.",
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/reason"
+          }
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        }
+      }
+    },
+    "rollup": {
+      "description": "A precomputed aggregate over a named set. `members` lists the AFFECTED component ids (degraded or unhealthy), sorted - which is what turns 'follow the red dot down' into a lookup rather than a second calculation in the browser.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "summary",
+        "members"
+      ],
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/level"
+        },
+        "summary": {
+          "$ref": "#/$defs/summary"
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "#/$defs/componentId"
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "nexus.hermes.ai/v1alpha2"
+    },
+    "kind": {
+      "const": "RuntimeOverlay"
+    },
+    "observedAt": {
+      "description": "When this document was built. Per-source observedAt may be older.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "stale": {
+      "description": "True when any source is serving last-good data. Drives the UI's stale banner, so the banner is a server fact rather than a browser inference from a failed poll.",
+      "type": "boolean"
+    },
+    "sources": {
+      "description": "Every source kind, always present. A kind with no data path says so through its status; it is never omitted, because an omitted row is indistinguishable from a healthy one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "argocd",
+        "grafana",
+        "uptime",
+        "eval",
+        "backup",
+        "communication",
+        "reconciliation"
+      ],
+      "properties": {
+        "argocd": {
+          "$ref": "#/$defs/source"
+        },
+        "grafana": {
+          "$ref": "#/$defs/source"
+        },
+        "uptime": {
+          "$ref": "#/$defs/source"
+        },
+        "eval": {
+          "$ref": "#/$defs/source"
+        },
+        "backup": {
+          "$ref": "#/$defs/source"
+        },
+        "communication": {
+          "$ref": "#/$defs/source"
+        },
+        "reconciliation": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "components": {
+      "description": "Workload components only (agents and applications). People and Groups carry no health and are absent by design.",
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/componentId"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "level",
+          "summary",
+          "sources"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/$defs/level"
+          },
+          "summary": {
+            "$ref": "#/$defs/summary"
+          },
+          "sources": {
+            "description": "One entry per source kind, narrowed to this component. Present even when every adapter is unconfigured - the browser renders these rows verbatim and must never fabricate one.",
+            "type": "array",
+            "maxItems": 7,
+            "items": {
+              "$ref": "#/$defs/source"
+            }
+          }
+        }
+      }
+    },
+    "instances": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "level",
+          "reasons",
+          "observedAt"
+        ],
+        "properties": {
+          "level": {
+            "$ref": "#/$defs/level"
+          },
+          "reasons": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "message"
+              ],
+              "properties": {
+                "source": {
+                  "$ref": "#/$defs/sourceKind"
+                },
+                "message": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            }
+          },
+          "observedAt": {
+            "$ref": "#/$defs/timestamp"
+          },
+          "links": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "$ref": "#/$defs/link"
+            }
+          }
+        }
+      }
+    },
+    "rollups": {
+      "description": "Precomputed aggregates, keyed `<scope>:<name>`. `kind:agent` and `kind:application` are the directory rollups; `group:<id>` mirrors the canvas containment fields, computed over ALL members including collapsed ones; `bucket:ungrouped` covers the workload components no group claims (a separate scope so it can never collide with a real group whose id happens to be `ungrouped`). Later milestones register `sheet:<id>` and `nav:<surface>` here - the key space is deliberately open so a new surface needs no schema version. v1alpha2 adds `bundle:<name>` (canonical installed Bundle membership, #567) and `bucket:unbundled`.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(kind|group|bucket|sheet|nav|bundle):[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "maxLength": 80
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/rollup"
+      }
+    },
+    "integrations": {
+      "description": "Legacy summary booleans. Superseded by `sources[].status`; retained so an older browser bundle keeps rendering.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
+    }
+  }
+}

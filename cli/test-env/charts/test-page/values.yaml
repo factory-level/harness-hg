@@ -1,0 +1,16 @@
+# All values may be overridden from hermes-gitops.yaml's apps[].values (author),
+# the fleet defaults' appValues, or per-instance appValues overrides.
+image: nginx:1.27-alpine
+
+service:
+  port: 80
+
+# The page content. Kept as values so a profile can brand its own page
+# without forking the chart.
+page:
+  title: "Hermes GitOps test page"
+  body: >-
+    If you can see this page, the full Hermes GitOps loop worked:
+    pulumi up -> GitOps repo -> Argo CD Application -> charts/test-page.
+
+resources: {}

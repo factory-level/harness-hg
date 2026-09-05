@@ -1,0 +1,29 @@
+# A signed inbound webhook fanned out to two agents.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Endpoints
+endpoints:
+  - name: hooks
+    path: /webhooks/brand-brief
+    port: 8644
+    signature: hmac-sha256
+    type: webhook
+externalInputs:
+  - name: brand-brief
+    event: strategy.brief-updated/v1
+    subject: repository.full_name
+    accepts: [push]
+    verification:
+      type: github-hmac-sha256
+      secretRef: {name: hermes-event-router-secrets, key: brand-brief-github}
+routes:
+  - name: brand-brief-fanout
+    from: {externalInput: brand-brief}
+    delivery:
+      mode: queued
+      guarantee: at-least-once
+      retry: {maxAttempts: 5, backoff: exponential}
+      deadLetter: {enabled: true, retention: 14d}
+      ordering: {mode: fifo, key: subject, onFailure: dead-letter-and-continue}
+    outputs:
+      - agent: {profile: marketing-manager, handler: brand-brief, session: {mode: keyed, key: subject}}
+      - agent: {profile: marketing-research, handler: brand-brief, session: {mode: keyed, key: subject}}

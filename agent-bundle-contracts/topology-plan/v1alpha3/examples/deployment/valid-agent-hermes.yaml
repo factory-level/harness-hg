@@ -1,0 +1,11 @@
+spec:
+  id: marketing-manager@ca-west
+  profile: marketing-manager
+  scope: ca-west
+  region: ca-west
+  target: ca-west-a
+  argoDestination: ca-west-a
+  namespace: hermes-marketing-manager-ca-west
+  application: hermes-marketing-manager-ca-west
+  runtime: hermes
+  chart: hermes-profile

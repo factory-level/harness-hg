@@ -1,0 +1,6 @@
+# NEGATIVE FIXTURE (#659): an application chart smuggled into a platform
+# charts/ tree, undeclared cross-component reach. check-chart-boundary.py
+# --self-test must FAIL this tree.
+apiVersion: v2
+name: sneaky-app
+version: 0.1.0

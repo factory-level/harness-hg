@@ -1,0 +1,29 @@
+# INVALID: one link carrying both `url` and `href`. They are different trust
+# paths - `url` is an allowlisted external destination the server assembled
+# from exact identity, `href` is an in-Nexus route safe by construction - and
+# a link that is both would let an external URL ride into a surface that
+# renders internal routes without re-checking them.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: RuntimeOverlay
+observedAt: "2026-07-31T09:14:00Z"
+stale: false
+sources:
+  argocd:
+    kind: argocd
+    status: configured
+    level: healthy
+    summary: all synced
+    links:
+      - label: Open in Argo CD
+        kind: external
+        url: https://argocd.example.internal/applications/argocd/hermes-manager
+        href: /#system/reconciliation
+  grafana: { kind: grafana, status: not configured, level: unknown, summary: not configured }
+  uptime: { kind: uptime, status: not configured, level: unknown, summary: not configured }
+  eval: { kind: eval, status: not configured, level: unknown, summary: not configured }
+  backup: { kind: backup, status: not configured, level: unknown, summary: not configured }
+  communication: { kind: communication, status: not configured, level: unknown, summary: not configured }
+  reconciliation: { kind: reconciliation, status: not configured, level: unknown, summary: not configured }
+components: {}
+instances: {}
+rollups: {}

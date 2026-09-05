@@ -1,0 +1,14 @@
+# All values may be overridden from hermes-gitops.yaml's apps[].values, the
+# fleet defaults' appValues, or per-instance appValues overrides.
+
+# Grafana datasource uid the panels query. Must match the uid provisioned by
+# bootstrap/monitoring-grafana.yaml — every profile queries the SAME shared
+# Prometheus, so this is "prometheus" on a standard platform. Changing it
+# silently yields empty panels (the datasource won't resolve).
+datasourceUid: prometheus
+
+dashboard:
+  # The example traffic panel draws this value as a reference line, so a
+  # glance tells you how close you are to the SiteVisitsHigh alert. Keep it
+  # in step with monitoring.alert.siteVisits5m.threshold.
+  visitsThreshold: 100

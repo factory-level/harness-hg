@@ -1,0 +1,4 @@
+# A topology with no regions places nothing - minItems 1.
+version: 1
+layout: single
+regions: []

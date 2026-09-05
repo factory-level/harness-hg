@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-site
+  labels:
+    app.kubernetes.io/name: site
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: site
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: site
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: site
+          image: {{ .Values.image | quote }}
+          command: ["/bin/sh", "-c"]
+          # squidfunk/mkdocs-material ships git, mkdocs and python3:
+          # clone, pin, build, serve.
+          args:
+            - |
+              set -e
+              git clone {{ .Values.source.repoUrl | quote }} /docs-src
+              cd /docs-src
+              git checkout {{ .Values.source.ref | quote }}
+              mkdocs build -d /tmp/site
+              cd /tmp/site
+              exec python3 -m http.server {{ .Values.service.port }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          # clone + mkdocs build happen before anything listens, so give
+          # startup a generous window; readiness then keeps the Service
+          # (and the AgentAppUnhealthy alert) honest with quick checks.
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          {{- with .Values.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}

@@ -1,0 +1,5 @@
+allowedChartSources:
+  - oci://ghcr.io/factory-level/charts
+allowedJurisdictions:
+  - CA
+  - EU

@@ -1,0 +1,393 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/dashboard-contribution/v1alpha2/contribution.schema.json",
+  "title": "Nexus dashboard contribution (dashboard/contribution.yaml and distributions/<p>/dashboard/components.yaml)",
+  "description": "The persona-authored half of the Nexus canvas: logical components bound to compiled profiles and apps, plus people, groups and conceptual relationships. Data, never code - no scripts, no environment specifics. v1alpha2's one deliberate widening: a component may declare https reference links (repository, docs, runbook) - the compiler additionally rejects userinfo, query and fragment, and the backend re-sanitizes at serve time before the browser sees them. Physical facts (instances, endpoint URLs, Argo identities) still come from the compiled topology plan. Relationships are conceptual and assert nothing about network connectivity. Cross-file rules (unique component ids across a repository, relationship endpoints existing) are the Nexus compiler's job, not this schema's. In an agent-team repository this file lives at `agents/<harness>/<name>/harness-hg/dashboard.yaml`; the legacy path stays readable for repositories not yet migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "$defs": {
+    "componentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "DNS-label id. Unique across every contribution file of the repository (enforced by the compiler)."
+    },
+    "displayText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Plain text. Rendered escaped - markup is not interpreted."
+    },
+    "httpsUrl": {
+      "type": "string",
+      "pattern": "^https://[^\\s]+$",
+      "maxLength": 500,
+      "description": "An https URL. The schema admits https only; the compiler rejects userinfo, query and fragment; the backend re-sanitizes at serve time. Three layers, one posture."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "dashboard.hermes-gitops/v1alpha2",
+      "description": "Pins the contribution contract this document was written against; only this exact value is admitted."
+    },
+    "kind": {
+      "const": "NexusContribution",
+      "description": "Marks the document as a Nexus contribution, distinguishing it from a NexusView layout file."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Identity of the contribution source this file speaks for.",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/componentId",
+          "description": "Identity of this contribution source. For the repository-level file, the operation's name; for a per-distribution file, conventionally the profile name."
+        },
+        "title": {
+          "$ref": "#/$defs/displayText",
+          "description": "Human-readable name of this contribution source."
+        },
+        "description": {
+          "$ref": "#/$defs/displayText",
+          "description": "Optional longer text describing what this contribution source covers."
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The contributed declarations. At least one of the four sections must be present and non-empty.",
+      "properties": {
+        "components": {
+          "type": "array",
+          "description": "Logical components to place on the canvas, each bound to a compiled profile or one of its apps. The compiler resolves each bind against the topology plan.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "title",
+              "bind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId",
+                "description": "The component's canvas id, referenced by relationships, people's accessors and view nodes."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "application"
+                ],
+                "description": "agent binds a whole profile; application binds one apps[] entry of a profile."
+              },
+              "title": {
+                "$ref": "#/$defs/displayText",
+                "description": "Display name shown on the component's canvas card."
+              },
+              "description": {
+                "$ref": "#/$defs/displayText",
+                "description": "Short text shown with the component and matched by canvas search."
+              },
+              "bind": {
+                "type": "object",
+                "description": "Which compiled workload this component represents; the compiler resolves it against the topology plan.",
+                "additionalProperties": false,
+                "required": [
+                  "profile"
+                ],
+                "properties": {
+                  "profile": {
+                    "$ref": "#/$defs/componentId",
+                    "description": "The distribution.yaml name the component binds to."
+                  },
+                  "app": {
+                    "$ref": "#/$defs/componentId",
+                    "description": "The apps[] entry name. Required when kind is application, forbidden when kind is agent."
+                  }
+                }
+              },
+              "display": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Presentation hints for the component's canvas card.",
+                "properties": {
+                  "icon": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                    "maxLength": 63,
+                    "description": "Lucide icon name (kebab-case). Unknown names fall back to a default icon."
+                  },
+                  "providerBadge": {
+                    "type": "boolean",
+                    "description": "Show hosting-provider badges derived from the compiled plan."
+                  }
+                }
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Which optional sections the component's detail modal shows.",
+                "properties": {
+                  "showCrons": {
+                    "type": "boolean",
+                    "description": "Agent modal: show the compile-time cron summary (name and schedule from the declared contract - never prompts)."
+                  },
+                  "showConfigSummary": {
+                    "type": "boolean",
+                    "description": "Agent modal: show the allowlisted declared-configuration summary."
+                  },
+                  "showAccessors": {
+                    "type": "boolean",
+                    "description": "Show the people whose accessors list names this component."
+                  },
+                  "showArgoCd": {
+                    "type": "boolean",
+                    "description": "Application modal: show the Argo CD deep link."
+                  },
+                  "endpointNames": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/componentId"
+                    },
+                    "description": "Which declared endpoints appear as deployed-URL links, by endpoint name. Omitted: every endpoint with a compiled external URL."
+                  }
+                }
+              },
+              "observability": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Observability surfaces for the component, named by logical identifier rather than URL.",
+                "properties": {
+                  "grafanaDashboard": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 63,
+                    "description": "Logical Grafana dashboard identifier. The compiler resolves it to a concrete uid; never a URL."
+                  }
+                }
+              },
+              "links": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Reference links for this component - the launchpad rows the modal renders behind the repository-links flag. Components only, by decision.",
+                "properties": {
+                  "repository": {
+                    "$ref": "#/$defs/httpsUrl",
+                    "description": "Link to the component's source repository."
+                  },
+                  "docs": {
+                    "$ref": "#/$defs/httpsUrl",
+                    "description": "Link to the component's documentation."
+                  },
+                  "runbook": {
+                    "$ref": "#/$defs/httpsUrl",
+                    "description": "Link to the component's operational runbook."
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "application"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "bind": {
+                      "required": [
+                        "profile",
+                        "app"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "agent"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "bind": {
+                      "not": {
+                        "required": [
+                          "app"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "people": {
+          "type": "array",
+          "description": "The humans of the operation, rendered as person cards and roster rows. Display metadata only - never an identity or IAM surface.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "displayName"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId",
+                "description": "The person's id, referenced by relationships and view nodes."
+              },
+              "displayName": {
+                "$ref": "#/$defs/displayText",
+                "description": "The person's name as shown on their card."
+              },
+              "title": {
+                "$ref": "#/$defs/displayText",
+                "description": "Role or job title, shown alongside the display name."
+              },
+              "cohorts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/componentId"
+                },
+                "description": "Group ids this person belongs to."
+              },
+              "accessors": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/componentId"
+                },
+                "description": "Component ids this person operates or has access to. Display metadata only - never an IAM assertion."
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "description": "Named groupings that people (via cohorts) and view nodes (via parent) can belong to.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId",
+                "description": "The group's id, referenced by people's cohorts, relationships and view node parents."
+              },
+              "title": {
+                "$ref": "#/$defs/displayText",
+                "description": "Display name of the group."
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "department",
+                  "team",
+                  "system"
+                ],
+                "description": "What sort of grouping this is; shown as the group's subtitle in the roster."
+              }
+            }
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "description": "Conceptual edges drawn between contributed ids. They assert nothing about network connectivity.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "from",
+              "to",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId",
+                "description": "The relationship's id."
+              },
+              "from": {
+                "$ref": "#/$defs/componentId",
+                "description": "Source endpoint - a component, person or group id contributed by this repository (the compiler rejects unknown ids)."
+              },
+              "to": {
+                "$ref": "#/$defs/componentId",
+                "description": "Target endpoint - a component, person or group id contributed by this repository (the compiler rejects unknown ids)."
+              },
+              "label": {
+                "$ref": "#/$defs/displayText",
+                "description": "Text drawn along the edge."
+              }
+            }
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "components"
+          ],
+          "properties": {
+            "components": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "people"
+          ],
+          "properties": {
+            "people": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "groups"
+          ],
+          "properties": {
+            "groups": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "relationships"
+          ],
+          "properties": {
+            "relationships": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# Layered exactly like the profile chart: the target's cluster-values
+# first (providers.*, ingressDomain), then the endpoint record
+# (deployments/endpoints/<id>/deployment.yaml) as `spec:`.
+providers:
+  # ingress | none. cloudflare is a DECLARED FOLLOW-UP for this chart
+  # (the standalone-tunnel Stack needs the tunnel program's origin-URL
+  # form); declaring it here fails at render rather than approximating.
+  ingress: none
+
+# Optional ingressClassName for providers.ingress=ingress.
+ingress:
+  className: ""
+
+# The endpoint record. Populated by the ApplicationSet from
+# deployments/endpoints/<id>/deployment.yaml - never authored by hand.
+spec: {}

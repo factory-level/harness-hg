@@ -1,0 +1,13 @@
+# INVALID: a URL where a dashboard uid belongs. A catalog entry naming an
+# origin would let the platform's own file point an iframe anywhere -
+# the server builds every URL from a CONFIGURED base plus this uid, and
+# that separation is the allowlist.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha1
+kind: PanelCatalog
+panels:
+  - id: x
+    surface: system
+    title: Something
+    dashboard: https://evil.example/d/abc
+    panelId: 1
+    size: compact

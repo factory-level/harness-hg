@@ -1,0 +1,23 @@
+# Workspace bindings (environment-workspaces v1alpha1, ADR-75): a git
+# repository granted to a profile at a pinned commit. For an Eve agent
+# (ADR-150) the platform clones it onto the agent's data volume (or the
+# bundle's workspaces claim) and exports EVE_WORKSPACE_<NAME> with the
+# checkout path; the declared mount path is NOT honoured for Eve - the
+# variable is the contract. `hg workspace verify` probes the checkout.
+#
+# `source: self` = the bound profile's OWN source repository at the deployed
+# revision (the record's spec.source/spec.sha), so the example needs no
+# credential and no second repository: echo gets a read-only checkout of
+# the very commit it was built from.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: own-source
+    source: self
+    mount: { path: /workspaces/own-source, access: read-only }
+
+bindings:
+  - repository: own-source
+    profiles: [echo]
+    purpose: own-source

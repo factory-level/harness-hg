@@ -1,0 +1,65 @@
+{{- include "eve.runtimeGuard" . -}}
+{{- include "eve.computeGuard" . -}}
+{{- include "eve.subdirGuard" . -}}
+{{- include "eve.workspaceGuard" . -}}
+{{/*
+Build/(re)install script for the build-agent initContainer (see
+templates/statefulset.yaml). Mounted as a volume and run via
+container.command on the eve-runtime image.
+
+The convergence shape is the hermes-profile chart's (pod/configmap-boot.yaml):
+a stamp file on the data volume records the sha that was last built; when
+it differs from spec.sha the checkout is replaced, dependencies installed
+from the lockfile, the Nitro server built, and the stamp rewritten. Same
+sha, no work - a pod restart is a restart, not a rebuild.
+
+Three things are Eve-specific:
+  - `npm ci` needs package-lock.json: an Eve project is an npm project, and
+    the lockfile is what makes the build reproducible from spec.sha alone.
+  - The PLATFORM pins the runtime version (versions.json runtimes.eve,
+    ADR-63): after `npm ci` the project's resolved `eve` must equal the
+    image's EVE_VERSION, else the build refuses with the fix named. The
+    persona's override is spec.deployment.runtimeImageTag, never a silent
+    mismatch.
+  - Route auth: eve fails closed in production. When the project authors no
+    agent/channels/eve.ts the script installs the platform default
+    (files/channel-eve.ts, shipped in this ConfigMap: Basic auth against the
+    mounted credential, read per request so a re-mint needs no restart,
+    plus localDev() which authenticates nothing under `eve start`). An
+    authored file is left untouched - the persona owns its policy.
+
+Git credentials for a private source live ONLY in an ephemeral HOME under
+the initContainer's /tmp (container-local, never the data claim) and are
+removed by an exit trap whether or not the clone succeeds.
+
+Durable state lives OUTSIDE the checkout (ADR-150). Eve's local Workflow
+world writes <project>/.eve/.workflow-data and the just-bash sandbox its
+virtual filesystem under <project>/.eve/sandbox-cache; a rebuild replaces
+the checkout wholesale, so both are kept at /app/state/ and symlinked into
+the project on every boot. That is also what the backup routine protects
+(templates/backup.yaml) and what a restore brings back: the archive
+carries no node_modules/.output, and their absence is exactly what makes
+this script rebuild from spec.sha.
+
+Workspace bindings (spec.workspace.repositories[], layered from
+deployments/workspaces/profiles/<name>.yaml) are cloned AFTER the build to
+/app/workspaces/<name> at their pinned sha - one stamp per repository, so
+a re-pin re-clones only that one. A clone that fails DEGRADES (loud log
+line, the directory is removed, the pod still starts): the agent's own
+code decides whether a missing workspace is fatal, the platform never
+takes the pod down for it (the bundle chart's rule).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eve.fullname" . }}-boot
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    {{- include "eve.labels" . | nindent 4 }}
+data:
+  channel-eve.ts: |
+{{ .Files.Get "files/channel-eve.ts" | indent 4 }}
+  boot.sh: |
+{{ .Files.Get "files/boot.sh" | indent 4 }}

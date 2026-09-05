@@ -1,0 +1,21 @@
+{{/*
+One runtime manifest per bundle member (ADR-153), each mounted into that
+member's container at /hg/runtime-manifest.json. One ConfigMap per member
+rather than one with many keys: a member's manifest is about that member,
+and it is the object `hg agent show` reads for it by name.
+*/}}
+{{- range .Values.spec.profiles }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eve-bundle.fullname" $ }}-{{ .name }}-runtime-manifest
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    {{- include "eve-bundle.labels" $ | nindent 4 }}
+    hermes-gitops.factorylevel.dev/member: {{ .name | quote }}
+data:
+  runtime-manifest.json: {{ include "eve-bundle.runtimeManifest" (dict "root" $ "member" .) | quote }}
+{{- end }}

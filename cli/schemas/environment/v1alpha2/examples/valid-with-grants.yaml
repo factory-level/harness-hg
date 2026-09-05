@@ -1,0 +1,40 @@
+# The bootstrap's half of a two-region team (ADR 0178): targets per region,
+# DNS, policy, and one extra repository mount granted with its credential.
+apiVersion: hermes-gitops.factorylevel.dev/environment/v1alpha2
+name: production
+project: example-project
+rootKms: {location: us, keyring: pulumi, key: pulumi-root}
+state:
+  deployerGroup: deployers@example.dev
+  agents: [production]
+infra:
+  gitopsRepoUrl: https://github.com/example/production.gitops.git
+  providers: {compute: pod, secret: k8s, ingress: cloudflare}
+grants:
+  targets:
+    ca-west:
+      - {name: ca-west-a, argoDestination: ca-west-a, primary: true}
+    eu-west:
+      - {name: eu-west-a, argoDestination: eu-west-a, primary: true}
+  globalTarget: ca-west-a
+  dns:
+    publicBaseDomain: hermes.factorylevel.ai
+  policy:
+    allowedChartSources: [oci://registry.example.dev/hermes/charts]
+    allowedJurisdictions: [CA, EU]
+  capabilities:
+    sentiment:
+      implementation: external-sentiment-api
+      url: https://sentiment.example.com
+  workspaces:
+    repositories:
+      - name: vision-manager
+        source:
+          url: https://github.com/example/vision-manager.git
+          revision: {mode: pinned, sha: af9065b7d2ac3ad332c34f9ab04707aac88a51e4}
+          authSecretRef: hermes-vision-manager-git
+        mount: {path: /workspaces/vision-manager, access: read-only}
+    bindings:
+      - repository: vision-manager
+        profiles: [marketing-manager]
+        purpose: strategy-context

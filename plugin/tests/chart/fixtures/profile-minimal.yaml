@@ -1,0 +1,14 @@
+# Minimal HermesProfile record fixture for the golden renders
+# (infra/scripts/render-test.sh). Mirrors the smallest record the emitter
+# can produce: identity fields only, no hermes-gitops.yaml beside the
+# manifest => zero spec.apps (the agent pod still renders; no Argo CD
+# Applications do).
+#
+# Chart-test-owned fixture, deliberately NOT one of the frozen
+# schemas/hermesprofile/v1alpha2/examples/ files: the golden renders are
+# this chart's own regression net and must not churn when the canonical
+# schema examples are re-authored.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d

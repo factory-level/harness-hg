@@ -1,0 +1,15 @@
+apiVersion: v2
+name: hermes-endpoint
+description: >-
+  Edge realization for ONE component instance's endpoints (design 10,
+  ADR-35): consumes a deployments/endpoints/<id>/deployment.yaml record
+  (spec.endpoints with explicit backend routing) plus the target's
+  cluster-values, and renders the exposure the target's ingress provider
+  supports. providers.ingress=ingress renders one Ingress per
+  externally-projected endpoint (ExternalName Service bridging when the
+  backend lives in another namespace); internal/private endpoints and
+  provider "none" render nothing; the cloudflare mode (a standalone
+  tunnel Stack per instance) is a declared follow-up, not silently
+  approximated.
+type: application
+version: 0.1.0

@@ -1,0 +1,27 @@
+# A scheduled task this agent runs on its own.
+#
+# `hermes profile install` copies this file onto the agent's volume, and
+# the chart's boot script then runs `hermes cron sync` to turn it into a
+# real scheduled job. Without that step a declaration here is inert - the
+# scheduler only ever reads cron/jobs.json - which is why the platform
+# activates it for you rather than leaving it to a post-install checklist.
+#
+# The job arrives PAUSED. Sync owns the definition below; you own whether
+# it runs, so `hermes cron resume echo-heartbeat` is a decision that
+# survives every redeploy instead of being re-armed on the next boot:
+#
+#   hg agent show  --profile persona-echo            # see its state
+#   hg agent apply --profile persona-echo            # activate declarations
+#   hg agent exec  --profile persona-echo -- cron resume echo-heartbeat
+#
+# `name` is the identity across syncs - rename it and sync will retire the
+# old job and create a new one.
+name: echo-heartbeat
+schedule: "every 1d"
+# "local" writes the run's output under cron/output/ rather than trying to
+# reply into a conversation that a scheduled run does not have.
+deliver: local
+prompt: |
+  Report your own health in three lines: which profile you are, what
+  skills you can see, and whether your workspace is writable. Be terse -
+  this runs unattended and nobody reads prose.

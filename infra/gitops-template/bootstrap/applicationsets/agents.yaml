@@ -1,0 +1,114 @@
+# hermes-gitops-agents ApplicationSet (ADR-36) - one Application per
+# PHYSICAL AGENT INSTANCE record under deployments/agents/. The compiler
+# owns every name (spec.application, spec.namespace) and the destination
+# (spec.argoDestination - a registered Argo CD cluster); this template
+# stays dumb. Coexists with the legacy hermes-gitops-profiles
+# ApplicationSet by construction: the two read DIFFERENT inputs
+# (deployments/agents/* vs profiles/*); name collisions WITHIN a plan are
+# compiler errors (TOPO011), and the scaffold-lifecycle upgrade removes
+# the legacy generator in the same commit that converts the records - the
+# two generators never manage the same Application in a converted repo.
+#
+# Value layering (ignoreMissingValueFiles: the environment/ tree arrives
+# with the scaffold-lifecycle phase; until then cluster-values carries the
+# WHERE layer exactly as the legacy path does):
+#   1. bootstrap/values/cluster-values.yaml      - legacy cluster WHERE
+#   2. environment/targets/<target>/values.yaml  - per-target WHERE (wins)
+#   3. profiles/<profile>/profile.yaml           - the WHAT (the record)
+#   4. deployments/agents/<id>/values.yaml       - the COMPILED overlay:
+#      spec.env, the topology compiler's resolved capability injections
+#      (ADR-97). Layered LAST because it is derived from everything above
+#      it; the chart's envGuard fails the render if an injected name
+#      collides with a chart-owned variable or a declared envRequires.
+#
+# Token syntax: __DOUBLE_UNDERSCORE__ = scaffold substitution, {{ .x }} =
+# Argo CD Go template - the same two-language contract as
+# bootstrap/applicationset.yaml (see its header).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-agents
+  namespace: argocd
+spec:
+  # An operator (or `hg backup restore`'s quiesce) may pause a generated
+  # Application's sync policy; without this the controller reverts the
+  # patch within seconds and selfHeal resurrects the workload MID-RESTORE
+  # (found live: a scale-to-0 quiesce lost to the AppSet on the first
+  # real-cluster verify-restore). Ownership of syncPolicy is ceded to
+  # whoever holds the pause; everything else stays controller-enforced.
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "deployments/agents/*/deployment.yaml"
+  template:
+    metadata:
+      name: "{{.spec.application}}"
+      labels:
+        hermes-gitops.factorylevel.dev/profile: "{{.spec.profile}}"
+        hermes-gitops.factorylevel.dev/scope: "{{.spec.scope}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          # The chart is the RECORD's choice (ADR-149): the compiler stamps
+          # spec.chart (hermes-profile for the Hermes runtime, eve-agent for
+          # Eve; topology-plan v1alpha3) and this template stays dumb.
+          # `dig`, not `default`: under goTemplateOptions missingkey=error a
+          # missing key fails the lookup before `default` can run, while
+          # sprig's dig walks the parent map and returns the fallback - so a
+          # record emitted before v1alpha3 still renders as hermes-profile.
+          # Two-parent layout (ADR 0160): the record stamps a bare chart
+          # name; the parent directory follows from it.
+          path: '{{ if eq (dig "chart" "hermes-profile" .spec) "eve-agent" }}harness/eve/charts/eve-agent{{ else }}harness/hermes/charts/{{ dig "chart" "hermes-profile" .spec }}{{ end }}'
+          # When promoting applicationsets/apps.yaml, ADD (same commit)
+          #   valuesObject: {appsManagedExternally: true}
+          # under this helm: block - see apps.yaml's same-commit contract
+          # (#498). Deliberately NOT hardcoded here: agents-without-apps
+          # repos need the chart's own children.
+          helm:
+            releaseName: "{{.spec.application}}"
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $gitops/bootstrap/values/cluster-values.yaml
+              - $gitops/environment/targets/{{.spec.target}}/values.yaml
+              - $gitops/profiles/{{.spec.profile}}/profile.yaml
+              # Workspace repository mounts (#362) - present only for
+              # profiles a WorkspaceBindings declaration binds; absent for
+              # everyone else (ignoreMissingValueFiles above).
+              - $gitops/deployments/workspaces/profiles/{{.spec.profile}}.yaml
+              # Connection projections (ADR-152) - present only for profiles
+              # a Connections declaration binds.
+              - $gitops/deployments/connections/profiles/{{.spec.profile}}.yaml
+              # The compiled per-instance overlay (ADR-97): spec.env with
+              # the resolved capability URLs. {{.path.basename}} is this
+              # record's own directory - the instance id.
+              - $gitops/deployments/agents/{{.path.basename}}/values.yaml
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        name: "{{.spec.argoDestination}}"
+        namespace: "{{.spec.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

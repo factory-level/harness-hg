@@ -1,0 +1,6 @@
+# The smallest Eve profile: the marker plus the runtime. The env contract is
+# empty - only valid for an agent whose model credential is injected some
+# other way; a real agent declares AI_GATEWAY_API_KEY (see valid-eve-full).
+contractVersion: 5
+runtime:
+  kind: eve

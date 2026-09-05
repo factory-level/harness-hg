@@ -1,0 +1,24 @@
+# Every edge carries its fully-resolved delivery policy - the router never
+# guesses retry or DLQ behavior.
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  chatopsConnections: {}
+  producers: []
+  externalInputs: []
+  edges:
+    - id: e1
+      route: r
+      profile: p
+      from:
+        producer: p/m#o
+      event: observability.alert/v1
+      kind: chatops
+      chatops:
+        space: a#d
+        alias: a
+        destination: d
+        provider: recording

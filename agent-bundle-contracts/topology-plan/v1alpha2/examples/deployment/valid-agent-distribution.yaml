@@ -1,0 +1,13 @@
+# An agent record carrying its installed distribution identity (ADR-123):
+# the category Nexus groups it under, beside the Harness Hg control plane.
+spec:
+  id: marketing-manager
+  profile: marketing-manager
+  scope: local
+  target: in-cluster
+  argoDestination: in-cluster
+  namespace: hermes-marketing-manager
+  application: hermes-marketing-manager
+  distribution:
+    name: marketing
+    displayName: Marketing Team

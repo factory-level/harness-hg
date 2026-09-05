@@ -1,0 +1,10 @@
+# The environment topology contract is version 1; a future version is a new
+# schema directory, not a field bump.
+version: 2
+layout: single
+regions:
+  - name: local
+    jurisdiction: NA
+    targets:
+      - name: in-cluster
+        argoDestination: in-cluster

@@ -1,0 +1,12 @@
+# The one behaviour the echo agent's instructions promise: the reply is the
+# prompt, prefixed "echo: ". The runner sends prompt.txt over the Eve
+# session API and the evaluator asserts on $HG_EVAL_RESPONSE.
+name: echoes-verbatim
+profile: echo
+description: >
+  The agent's instructions say to reply with exactly the user's text prefixed
+  by "echo: ". Sent through the session API with the minted route-auth
+  credential, exactly as hg prompt does.
+prompt: prompt.txt
+evaluate: evaluate.sh
+timeout: 120

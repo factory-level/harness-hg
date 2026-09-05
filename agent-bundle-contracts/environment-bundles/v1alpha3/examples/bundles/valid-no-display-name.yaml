@@ -1,0 +1,9 @@
+# displayName is optional: an undeclared title falls back to the machine
+# name everywhere it is rendered, never to an invented label.
+version: 3
+bundles:
+  - name: content-ops
+    profiles:
+      - name: publisher
+        envSecretRef: hermes-publisher-env
+        apiServerPort: 8642

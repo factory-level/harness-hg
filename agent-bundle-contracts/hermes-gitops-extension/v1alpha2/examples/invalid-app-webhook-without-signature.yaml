@@ -1,0 +1,14 @@
+# The webhook=>signature rule composes through the app-endpoint $ref too,
+# not just the agent level.
+contractVersion: 2
+apps:
+  - name: relay
+    chart: marketing-sre-relay
+    repo: oci://ghcr.io/factory-level/charts
+    version: 0.2.0
+    endpoints:
+      - name: alerts
+        service: relay
+        port: 80
+        path: /alert
+        type: webhook

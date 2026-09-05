@@ -1,0 +1,15 @@
+# The SANDBOX binding: same authored routes, real Discord plugin. The bot
+# token is an operator-host env var REFERENCE - the value never appears in
+# Git, plans, receipts, or logs. Use with:
+#   hg chatops test company_discord#<sandbox-channel-id> \
+#     --environment examples/communication-plane/environments/discord-sandbox/topology.yaml ...
+version: 1
+
+chatopsConnections:
+  company_discord:
+    provider: discord
+    credentialRef:
+      env: HG_DISCORD_BOT_TOKEN
+
+durableProvider:
+  plugin: redis-streams

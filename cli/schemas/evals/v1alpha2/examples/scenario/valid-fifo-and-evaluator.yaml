@@ -1,0 +1,12 @@
+# Valid: a FIFO sequence plus an evaluator for the business assertion.
+name: fifo-ordering
+profile: platform-sre
+invoke:
+  events:
+    name: observability.alert
+    orderingKey: project-42
+    payloads:
+      - fixtures/completed-1.json
+      - fixtures/completed-2.json
+      - fixtures/completed-3.json
+evaluate: evaluate.py

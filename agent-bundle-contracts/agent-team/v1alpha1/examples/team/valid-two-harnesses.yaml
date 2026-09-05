@@ -1,0 +1,6 @@
+# A team mid-migration: Hermes personas beside their Eve twins.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: AgentTeam
+name: marketing
+displayName: Marketing Team
+harnesses: [eve, hermes]

@@ -1,0 +1,37 @@
+# A two-member Eve bundle (ADR-150), the shape `hg bundle` emits into
+# deployments/bundles/<name>/values.yaml for members whose records carry
+# runtime: eve. One member binds a bundle repository (a workspace), the
+# other declares its own port and a private source credential.
+spec:
+  runtime: eve
+  name: team
+  profiles:
+    - name: echo
+      source: https://example.invalid/eve-agents.git
+      sha: "1111111111111111111111111111111111111111"
+      sourceSubdir: agents/echo
+      gatewayEnabled: true
+      envSecretRef: ag-eve-team-echo-env
+      envRequires:
+        - ANTHROPIC_API_KEY
+      repositoryRefs: ["brand"]
+    - name: greeter
+      source: https://example.invalid/eve-agents.git
+      sha: "1111111111111111111111111111111111111111"
+      sourceSubdir: agents/greeter
+      gatewayEnabled: true
+      apiServerPort: 3100
+      gitAuthSecretRef: ag-eve-team-greeter-git
+      repositoryRefs: []
+  repositories:
+    - name: brand
+      source: https://example.invalid/vision-manager.git
+      sha: "2222222222222222222222222222222222222222"
+      mountPath: /workspaces/brand
+      access: read-only
+  deployment:
+    diskSizeGb: 20
+    workspaceSizeGb: 20
+  dashboard:
+    enabled: false
+    port: 9119

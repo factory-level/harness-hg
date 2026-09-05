@@ -1,0 +1,3 @@
+# The image pin lives in versions.json ("wiki" block) and must equal this
+# default (asserted by cli/tests/versions.test.ts, the loki precedent).
+image: us-docker.pkg.dev/inferlab-dev/harness-hg/wiki:0.0.0-dev

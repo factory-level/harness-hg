@@ -1,0 +1,80 @@
+# hermes-gitops-bundles ApplicationSet (ADR-28 migration path) - one
+# Application per compiled runtime bundle under deployments/bundles/.
+#
+# This generator is dormant until the operator adds environment/bundles.yaml
+# and runs hermes-gitops-bundles. It intentionally coexists with the legacy
+# per-profile generators during review; cutover removes the corresponding
+# deployments/agents records only after namespace-local profile credentials
+# have been copied into the bundle namespace.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-bundles
+  namespace: argocd
+spec:
+  # STAGED, NOT PROMOTED: the root Application excludes this file from its
+  # recursive bootstrap sync (see infra/src/components/root-app). If a live
+  # copy is ever deleted or pruned anyway, leave the generated Applications
+  # standing (no owner-reference cascade): the 2026-08-28 accidental
+  # promotion showed a pruned AppSet cascade-deletes its Applications AND
+  # their workloads/PVCs. (This is the AppSet-level syncPolicy - distinct
+  # from the generated Applications' template.spec.syncPolicy.)
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "deployments/bundles/*/deployment.yaml"
+  template:
+    metadata:
+      name: "{{.spec.application}}"
+      labels:
+        hermes-gitops.factorylevel.dev/bundle: "{{.spec.bundle}}"
+        hermes-gitops.factorylevel.dev/scope: "{{.spec.scope}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          # The chart is the RECORD's choice (ADR-150): `hg bundle` stamps
+          # spec.chart (hermes-bundle for Hermes members, eve-bundle for Eve
+          # members; a bundle is homogeneous). `dig`, not `default`: under
+          # missingkey=error a missing key fails before `default` runs,
+          # while sprig's dig returns the fallback - a record compiled
+          # before this key still renders hermes-bundle.
+          # Two-parent layout (ADR 0160): eve-bundle vs hermes-bundle.
+          path: '{{ if eq (dig "chart" "hermes-bundle" .spec) "eve-bundle" }}harness/eve/charts/eve-bundle{{ else }}harness/hermes/charts/hermes-bundle{{ end }}'
+          helm:
+            releaseName: "{{.spec.application}}"
+            valueFiles:
+              # Environment first, bundle second - the same WHERE-then-WHAT
+              # layering the per-profile ApplicationSet uses. The bundle
+              # record carries no image, providers or backup settings; those
+              # are environment facts.
+              - $gitops/bootstrap/values/cluster-values.yaml
+              - $gitops/deployments/bundles/{{.path.basename}}/values.yaml
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        name: "{{.spec.argoDestination}}"
+        namespace: "{{.spec.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

@@ -1,0 +1,10 @@
+# The team's identity (agent-team/v1alpha1 AgentTeam) - read FIRST by every
+# hg verb and the emitter: its presence is what makes this an agent-team
+# repository, and `name` is the one operational category every record,
+# backup, alarm and event route of this repo groups under on Nexus.
+# harnesses[] must list every agents/<harness>/ directory here.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: AgentTeam
+name: agent-team
+displayName: agent-team
+harnesses: [eve]

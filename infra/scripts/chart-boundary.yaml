@@ -1,0 +1,32 @@
+# The chart-boundary manifest (#659, ADR 0163): every Chart.yaml in the
+# platform repo must be declared here with its class. The validator
+# (check-chart-boundary.py) fails on an undeclared chart, a chart outside
+# its class's allowed root, any entry of class `application` (application
+# charts live only in persona repos), and an undeclared cross-component
+# reference. Adding a chart means adding an entry - not editing the
+# validator.
+#
+# classes and their allowed roots:
+#   control-plane  control-plane/<component>/chart
+#   library        control-plane/<component>/lib (never deployed)
+#   harness        harness/<name>/charts/<chart>
+#   test-fixture   cli/test-env/charts/<chart>
+#   subchart-copy  a committed library copy inside a consumer chart
+charts:
+  - { path: control-plane/nexus/chart, class: control-plane, component: nexus, dependsOn: [monitoring] }
+  - { path: control-plane/observability/chart, class: control-plane, component: observability, dependsOn: [nexus, monitoring] }
+  - { path: control-plane/fleet-dashboard/chart, class: control-plane, component: fleet-dashboard, dependsOn: [alert-router, monitoring] }
+  - { path: control-plane/monitoring/chart, class: control-plane, component: monitoring, dependsOn: [alert-router, fleet-dashboard] }
+  - { path: control-plane/wiki/chart, class: control-plane, component: wiki }
+  - { path: control-plane/loki/chart, class: control-plane, component: loki }
+  - { path: control-plane/event-router/chart, class: control-plane, component: event-router, dependsOn: [monitoring] }
+  - { path: control-plane/alert-router/lib, class: library, component: alert-router }
+  - { path: control-plane/monitoring/chart/charts/hermes-alerting, class: subchart-copy }
+  - { path: control-plane/fleet-dashboard/chart/charts/hermes-alerting, class: subchart-copy }
+  - { path: harness/eve/charts/eve-agent, class: harness }
+  - { path: harness/eve/charts/eve-bundle, class: harness }
+  - { path: harness/hermes/charts/hermes-profile, class: harness }
+  - { path: harness/hermes/charts/hermes-bundle, class: harness }
+  - { path: harness/hermes/charts/hermes-endpoint, class: harness }
+  - { path: cli/test-env/charts/secret-tester, class: test-fixture }
+  - { path: cli/test-env/charts/test-page, class: test-fixture }

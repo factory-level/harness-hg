@@ -1,0 +1,32 @@
+# All values may be overridden from hermes-gitops.yaml's apps[].values
+# (author), the fleet defaults' appValues, or per-instance appValues.
+image: nginx:1.27-alpine
+
+# The HTTP services this agent-app bundles. Each entry becomes its own
+# Kubernetes Service — list every port your app (or its sidecars) listens on
+# that you might want reachable. WHICH of these actually get published to the
+# outside world is decided separately, in hermes-gitops.yaml's
+# expose.services; keep the name + port in sync between the two files.
+#
+# The demo container below only serves the FIRST service's targetPort; when
+# your agent bundles real extra services, point their targetPort at the port
+# their container/sidecar listens on.
+services:
+  - name: web            # DNS-1123 label; unique within this list
+    port: <SERVICE_PORT> # the port the Service publishes (matches expose)
+    targetPort: 80       # the container port it forwards to (nginx: 80)
+  # Add each additional service your agent bundles, e.g.:
+  # - name: api
+  #   port: 9090
+  #   targetPort: 9090
+
+# The status page content — kept as values so a profile can brand its own
+# page without forking the chart.
+page:
+  title: "<PERSONA> — site reliability agent"
+  body: >-
+    <PERSONA> is watching this profile's Grafana dashboard and its three
+    standard alerts. If you can see this page, the full loop worked:
+    pulumi up -> GitOps repo -> Argo CD -> this chart.
+
+resources: {}

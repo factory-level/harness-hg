@@ -1,0 +1,8 @@
+# Overlay flipping the chart into apps-suppressed mode (#498): layered on
+# top of the valid-full inputs, the render must contain ZERO Argo
+# Application docs while everything else (StatefulSet included) stays
+# byte-identical to valid-full - render-test.sh asserts both. This is how
+# the agents ApplicationSet's valuesObject sets it in a promoted
+# factory.gitops; the key is chart-only and never appears in cluster-values
+# or a profile record.
+appsManagedExternally: true

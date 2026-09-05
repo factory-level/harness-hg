@@ -1,0 +1,48 @@
+{{- include "hermes.computeGuard" . -}}
+{{/*
+Connection projections (ADR-152): one ExternalSecret per entry of
+spec.connections[] - layered from deployments/connections/profiles/<name>.yaml
+by the agents ApplicationSet - reading the platform's one Secret for that
+connection (hermes-secrets/<secretName>, written by `hg connection set` or the
+stack's connections.<name>.* config) through the cluster-scoped
+`hermes-gitops` ClusterSecretStore, into <instance>-connection-<name> in
+THIS namespace. The pod mounts it with envFrom, so the agent's own channel
+code finds DISCORD_* / GITHUB_* in its environment exactly as eve documents.
+The keys are the provider's fixed set (the compiler writes them); an unset
+key is an empty string in the platform Secret, never absent, so a projection
+never blocks a pod on a key the operator has not supplied yet.
+*/}}
+{{- range (.Values.spec.connections | default list) }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ include "hermes.fullname" $ }}-connection-{{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" $ | nindent 4 }}
+    hermes-gitops.factorylevel.dev/connection: {{ .name | quote }}
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: hermes-gitops
+    kind: ClusterSecretStore
+  target:
+    name: {{ include "hermes.fullname" $ }}-connection-{{ .name }}
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    {{- $secret := .secretName }}
+    {{- range .keys }}
+    - secretKey: {{ . }}
+      remoteRef:
+        key: {{ $secret }}
+        property: {{ . }}
+        # ESO's webhook defaults, stated so Argo CD sees no drift.
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
+    {{- end }}
+{{- end }}

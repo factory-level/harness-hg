@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-communication/v1alpha2/communication.schema.json",
+  "title": "Environment communication configuration (environment/communication.yaml)",
+  "description": "The environment-owned half of the communication plane, authored beside environment/topology.yaml. Profiles declare logical intent (outputs, routes, spaces as alias#destination); this file binds it physically: which provider plugin backs each ChatOps connection alias, where its credentials live, and which durable transport carries queued routes. Absent file = communication feature off for the environment; a profile declaring queued routes or ChatOps outputs then fails compilation loudly instead of guessing. Secrets never appear here - only references. In an agent-team repository this file lives at `harness-hg/communication.yaml`; the legacy path stays readable for repositories not yet migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "description": "Environment communication contract version.",
+      "const": 1
+    },
+    "chatopsConnections": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$",
+        "maxLength": 63
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "discord",
+              "slack",
+              "generic-webhook"
+            ],
+            "description": "The provider plugin behind this alias. `recording` captures messages locally instead of sending - rebinding a real alias to recording lets the same authored routes and eval fixtures run locally and in production."
+          },
+          "credentialRef": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Kubernetes Secret name holding the provider credential (in-cluster delivery)."
+              },
+              "key": {
+                "description": "Key within the named Secret whose value is the provider credential (in-cluster delivery).",
+                "type": "string",
+                "minLength": 1
+              },
+              "env": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "Environment variable holding the credential on the operator host (CLI-side delivery, e.g. `hg chatops test`). Exactly one of name/key or env."
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "name",
+                  "key"
+                ],
+                "not": {
+                  "required": [
+                    "env"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "env"
+                ],
+                "not": {
+                  "required": [
+                    "name"
+                  ]
+                }
+              }
+            ],
+            "description": "Where the provider credential lives - a Secret reference or an operator-host env var name. The VALUE never enters Git, plans, receipts, or logs. Required by every provider except recording."
+          },
+          "inbound": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Who may make this connection DO something (#348). Absent means no inbound authorization is declared, and the gateway refuses every inbound request on this connection - a connection with no policy is deny-all, never allow-all. Outbound delivery is unaffected: a connection can post without accepting instructions, which is the common case.",
+            "properties": {
+              "approvedUsers": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "description": "Provider-native user IDENTIFIERS (a Discord snowflake), never display names. A display name is changeable by the person it names, so authorizing one authorizes whoever holds it next."
+              },
+              "approvedRoles": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "description": "Provider-native role identifiers. A role is the maintainable form of the same grant: membership changes without a redeploy."
+              },
+              "approvedChannels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "description": "Where a request is accepted FROM. An approved user in an unapproved channel is refused: the channel is what makes a request auditable by the people who can see it."
+              },
+              "mentionPolicy": {
+                "type": "string",
+                "enum": [
+                  "require-mention",
+                  "any-message"
+                ],
+                "default": "require-mention",
+                "description": "Whether the agent must be addressed explicitly. `any-message` makes every message in an approved channel an instruction, which is occasionally what you want and is never a safe default."
+              },
+              "threadPolicy": {
+                "type": "string",
+                "enum": [
+                  "inherit",
+                  "refuse"
+                ],
+                "default": "inherit",
+                "description": "`inherit` accepts a thread if its parent channel is approved. `refuse` requires the thread itself to be listed - threads are created by anyone with access, so inheriting is convenient and slightly wider than it looks."
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "provider": {
+              "not": {
+                "const": "recording"
+              }
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "credentialRef"
+          ]
+        }
+      },
+      "description": "Connection aliases routes reference as <alias>#<destination>. The alias is the whole ChatOps configuration surface - no provider-specific fields leak into profile contracts."
+    },
+    "durableProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plugin"
+      ],
+      "properties": {
+        "plugin": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-.a-z0-9]*[a-z0-9])?$",
+          "description": "The durable transport plugin backing queued delivery (e.g. redis-streams). The compiler holds each plugin's capability table (queued/fifo/dlq/replay) and refuses a route requiring a capability the plugin lacks - a guarantee is never silently weakened."
+        },
+        "config": {
+          "type": "object",
+          "description": "Plugin-specific, secret-free configuration (host, stream prefix, retention). Credentials, if any, ride a credentialRef-shaped entry inside - never a literal."
+        }
+      },
+      "description": "The environment's durable transport. Profiles say only `delivery: {mode: queued}`; this says what physically carries it."
+    }
+  }
+}

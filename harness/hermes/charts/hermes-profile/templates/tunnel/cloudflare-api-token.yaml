@@ -1,0 +1,37 @@
+{{- include "hermes.computeGuard" . -}}
+{{- include "hermes.ingressGuard" . -}}
+{{- if eq .Values.providers.ingress "cloudflare" -}}
+{{- include "hermes.cloudflareConfigGuard" . -}}
+{{/*
+Materializes CLOUDFLARE_API_TOKEN - the credential pulumi_cloudflare (the
+provider infra/pulumi/programs/cloudflare-tunnel is built on) authenticates the
+Cloudflare API with (see that provider's documented `CLOUDFLARE_API_TOKEN`
+env var / `cloudflare:apiToken` config surface). Same shape as
+templates/tunnel/pulumi-backend-cloudflare.yaml: a per-instance-namespace
+ExternalSecret reading a SHARED, fleet-wide remote key (an operator seeds
+ONE Cloudflare API token for the whole fleet, scoped per _docs/wiki/platform/tunneling.md's
+"API token scopes" section - not one per instance).
+*/}}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ include "hermes.cloudflareApiTokenSecretName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: hermes-gitops
+    kind: ClusterSecretStore
+  target:
+    name: {{ include "hermes.cloudflareApiTokenSecretName" . }}
+    creationPolicy: Owner
+  data:
+    - secretKey: apiToken
+      remoteRef:
+        key: {{ .Values.cloudflare.apiToken.remoteSecretKey | default "hermes-gitops-cloudflare-api-token" }}
+        property: value
+{{- end -}}

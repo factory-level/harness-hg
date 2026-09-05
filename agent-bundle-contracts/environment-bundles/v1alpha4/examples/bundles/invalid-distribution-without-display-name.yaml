@@ -1,0 +1,5 @@
+# INVALID: a distribution block exists to NAME the category; without
+# displayName it declares nothing the repo stem does not already say.
+version: 4
+distribution:
+  name: marketing

@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/agent-team/v1alpha1/agent.schema.json",
+  "title": "Agent (agents/<harness>/<name>/harness-hg/agent.yaml)",
+  "description": "`agents/<harness>/<name>/harness-hg/agent.yaml` - what one agent is to the platform: the harness it runs on (must equal the `<harness>` path segment), the environment variables it requires by name, the capabilities it requires, the layouts it supports, and its pod knobs. Written by the team. Read by the emitter (env contract; the payload it installs is the sibling `src/` directory, which becomes the record's `sourceSubdir`) and the topology compiler (requires, supported layouts). The agent's identity is the `<name>` directory and must equal the payload's own name (`src/package.json` `name` for Eve, `src/distribution.yaml` `name` for Hermes). Absent: the directory is not an agent and is reported as a finding, never deployed half-configured.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "harness"
+  ],
+  "$defs": {
+    "capabilityName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "DNS-label capability name. Unique per provider within the compiled catalogue at a given locality."
+    },
+    "dataBoundary": {
+      "type": "string",
+      "enum": [
+        "global",
+        "region",
+        "target"
+      ],
+      "description": "The NARROWEST boundary this component's state may leave. Placement says where compute runs; dataBoundary says where the data must stay. The compiler rejects a boundary narrower than the scope the component's consumers span."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/agent-team/v1alpha1",
+      "description": "Pins the agent-team contract this document is read under; the CLI refuses versions it does not implement."
+    },
+    "kind": {
+      "const": "Agent",
+      "description": "Document kind - always Agent."
+    },
+    "harness": {
+      "type": "string",
+      "enum": [
+        "eve",
+        "hermes"
+      ],
+      "description": "The harness this agent runs on. A positive declaration (the legacy `runtime.kind` selected Hermes by absence): must equal the `agents/<harness>/` path segment, and must be one of the platform's declared harnesses (`harness/<name>/harness.yaml`). `eve` is the active harness; `hermes` is frozen legacy."
+    },
+    "envRequires": {
+      "type": "array",
+      "description": "Every environment variable the agent needs, including its model credential, by NAME - values are delivered by the platform's env Secret and never written here. Same entry shape as the HermesProfile record's envRequires: a bare string means required and secret. REQUIRED for an Eve agent (there is no other manifest); FORBIDDEN for a Hermes agent, whose `src/distribution.yaml` `env_requires` is the source.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "required": {
+                "type": "boolean",
+                "description": "Absent means REQUIRED - the same conservative default the HermesProfile record applies."
+              },
+              "secret": {
+                "type": "boolean",
+                "description": "A credential rather than configuration. Absent means TRUE."
+              }
+            }
+          }
+        ]
+      }
+    },
+    "requires": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "inject"
+        ],
+        "properties": {
+          "capability": {
+            "$ref": "#/$defs/capabilityName",
+            "description": "Name of the capability this entry consumes. The compiler resolves it against the compiled catalogue - a profile endpoint's provides or an environment-declared binding - and injects the resolved URL."
+          },
+          "locality": {
+            "type": "string",
+            "enum": [
+              "same-target",
+              "same-region",
+              "global"
+            ],
+            "description": "Where the provider must be relative to this consumer. Default: global. A same-region requirement that resolves outside the region is a compile error - never a silent fallback."
+          },
+          "inject": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Exactly one destination for the resolved URL: an agent environment variable, or a dot-path into a declared app's values (resolved after placement, before values are emitted).",
+            "properties": {
+              "env": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "Agent environment variable name (convention: HERMES_CAP_<NAME>_URL). Collisions with declared envRequires or another injection are a compile error (TOPO014)."
+              },
+              "appValue": {
+                "type": "object",
+                "description": "A declared app's merged values as the injection destination: the app to target and the dot-path where the resolved URL lands.",
+                "additionalProperties": false,
+                "required": [
+                  "app",
+                  "path"
+                ],
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 40,
+                    "description": "Name of an app declared in THIS profile's apps[] (TOPO015 rejects an undeclared app)."
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$",
+                    "description": "Dot-path into the app's merged values where the resolved URL lands."
+                  }
+                }
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "env"
+                ]
+              },
+              {
+                "required": [
+                  "appValue"
+                ]
+              }
+            ]
+          },
+          "optional": {
+            "type": "boolean",
+            "description": "An unsatisfied optional requirement is NOT a compile error: the binding simply does not happen and the injection is absent, reported as an info finding rather than TOPO004. Absent means REQUIRED - the same conservative default envRequires applies. The consuming application must tolerate the variable being unset; declaring optional is a claim about the consumer, not the provider."
+          }
+        }
+      },
+      "description": "Capabilities this profile consumes, by name. The compiler fails on a missing provider (TOPO004) and on an ambiguous one (TOPO005); hardcoded cross-profile URLs are the thing this block deletes."
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What this agent supports, never where it runs - placement is the union of the team's `harness-hg/topology.yaml` and the bootstrap's grants, constrained by these declarations.",
+      "properties": {
+        "supportedLayouts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "single",
+              "replicated",
+              "hub-spoke"
+            ]
+          },
+          "description": "Layouts this profile has been designed and validated for. An environment cannot deploy the profile into a layout not listed here (TOPO001). Default when absent: [single]."
+        },
+        "agent": {
+          "type": "object",
+          "description": "Topology of the agent itself: how many physical instances the compiler creates and the boundary its data may leave.",
+          "additionalProperties": false,
+          "properties": {
+            "multiplicity": {
+              "type": "string",
+              "enum": [
+                "singleton",
+                "per-region",
+                "per-target"
+              ],
+              "description": "How many physical agent instances the compiler creates. per-agent is meaningless for the agent itself and is rejected here. Default: singleton."
+            },
+            "dataBoundary": {
+              "$ref": "#/$defs/dataBoundary",
+              "description": "Default: target."
+            }
+          }
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Agent pod knobs - pod-compute only. baseImageTag is the Hermes image tag (a Hermes profile); runtimeImageTag is the eve-runtime image tag (an Eve agent). Naming the other runtime's tag fails the record validation that follows, never silently.",
+      "properties": {
+        "baseImageTag": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Tag of the Hermes agent container image this instance runs; overrides the platform's image tag for both the bootstrap initContainer and the main container."
+        },
+        "runtimeImageTag": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Eve agents only: tag of the eve-runtime container image (Node + the pinned eve CLI) this instance builds and runs with; overrides the platform's pinned tag."
+        },
+        "diskSizeGb": {
+          "type": "integer",
+          "minimum": 10,
+          "description": "Size in GiB of the instance's data volume claim. Default when absent: 10."
+        }
+      }
+    },
+    "gitAuthSecretRef": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of a Kubernetes Secret in the instance's own namespace holding the credential to clone a PRIVATE spec.source (unchanged from v1)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "harness": {
+            "const": "eve"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "envRequires"
+        ],
+        "properties": {
+          "deployment": {
+            "not": {
+              "required": [
+                "baseImageTag"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "harness": {
+            "const": "hermes"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "envRequires"
+          ]
+        },
+        "properties": {
+          "deployment": {
+            "not": {
+              "required": [
+                "runtimeImageTag"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+    "name": "hermes-gitops-cli",
+    "version": "0.1.0",
+    "description": "Local testing CLI for Hermes GitOps profiles (spec \u00a727) - a developer tool, not part of the runtime",
+    "type": "module",
+    "bin": {
+        "hermes-gitops": "src/main.ts",
+        "hg": "src/main.ts"
+    },
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "test": "bun test"
+    },
+    "dependencies": {
+        "ajv": "^8",
+        "yaml": "^2.9.0"
+    },
+    "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.5"
+    }
+}

@@ -1,0 +1,29 @@
+# persona-echo's Hermes GitOps extension — the ONE file (beside
+# distribution.yaml) that carries this persona's infra intent. Plain
+# Hermes ignores it; the gitops-emitter validates it against
+# agent-bundle-contracts/hermes-gitops-extension/v1alpha1/ and renders it into
+# examples/rendered/profile-echo.yaml.
+#
+# The declaration is helm-chart-centric: one REMOTE app (pinned chart
+# version from a helm repo — required for deterministic deploys) and one
+# LOCAL app (repo: local, the reserved word — the chart ships with the
+# platform tree and versions with the platform).
+apps:
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm
+    version: 1.9.1
+    values:
+      replicas: 1
+  - name: test-page
+    chart: charts/test-page
+    repo: local
+expose:
+  services:
+    - name: tools
+      port: 8080
+      path: /
+  access:
+    policy: service-token
+deployment:
+  diskSizeGb: 10

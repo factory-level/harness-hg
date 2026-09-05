@@ -1,0 +1,4 @@
+# Valid: the empty extension - every block is optional. A repo with just
+# this file is a packageable Harness Hg profile that deploys with the
+# fleet's defaults (zero apps, no expose; the agent pod still renders).
+{}

@@ -1,0 +1,12 @@
+# INVALID: a surface outside the closed set. A panel cannot appear
+# somewhere the platform has not placed it - "wherever the UI asks for
+# it" is how a cost dashboard ends up under a tab named Uptime.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha2
+kind: PanelCatalog
+panels:
+  - id: x
+    surface: billing
+    title: Something
+    dashboard: hg-control-plane-overview
+    panelId: 1
+    size: compact

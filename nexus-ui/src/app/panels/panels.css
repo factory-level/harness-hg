@@ -1,0 +1,28 @@
+/* Panels - tokens only; same-box placeholders (the placeholder occupies
+   exactly the panel's box so nothing jumps). */
+.nx-panel { margin: 0; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shl); overflow: hidden; }
+.nx-panel-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-block-end: 1px solid var(--line2); }
+.nx-panel-title { font-family: var(--nx-display); font-weight: 650; }
+.nx-panel-open { margin-inline-start: auto; color: var(--ink2); text-decoration: none; display: inline-flex; align-items: center; gap: var(--sp-1); }
+.nx-panel-open:hover { color: var(--ink); }
+/* The body stacks a state line UNDER the frame (grid, one area): the
+   line reads while the frame is blank and the painted frame covers it. */
+.nx-panel-body { inline-size: 100%; display: grid; }
+.nx-panel-body > * { grid-area: 1 / 1; }
+.nx-panel-iframe { inline-size: 100%; block-size: 100%; border: 0; }
+.nx-panel-banner { color: var(--warn); background: var(--warnsf); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); }
+.nx-panel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: var(--sp-3); }
+.nx-panel-wide { grid-column: 1 / -1; }
+.nx-planebadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: var(--radius-pill);
+  padding: 1px 9px;
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  border: 1px solid var(--line);
+  color: var(--ink2);
+}
+.nx-planebadge-control-plane { color: var(--acc); background: var(--accsf); border-color: transparent; }
+.nx-planebadge-workload { color: var(--comm); background: var(--commsf); border-color: transparent; }

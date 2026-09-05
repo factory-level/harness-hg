@@ -1,0 +1,14 @@
+spec:
+  id: marketing-manager/content-kanban@global
+  profile: marketing-manager
+  app: content-kanban
+  scope: global
+  region: ca-west
+  target: ca-west-a
+  argoDestination: ca-west-a
+  namespace: hermes-app-marketing-manager-content-kanban-global
+  application: hermes-app-marketing-manager-content-kanban-global
+  source:
+    repoURL: ghcr.io/factory-level/charts
+    chart: content-kanban
+    targetRevision: 0.3.0

@@ -1,0 +1,111 @@
+# Nightly full live loop (issue #15 [I1]): k3d cluster, bootstrap stages
+# 1-2-3, Argo CD sync to a Ready pod, C2 remote placement, drift/selfHeal,
+# ESO re-sync, decommission + PVC lifecycle, re-install — everything
+# infra/scripts/test-drift-and-decommission.sh asserts. Deliberately NOT a PR
+# gate: it needs docker (k3d = k3s-in-docker), builds the ~4GB fork agent
+# image from source, and takes 30-60 minutes end to end. PR regressions in
+# stages 1-2 are caught by ci.yaml's bootstrap-git-side-verify job; this
+# job catches the cluster-side half on a schedule (plus on demand via
+# workflow_dispatch).
+name: live-loop
+
+on:
+  schedule:
+    # 03:17 UTC nightly — an odd minute, per GitHub's guidance to avoid
+    # the top-of-hour scheduling stampede.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  drift-and-decommission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      # HERMES_FORK_PATH provisioning: same convention and same
+      # OPERATOR ACTION as ci.yaml's bootstrap-git-side-verify - the
+      # fork's feat/profile-lifecycle-hooks branch must be published
+      # (`git push -u origin feat/profile-lifecycle-hooks` from the fork
+      # maintainer's checkout); until then this job warns loudly and
+      # exits green, and arms itself automatically once the branch
+      # appears.
+      - name: Check fork hooks branch availability
+        id: fork
+        run: |
+          if git ls-remote --exit-code --heads \
+              https://github.com/factory-level/hermes-agent-gitops.git \
+              feat/profile-lifecycle-hooks >/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=live-loop NOT armed::fork branch feat/profile-lifecycle-hooks is unpublished, so the nightly live loop DID NOT RUN. Push the branch to factory-level/hermes-agent-gitops to arm it."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.fork.outputs.available == 'true'
+        with:
+          repository: factory-level/hermes-agent-gitops
+          ref: feat/profile-lifecycle-hooks
+          path: .fork/hermes-agent-gitops
+      - name: Install uv
+        if: steps.fork.outputs.available == 'true'
+        uses: astral-sh/setup-uv@v3
+      - name: Install bun
+        if: steps.fork.outputs.available == 'true'
+        uses: oven-sh/setup-bun@v2
+      - name: Install pulumi
+        if: steps.fork.outputs.available == 'true'
+        run: |
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+      - name: Install k3d
+        if: steps.fork.outputs.available == 'true'
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+      - name: Build the fork agent image (hermes-agent:hermes-gitops-dev)
+        if: steps.fork.outputs.available == 'true'
+        run: docker build -t hermes-agent:hermes-gitops-dev .fork/hermes-agent-gitops
+      - name: Full live loop (k3d drift + decommission harness)
+        if: steps.fork.outputs.available == 'true'
+        env:
+          HERMES_FORK_PATH: ${{ github.workspace }}/.fork/hermes-agent-gitops
+        run: make drift-test
+
+  e2e-local:
+    # The dev-loop walkthrough (#669/#670): cli/e2e-local.sh via `make
+    # e2e`. Same fork-image prerequisite and same arming rule as the
+    # drift job above.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check fork hooks branch availability
+        id: fork
+        run: |
+          if git ls-remote --exit-code --heads \
+              https://github.com/factory-level/hermes-agent-gitops.git \
+              feat/profile-lifecycle-hooks >/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=e2e-local NOT armed::fork branch feat/profile-lifecycle-hooks is unpublished, so the nightly e2e loop DID NOT RUN."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.fork.outputs.available == 'true'
+        with:
+          repository: factory-level/hermes-agent-gitops
+          ref: feat/profile-lifecycle-hooks
+          path: .fork/hermes-agent-gitops
+      - name: Install uv
+        if: steps.fork.outputs.available == 'true'
+        uses: astral-sh/setup-uv@v3
+      - name: Install bun
+        if: steps.fork.outputs.available == 'true'
+        uses: oven-sh/setup-bun@v2
+      - name: Install k3d
+        if: steps.fork.outputs.available == 'true'
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+      - name: Build the fork agent image (hermes-agent:hermes-gitops-dev)
+        if: steps.fork.outputs.available == 'true'
+        run: docker build -t hermes-agent:hermes-gitops-dev .fork/hermes-agent-gitops
+      - name: e2e local loop
+        if: steps.fork.outputs.available == 'true'
+        run: make e2e

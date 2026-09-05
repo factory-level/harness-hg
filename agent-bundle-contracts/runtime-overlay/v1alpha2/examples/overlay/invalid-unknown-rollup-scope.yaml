@@ -1,0 +1,13 @@
+# INVALID: the rollup key space is a closed set of scopes -
+# kind|group|bucket|sheet|nav|bundle. An unknown scope is a typo, not an
+# extension point.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: RuntimeOverlay
+observedAt: "2026-07-31T09:14:00Z"
+components: {}
+instances: {}
+rollups:
+  "team:marketing":
+    level: healthy
+    summary: nope
+    members: []

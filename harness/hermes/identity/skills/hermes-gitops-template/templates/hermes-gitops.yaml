@@ -1,0 +1,100 @@
+# The Hermes GitOps deployment config — one optional file, sitting BESIDE
+# distribution.yaml at the distribution root. It carries ALL deployment
+# intent; distribution.yaml stays pure Hermes and is never read for it.
+# Plain Hermes ignores this file; the Hermes GitOps plugin consumes it.
+#
+# v1 scope: single cluster, pod compute. Networking, backups, and placement
+# are platform concerns — this file only DECLARES intent (spec ADR-010).
+
+# The Helm apps this profile launches. Each entry is a real chart, sourced
+# one of two ways:
+#   repo: local        -> a chart that ships WITH the platform. `chart` is a
+#                         PATH into the platform chart tree; NO version field
+#                         (it versions with the platform).
+#   repo: oci://... |  -> a chart from a real Helm registry. `chart` is the
+#         https://...    chart NAME; `version` is REQUIRED and exact. The
+#                         registry must also be on the AppProject's
+#                         sourceRepos allowlist.
+#
+# This seed ships TWO of its own charts (charts/<PERSONA>-app and
+# charts/<PERSONA>-dashboard, in this repo). A distribution can only
+# reference a chart by `local` or by a published registry URL — there is no
+# "chart by relative path in this repo". So before a real install (or a
+# local `hermes-gitops up`) can pull them, publish them once:
+#
+#   helm package charts/<PERSONA>-app       && helm push <PERSONA>-app-0.1.0.tgz       oci://ghcr.io/<ORG>/charts
+#   helm package charts/<PERSONA>-dashboard && helm push <PERSONA>-dashboard-0.1.0.tgz oci://ghcr.io/<ORG>/charts
+#
+# Scaffold validation (metadata render) passes WITHOUT publishing — it never
+# pulls the chart — so you can iterate on the manifest first and publish last.
+apps:
+  # 1) The agent-application itself: a small HTTP service <PERSONA> serves.
+  - name: app
+    chart: <PERSONA>-app
+    repo: oci://ghcr.io/<ORG>/charts   # publish before deploy (see note above)
+    version: 0.1.0
+
+  # 2) The platform's standard per-profile observability: a Grafana
+  # dashboard + the three alerts every profile gets (SiteVisitsHigh,
+  # HermesAgentDown, AgentAppUnhealthy), rendered as ConfigMaps the platform
+  # Grafana sidecars pick up. This is a LOCAL platform chart — keep it: it is
+  # your safety net (the alerts), and the reference implementation the
+  # teaching dashboard below is modeled on. See _docs/wiki/platform/observability.md.
+  # alert.webhookUrl is valuesRequired: an alert with no receiver is a silent
+  # no-op, so the install fails fast until an operator (or the local testing
+  # CLI, automatically) supplies one.
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    values:
+      alert:
+        siteVisits5m:
+          threshold: 100
+    valuesRequired:
+      - alert.webhookUrl
+
+  # 3) This profile's OWN starter Grafana dashboard — a generic, heavily
+  # commented dashboard that teaches how dashboards work in this ecosystem
+  # (sidecar discovery, the prometheus datasource, stable uids, "what fires
+  # is what you see"). It follows the same conventions as charts/monitoring
+  # but is yours to grow. See charts/<PERSONA>-dashboard/CONVENTIONS.md.
+  - name: dashboard
+    chart: <PERSONA>-dashboard
+    repo: oci://ghcr.io/<ORG>/charts   # publish before deploy (see note above)
+    version: 0.1.0
+
+# Services the agent wants reachable from outside. The platform decides HOW
+# (v1: Cloudflare Tunnel); the distribution only says WHAT and on which port.
+#
+# List every service you want published. Each entry must line up with a
+# Service the app chart serves (charts/<PERSONA>-app/values.yaml -> services:
+# same name + port). The tunnel routes by PATH under one hostname
+# (<persona>.agents.<zone>), so two services sharing a path collide — give
+# each a distinct path.
+expose:
+  services:
+    - name: <SERVICE_NAME>       # DNS-1123 label; "http" is reserved
+      port: <SERVICE_PORT>
+      path: /
+    # Add each additional service your agent bundles and wants reachable
+    # (must match an app-chart service; distinct path):
+    # - name: api
+    #   port: 9090
+    #   path: /api
+  # WHO may reach these services — ONE policy for the whole agent:
+  #   service-token — machines only, via a Cloudflare service token (default).
+  #   idp           — humans must LOG IN through your Cloudflare identity
+  #                   provider (Google/GitHub/OIDC/SAML/email OTP). This is
+  #                   the IAM path. The operator must set cloudflare.access.idpId
+  #                   in the cluster's values (idp/mixed fail preview without
+  #                   it) — the platform uses a pre-existing IdP, it never
+  #                   creates one. See _docs/wiki/platform/tunneling.md.
+  #   mixed         — either a service token OR a human IdP login.
+  access:
+    policy: service-token
+
+# Agent pod knobs. diskSizeGb minimum is 10.
+deployment:
+  diskSizeGb: 10
+
+# gitAuthSecretRef: <name-of-k8s-secret>   # only for PRIVATE repos.

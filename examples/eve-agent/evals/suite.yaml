@@ -1,0 +1,9 @@
+# The echo agent's eval suite - the evals/v1alpha2 authoring contract on an
+# Eve agent (ADR-149). `hg eval --dir examples/eve-agent` sends each
+# scenario's prompt through the Eve session API (the same invoker `hg
+# prompt` uses) and hands the reply to the evaluator.
+#
+# Optional by design: nothing in deployment reads this directory - only
+# `hg eval --dir`.
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha2
+name: echo-evals

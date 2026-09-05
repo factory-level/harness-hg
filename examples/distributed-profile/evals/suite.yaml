@@ -1,0 +1,9 @@
+# The persona-echo eval suite - a TEST FIXTURE for cli/e2e-local.sh, and the
+# smallest complete example of the evals/v1alpha1 authoring contract. The
+# reference implementation for real scenarios is
+# the reference team's evals/.
+#
+# Optional by design: nothing in deployment (hg validate/up/test, profile
+# install, reconciliation) reads this directory - only `hg eval --dir`.
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha1
+name: persona-echo-evals

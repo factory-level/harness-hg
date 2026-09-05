@@ -1,0 +1,22 @@
+apiVersion: v2
+name: control-plane-observability
+description: >
+  The control plane's own observability payload (design 15, ADR-55): two
+  Grafana dashboards with the STABLE uids the platform promises -
+  hg-control-plane-overview (is the control plane working?) and
+  hg-control-plane-reconciliation (is what Git says converging?) -
+  rendered as ConfigMaps the platform Grafana's dashboards sidecar picks
+  up (see bootstrap/monitoring-stack.yaml). Pure ConfigMap chart, no
+  workload. Installed once per cluster by
+  bootstrap/control-plane-observability.yaml as
+  {path: charts/control-plane-observability} from the platform repo -
+  local chart versioned by the platform revision, so this chart's own
+  version is informational only. Every panel queries a series that
+  actually exists in the pinned stack (argocd_* via the argocd scrape
+  job, kube_* via kube-state-metrics, hermes_* via the observer plugin
+  and the event router's /metrics); nothing queries a series nobody
+  emits, because a permanently-empty panel trains operators to ignore
+  the dashboard that carries it.
+type: application
+version: 0.1.0
+appVersion: "1.0"

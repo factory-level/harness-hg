@@ -1,0 +1,5 @@
+# The repo's deterministic eval suite (cli/schemas/evals/v1alpha2) -
+# deliberately NOT a deployment surface: a repo with a broken suite
+# deploys identically. `hg eval --dir .` runs it.
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha2
+name: agent-team-suite

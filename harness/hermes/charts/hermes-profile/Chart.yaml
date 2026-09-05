@@ -1,0 +1,21 @@
+apiVersion: v2
+name: hermes-profile
+description: >-
+  Legacy per-profile runtime path: renders one HermesProfile instance record
+  (profile.yaml) into one Hermes agent StatefulSet. New shared-runtime
+  deployments compile profiles into bundles and render harness/hermes/charts/hermes-bundle;
+  this chart remains supported during explicit migration and for one-profile
+  bundles. Pod compute is the only compute path; ingress is a plain Kubernetes
+  Ingress or an independent Pulumi Kubernetes Operator Stack CR provisioning a
+  Cloudflare Tunnel. Invoked by the legacy hermes-gitops-profiles ApplicationSet
+  and the compiled agents ApplicationSet with layered environment and profile
+  values.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - hermes-gitops
+  - hermes-agent
+home: https://github.com/factory-level/harness-hg
+sources:
+  - https://github.com/factory-level/harness-hg

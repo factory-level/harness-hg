@@ -1,0 +1,66 @@
+# Builds the published site - landing at /, the MkDocs wiki at /docs/, the
+# Nexus UI demo at /demo/ (`make site`, infra/scripts/build-site.sh) - and
+# deploys it to GitHub Pages. One-time repo setting required: Settings →
+# Pages → Source = "GitHub Actions". The strict wiki build is the same one
+# `make wiki-build` and the ci.yaml `wiki` job run, so a broken link fails
+# PRs before it reaches this deploy.
+name: wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - _docs/**
+      - landing/**
+      - nexus-ui/**
+      - control-plane/nexus/**
+      - infra/scripts/build-site.sh
+      - Makefile
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/wiki.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The docs version badge is derived from the whole commit history
+          # (infra/scripts/derive-version.py); a shallow clone derives a lie.
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned: build-site.sh asserts the Nexus bundle rebuilds
+          # byte-identically to the committed dist.
+          bun-version: 1.3.14
+      - name: Build the site (strict wiki + landing + demo)
+        run: make site
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

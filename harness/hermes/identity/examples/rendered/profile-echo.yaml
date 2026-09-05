@@ -1,0 +1,29 @@
+spec:
+  persona: persona-echo
+  source: github.com/factory-level/persona-echo
+  ref: v1.0.0
+  sha: e1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0
+  distributionVersion: 1.0.0
+  deployment:
+    diskSizeGb: 10
+  apps:
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm
+    version: 1.9.1
+    values:
+      replicas: 1
+  - name: test-page
+    chart: charts/test-page
+    repo: local
+  envRequires:
+  - name: ANTHROPIC_API_KEY
+    required: true
+    secret: true
+  expose:
+    services:
+    - name: tools
+      port: 8080
+      path: /
+    access:
+      policy: service-token

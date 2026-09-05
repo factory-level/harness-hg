@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/panel-catalog/v1alpha1/panel-catalog.schema.json",
+  "title": "Embedded Grafana panel catalog",
+  "description": "The closed set of Grafana panels Nexus is allowed to embed. It exists because the browser must never be able to name a dashboard: every embed URL is built on the server from an entry in this file, and an identifier that is not here does not resolve. The catalog is PLATFORM-owned in v1alpha1 - repository-declared panels need a hermesprofile version that carries them, and are a named cut. Nothing here may promise data the dashboard does not actually contain: the withdrawn embed this contract replaces rendered a COST dashboard under a tab named Uptime, which is why every entry names its dashboard uid and numeric panel id explicitly and a test asserts both exist in the provisioned dashboards.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "panels"],
+  "properties": {
+    "apiVersion": { "const": "nexus.hermes.ai/panel-catalog/v1alpha1" },
+    "kind": { "const": "PanelCatalog" },
+    "panels": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "surface", "title", "dashboard", "panelId", "size"],
+        "properties": {
+          "id": {
+            "description": "Stable logical name a surface asks for. Duplicates fail compilation.",
+            "type": "string",
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+            "maxLength": 60
+          },
+          "surface": {
+            "description": "Which Nexus surface may render it. A closed enum: a panel cannot appear somewhere the platform has not placed it.",
+            "enum": ["system", "communication", "backup", "agent", "application", "uptime", "eval"]
+          },
+          "title": {
+            "description": "What Nexus labels it. Must describe what the PANEL shows, not what the surface wishes it showed.",
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 80
+          },
+          "dashboard": {
+            "description": "Either a literal dashboard uid, or the token `{instance}` meaning the plan's per-instance grafanaDashboardUid. No other substitution exists.",
+            "type": "string",
+            "pattern": "^(\\{instance\\}|[a-zA-Z0-9-]{1,64})$"
+          },
+          "panelId": { "type": "integer", "minimum": 1, "maximum": 10000 },
+          "size": {
+            "description": "A closed preset. Repositories and surfaces choose a preset, never pixels, CSS or aspect ratios - Nexus maps the preset to trusted host styles.",
+            "enum": ["compact", "standard", "wide", "tall"]
+          },
+          "range": {
+            "description": "Allowlisted relative time range. Absent = the dashboard's own default.",
+            "enum": ["1h", "6h", "24h", "7d", "30d"]
+          },
+          "note": {
+            "description": "Why this panel is here, when that is not obvious. Rendered nowhere; read by the next person deciding whether it still belongs.",
+            "type": "string",
+            "maxLength": 200
+          }
+        }
+      }
+    }
+  }
+}

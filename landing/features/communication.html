@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Communication — Harness Hg</title>
+<meta name="description" content="Agents publish events and register for the ones they need — a declared, reviewable event surface instead of point-to-point integrations.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="Communication — Harness Hg">
+<meta property="og:description" content="Agents publish events and register for the ones they need — a declared, reviewable event surface instead of point-to-point integrations.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. The two text faces paint the
+     first screen here; JetBrains Mono loads on demand for inline literals. -->
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js"></script>
+<link rel="stylesheet" href="../styles.css?v=18">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href=".././">
+      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Hermes</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="../features/">Overview</a></li>
+          <li><a href="../features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="../features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="../features/communication.html" aria-current="page">Communication</a></li>
+          <li><a href="../features/backups.html">Backups</a></li>
+          <li><a href="../features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="../docs/">Docs</a>
+      <a href="../demo/">Demo</a>
+      <a href="../devlog/">Devlog</a>
+      <a href="../about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<div class="pagehead pagehead--split">
+  <div>
+    <p class="sec__eyebrow">Communication</p>
+    <h1 class="sec__title">Agents that say what happened.</h1>
+    <p class="sec__lede">Agents publish events and register for the ones they need. Inbound and outbound are <strong>first-class and named</strong> — the event surface is part of the declaration, not a side effect of the code.</p>
+  </div>
+  <figure class="feat__viz pagehead__viz" aria-hidden="true">
+    <div class="vizmap">
+      <svg viewBox="0 0 200 150" fill="none" aria-hidden="true">
+        <g class="vizmap__wires" stroke="currentColor" stroke-width="1" stroke-linecap="round">
+          <line x1="55" y1="45" x2="90" y2="68"/><line x1="110" y1="82" x2="146" y2="105"/>
+        </g>
+      </svg>
+      <span class="vizmap__node" style="--x:27%; --y:27%">Zendesk trigger</span>
+      <span class="vizmap__node vizmap__node--hub" style="--x:50%; --y:50%">ticket.escalated</span>
+      <span class="vizmap__node" style="--x:73%; --y:73%">Support Triage</span>
+    </div>
+    <figcaption class="feat__tag">an event and its registrations · illustration</figcaption>
+  </figure>
+</div>
+
+<section class="sec" aria-labelledby="communication-why">
+  <div class="why">
+    <div class="why__main">
+      <p class="sec__eyebrow">Why it matters</p>
+      <h2 class="sec__title" id="communication-why">Integrations nobody named are integrations nobody reviews.</h2>
+      <p class="sec__lede">Point-to-point integrations rot quietly: nothing names them, so nothing reviews them, and the day one breaks is the day you learn it existed. A declared event surface makes the connections between agents — and to the outside — visible, reviewable and diffable like everything else in the record.</p>
+    <p class="sec__lede">On the canvas, every event is a readout with its registrations listed beneath the event it belongs to.</p>
+    </div>
+    <aside class="why__aside">
+      <p class="pull">You can see who is listening before you change what a publisher emits.</p>
+    </aside>
+  </div>
+</section>
+
+<section class="sec" aria-labelledby="communication-how">
+  <div class="sec__head">
+    <p class="sec__eyebrow">How it fits</p>
+    <h2 class="sec__title" id="communication-how">From declaration to delivery.</h2>
+  </div>
+  <ol class="steps">
+    <li class="step">
+      <p class="step__n" aria-hidden="true">01</p>
+      <h3 class="step__t">Declarations name the events.</h3>
+      <p class="step__b">What an agent publishes and what it registers for are fields, not folklore.</p>
+    </li>
+    <li class="step">
+      <p class="step__n" aria-hidden="true">02</p>
+      <h3 class="step__t">The event router carries them.</h3>
+      <p class="step__b">A durable transport moves events between agents and external endpoints.</p>
+    </li>
+    <li class="step">
+      <p class="step__n" aria-hidden="true">03</p>
+      <h3 class="step__t">The canvas shows the surface.</h3>
+      <p class="step__b">Inbound and outbound readouts list every registration, per event.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="sec" aria-labelledby="communication-rel">
+  <div class="sec__head">
+    <p class="sec__eyebrow">Related capabilities</p>
+    <h2 class="sec__title" id="communication-rel">It works with the rest.</h2>
+  </div>
+  <div class="flist">
+    <a class="flist__row" href="fleet-canvas.html">
+      <span class="flist__t">Fleet Canvas</span>
+      <span class="flist__d">Events render as clipped readouts in the shared grammar.</span>
+    </a>
+    <a class="flist__row" href="agent-bundles.html">
+      <span class="flist__t">Agent Bundles</span>
+      <span class="flist__d">A bundle declares its members’ event surface together.</span>
+    </a>
+  </div>
+  <p class="sec__cta" style="margin-top: clamp(32px, 5vh, 52px)">
+    <a class="btn" href="../docs/platform/webhooks-events/">
+      The communication plane, in the docs
+      <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
+    </a>
+    <a class="link" href="./">All features</a>
+  </p>
+</section>
+
+</main>
+
+<footer class="siteftr">
+  <p class="siteftr__id"><span class="siteftr__name">Hermes</span><span class="siteftr__sym">Hg</span></p>
+  <nav class="siteftr__nav" aria-label="Footer">
+    <a class="link" href="../docs/">Docs</a>
+    <a class="link" href="../devlog/">Devlog</a>
+    <a class="link" href="../features/">Features</a>
+    <a class="link" href="../about.html">About</a>
+    <a class="link" href="https://github.com/factory-level/harness-hg">GitHub</a>
+  </nav>
+  <p class="siteftr__note">Created by Factory-level.</p>
+</footer>
+
+<script src="../contour-sphere.js?v=18"></script>
+<script src="../hero.js?v=18"></script>
+</body>
+</html>

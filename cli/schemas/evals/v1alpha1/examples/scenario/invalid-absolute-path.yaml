@@ -1,0 +1,4 @@
+# Invalid: evaluate must stay inside the scenario directory — absolute paths are rejected.
+name: escape-absolute
+profile: persona-echo
+evaluate: /usr/local/bin/evil.sh

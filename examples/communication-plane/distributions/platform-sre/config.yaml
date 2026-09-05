@@ -1,0 +1,26 @@
+# Runtime settings for platform-sre. config.yaml is USER-OWNED.
+model:
+  provider: anthropic
+  name: claude-sonnet-4-5
+
+# The inbound surface the event router delivers to. The platform is
+# enabled by env (WEBHOOK_ENABLED=1) and authenticated by env
+# (WEBHOOK_SECRET); routes stay here - they are contract, not secret.
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      routes:
+        # POST /webhooks/alerts - normalized observability.alert/v1
+        # envelopes, HMAC-signed by the event router.
+        alerts:
+          prompt: |
+            An observability alert event just arrived through the
+            communication plane. Summarize what fired (or resolved), how
+            bad it is, and the smallest safe next step. Do not restart or
+            reconfigure anything.
+
+            Full event envelope:
+            {__raw__}
+  discord:
+    enabled: false

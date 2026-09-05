@@ -1,0 +1,104 @@
+# A compiled plan joining one agent (two regional instances), one application,
+# one person, one group and their edges. JSON on disk; YAML here for fixture parity.
+version: 1
+inputsHash: "1111111111111111111111111111111111111111111111111111111111111111"
+sourceSha: "0000000000000000000000000000000000000000"
+components:
+  - id: marketing-manager
+    kind: agent
+    title: Marketing Manager
+    resolved: true
+    bind:
+      profile: marketing-manager
+    source:
+      id: factorylevel-social-media
+      path: dashboard/contribution.yaml
+    crons:
+      - name: research-pass
+        schedule: "0 9 * * 1-5"
+    configSummary:
+      profile: marketing-manager
+      modelProvider: anthropic
+      model: claude-sonnet-5
+      platforms:
+        - discord
+      cronCount: 1
+    instances:
+      - id: marketing-manager@ca-west
+        scope: ca-west
+        region: ca-west
+        target: hub
+        application: hermes-marketing-manager-ca-west
+        namespace: hermes-marketing-manager
+        grafanaDashboardUid: hermes-marketing-manager-ca-west-mo
+        destinations:
+          hermesClassic: https://dashboard.agent-marketing-manager-ca-west.example.dev
+      - id: marketing-manager@eu-west
+        scope: eu-west
+        region: eu-west
+        target: spoke-eu
+        application: hermes-marketing-manager-eu-west
+        namespace: hermes-marketing-manager
+        destinations: {}
+  - id: content-kanban
+    kind: application
+    title: Content Kanban
+    resolved: true
+    bind:
+      profile: marketing-manager
+      app: content-kanban
+    details:
+      showArgoCd: true
+    instances:
+      - id: marketing-manager/content-kanban@global
+        scope: global
+        target: hub
+        application: hermes-marketing-manager-content-kanban-global
+        namespace: hermes-marketing-manager
+        destinations:
+          deployed:
+            - name: ui
+              url: https://ui.content-kanban.example.dev
+  - id: ghost-app
+    kind: application
+    title: Ghost App
+    resolved: false
+    unresolvedReason: "bind names app 'ghost' which no profile declares"
+    bind:
+      profile: marketing-manager
+      app: ghost
+    instances: []
+  - id: calvin
+    kind: human
+    title: Calvin
+    personTitle: Operator
+    resolved: true
+    cohorts:
+      - marketing
+    accessors:
+      - marketing-manager
+    instances: []
+  - id: marketing
+    kind: group
+    title: Marketing
+    groupKind: department
+    resolved: true
+    instances: []
+relationships:
+  - id: manager-controls-board
+    from: marketing-manager
+    to: content-kanban
+    label: manages
+view:
+  id: default
+  title: Social Media Operation
+  nodes:
+    - ref: marketing
+      position: {x: 120, y: 120}
+    - ref: marketing-manager
+      position: {x: 520, y: 220}
+      parent: marketing
+  viewport:
+    x: 0
+    y: 0
+    zoom: 0.85

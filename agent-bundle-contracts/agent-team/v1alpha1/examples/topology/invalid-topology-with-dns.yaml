@@ -1,0 +1,6 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Topology
+layout: single
+dns: {publicBaseDomain: hermes.factorylevel.ai}
+regions:
+  - {name: ca-west, jurisdiction: CA}

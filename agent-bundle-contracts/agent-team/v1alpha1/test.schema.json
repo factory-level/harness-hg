@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/agent-team/v1alpha1/test.schema.json",
+  "title": "Agent dev-loop test config (agents/<harness>/<name>/harness-hg/test.yaml)",
+  "description": "`agents/<harness>/<name>/harness-hg/test.yaml` - the dev-loop configuration `hg test` runs the LOCAL loop with: placeholder secret values (never production credentials), app value overrides, deterministic smoke checks, and what `hg reset` may delete. Written by the team. Read by `hg test`, `hg up` and `hg reset` only; nothing in the cluster ever sees it. A placeholder is loudly skipped by proofs, never silently green. Absent: `hg test` runs the harness's built-in tier with no agent-specific checks and no local secret values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/agent-team/v1alpha1",
+      "description": "Pins the agent-team contract this document is read under; the CLI refuses versions it does not implement."
+    },
+    "kind": {
+      "const": "AgentTest",
+      "description": "Document kind - always AgentTest."
+    },
+    "appValues": {
+      "type": "object",
+      "description": "Per-app value overrides for the local loop, keyed by app name; deep-merged over the declared values exactly as the platform's appValues chain does."
+    },
+    "secrets": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "LOCAL DEV values for the agent's envRequires, by variable name. Never production credentials; a placeholder is refused by any proof that would call a real service with it."
+    },
+    "smoke": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "service",
+          "port",
+          "path",
+          "expect_contains"
+        ],
+        "properties": {
+          "service": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Kubernetes Service to GET, by its real rendered name."
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "expect_contains": {
+            "type": "string",
+            "description": "A substring the response body must contain."
+          }
+        }
+      },
+      "description": "Deterministic HTTP smoke checks `hg test` runs after the loop is up. An Eve agent needs none - its smoke tier (pods Ready, /eve/v1/health, one real turn) is built in."
+    },
+    "behavioral": {
+      "type": "array",
+      "description": "Reserved: behavioral cases were declared here before any runner existed and none is implemented. Kept so an authored list is not an unknown-key error; `hg test` ignores it."
+    },
+    "pyeval": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Optional path to a Python eval script the local loop runs after smoke."
+    },
+    "reset": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "delete_pvcs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "PVCs `hg reset` deletes, named so the command is honest about what dies with the namespace."
+        },
+        "wipe_namespaces": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "preserve": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "script": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Optional script `hg reset` runs after deleting."
+        }
+      },
+      "description": "What `hg reset` may delete for this agent."
+    },
+    "agents": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      },
+      "description": "Reserved for mock agent/MCP declarations. Any `<agent>.mcps` block is REFUSED by `hg test` (mock MCP serving is not implemented) - the key is allowed here so the refusal is loud rather than an unknown-key error."
+    }
+  }
+}

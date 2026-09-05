@@ -1,0 +1,10 @@
+# The deployment contract for the greeter agent (ADR-149/150) - see
+# agents/echo/hermes-gitops.yaml for the annotated version. No backup block:
+# inside a bundle the routine is the bundle's (providers.backup alone
+# decides), and standalone this agent keeps nothing worth archiving.
+contractVersion: 5
+runtime:
+  kind: eve
+  envRequires:
+    - name: ANTHROPIC_API_KEY
+      description: Anthropic API key; agent.ts calls the provider directly.

@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "app.fullname" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "app.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "app.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ .Values.image | quote }}
+          command: ["/bin/sh", "-c"]
+          # Write the page before exec'ing nginx — overriding the entrypoint
+          # is the simplest thing that needs no ConfigMap coordination. Grow
+          # this into a real app container when the agent needs one.
+          args:
+            - |
+              set -e
+              mkdir -p /usr/share/nginx/html
+              cat > /usr/share/nginx/html/index.html <<'HTML'
+              <!doctype html>
+              <html>
+                <head><title>{{ .Values.page.title }}</title></head>
+                <body>
+                  <h1>{{ .Values.page.title }}</h1>
+                  <p>{{ .Values.page.body }}</p>
+                </body>
+              </html>
+              HTML
+              exec nginx -g 'daemon off;'
+          {{- /* one containerPort per distinct targetPort across all services */}}
+          {{- $ports := list }}
+          {{- range .Values.services }}{{ $ports = append $ports .targetPort }}{{- end }}
+          ports:
+            {{- range ($ports | uniq) }}
+            - containerPort: {{ . }}
+            {{- end }}
+          {{- with .Values.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}

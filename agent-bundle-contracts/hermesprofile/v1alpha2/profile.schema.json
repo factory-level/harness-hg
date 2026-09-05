@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/hermesprofile/v1alpha2/profile.schema.json",
+  "title": "HermesProfile record",
+  "description": "The per-agent instance record (profile.yaml) pushed to the GitOps repo. v1alpha2 removes four fields no consumer read: spec.targetCluster, spec.reach (whose only key was regions), and spec.deployment.{machineType,region,diskType} - leftovers from the deleted VM compute path. See plugin/schemas/README.md for the migration note. Fully-resolved instance record for a single installed Hermes agent \u2014 PLAIN HELM VALUES for the hermes-profile chart, not a Kubernetes custom resource (there is no HermesProfile CRD). The record's identity is its directory name (profiles/<name>/profile.yaml, read by the ApplicationSet as {{.path.basename}}); the emitter enforces the name rules (DNS-1123 label, max 40 chars). Desired-state only; no status block.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec"
+  ],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persona",
+        "source",
+        "sha"
+      ],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git URL or path, e.g. github.com/factorylevel/support-agent"
+        },
+        "gitAuthSecretRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of a Kubernetes Secret in the instance's own namespace holding the credential to clone a PRIVATE spec.source: keys username+password (HTTPS PAT) or ssh-privatekey (SSH deploy key). Omit for public sources."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceSubdir": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$",
+          "description": "Subdirectory of spec.source containing the distribution (the Hermes fork's --subdir / #subdirectory= install form). The pod boot path installs /tmp/dist/<sourceSubdir> from its clone. Omit for root-layout sources."
+        },
+        "sha": {
+          "type": "string",
+          "description": "Full commit SHA (40 lowercase hex chars).",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "distributionVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseImageTag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diskSizeGb": {
+              "type": "integer",
+              "minimum": 10
+            }
+          }
+        },
+        "apps": {
+          "type": "array",
+          "description": "The RESOLVED helm apps this instance launches, in author order - the emitter has already deep-merged author values + fleet defaults + per-instance appValues overrides into `values`, and every `valuesRequired` dot-path was satisfied pre-render (so that field is dropped from the record). The chart renders one Argo CD Application per entry (app-of-apps).",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "chart",
+              "repo"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 40,
+                "description": "DNS-label app name, unique within the record."
+              },
+              "chart": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Chart name in the remote helm repo, or (for `repo: local`) the chart's path inside the platform/GitOps chart tree."
+              },
+              "repo": {
+                "type": "string",
+                "pattern": "^(local|https://\\S+|oci://\\S+)$",
+                "description": "Helm repo URL (https:// or oci://), or the reserved word `local` (chart ships with the platform/GitOps repo)."
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Chart version - present for remote repos (the Application's targetRevision), absent for `repo: local`."
+              },
+              "values": {
+                "type": "object",
+                "description": "The fully-merged chart values (author values + fleet defaults + per-instance overrides), inlined."
+              }
+            },
+            "if": {
+              "properties": {
+                "repo": {
+                  "const": "local"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "version"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "version"
+              ]
+            }
+          }
+        },
+        "envRequires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          }
+        },
+        "expose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "services"
+          ],
+          "properties": {
+            "services": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "port"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  }
+                }
+              }
+            },
+            "access": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "service-token",
+                    "idp",
+                    "mixed"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "backup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schedule"
+          ],
+          "properties": {
+            "schedule": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retention": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

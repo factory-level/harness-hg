@@ -1,0 +1,19 @@
+# v1alpha2 removed four fields that no consumer ever read (#132, ADR-8).
+# This fixture proves they are REJECTED rather than tolerated: a record
+# still carrying them would render an Application whose chart values
+# schema already refuses them (infra/charts/hermes-profile/
+# values.schema.json's spec block is additionalProperties:false and never
+# had them), so accepting them here would only move the failure later.
+#
+# spec.targetCluster's successor is NOT a record field (#176, ADR-33):
+# placement is the environment's decision. The profile declares what it
+# supports (topology.supportedLayouts / agent.multiplicity in
+# hermes-gitops.yaml); environment/topology.yaml places instances onto
+# targets; the compiler emits argoDestination per instance and the
+# per-instance ApplicationSets read it.
+spec:
+  persona: support-agent
+  source: https://github.com/example/personas
+  ref: main
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  targetCluster: prod-eu

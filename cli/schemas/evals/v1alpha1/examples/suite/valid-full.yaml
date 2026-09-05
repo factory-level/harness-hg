@@ -1,0 +1,7 @@
+# Valid: every optional field populated.
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha1
+name: social-media-evals
+scenarios: scenarios
+defaults:
+  timeout: 300
+  repeat: 1

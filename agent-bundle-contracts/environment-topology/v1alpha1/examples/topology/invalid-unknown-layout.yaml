@@ -1,0 +1,8 @@
+version: 1
+layout: mesh
+regions:
+  - name: eu-west
+    jurisdiction: EU
+    targets:
+      - name: eu-west-a
+        argoDestination: eu-west-a

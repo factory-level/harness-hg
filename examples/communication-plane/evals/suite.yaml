@@ -1,0 +1,8 @@
+# The communication-plane eval suite (evals v1alpha2: typed invocation).
+# Consumed ONLY by `hg eval` against the running local platform; every
+# scenario drives the SAME engine hg event uses - no in-memory shortcut
+# counts as an integration test.
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha2
+name: communication-plane-evals
+defaults:
+  timeout: 300

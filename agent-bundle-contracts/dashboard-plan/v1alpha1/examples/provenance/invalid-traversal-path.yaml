@@ -1,0 +1,4 @@
+# INVALID: dot-dot segments cannot appear in a source path.
+sourceSha: "0000000000000000000000000000000000000000"
+sourcePaths:
+  - dashboard/../../secret.yaml

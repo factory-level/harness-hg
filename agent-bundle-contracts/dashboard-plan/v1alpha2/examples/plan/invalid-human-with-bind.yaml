@@ -1,0 +1,18 @@
+# INVALID: humans and groups are organizational, never deployment-bound.
+version: 2
+inputsHash: "1111111111111111111111111111111111111111111111111111111111111111"
+sourceSha: "0000000000000000000000000000000000000000"
+components:
+  - id: calvin
+    kind: human
+    title: Calvin
+    resolved: true
+    bind:
+      profile: marketing-manager
+    instances: []
+relationships: []
+view:
+  id: default
+  nodes:
+    - ref: calvin
+      position: {x: 0, y: 0}

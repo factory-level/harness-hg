@@ -1,0 +1,5 @@
+# INVALID: unknown keys refuse rather than silently vanish.
+apiVersion: hermes-gitops.factorylevel.dev/bundle-destination/v1alpha1
+gitops:
+  repoUrl: https://github.com/example/persona.gitops.git
+  autoMerge: true

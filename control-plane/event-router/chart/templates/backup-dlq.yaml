@@ -1,0 +1,113 @@
+{{- if and .Values.backup.dlq.enabled .Values.spec.durableProvider }}
+# The dead-letter backup (#303, ADR-52's convention).
+#
+# Gated on spec.durableProvider as well as its own switch, because the
+# dead-letter queue IS the broker's: no durableProvider renders no Redis
+# (templates/redis.yaml), and a routine whose restore hook names a
+# Deployment nothing rendered fails the whole platform restore. Found the
+# hard way - `hg platform verify-restore` restored both agent volumes and
+# then died on `deployment/hermes-event-router-redis, which does not
+# exist`, on a router that connections alone had brought up (ADR-152).
+# A direct-only plane has no dead letters to archive.
+#
+# The Redis volume holds three things with three different values: stream
+# entries in flight (fine to lose - `hg up` re-creates the streams and
+# design 13 does not promise them), consumer offsets (rebuilt on the next
+# delivery), and the DEAD-LETTER QUEUE, which is neither.
+#
+# Dead letters are the record of what failed and the only input `hg event
+# dlq replay` has. So this routine archives exactly those - not the whole
+# volume, which would restore stale in-flight entries alongside them and
+# replay deliveries that already succeeded elsewhere.
+#
+# It follows the ordinary routine convention (labelled CronJob, sink
+# volume named `backups`, protects annotation), so `hg backup list|run|
+# verify` and the Nexus Backups view discover it like any other.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hermes-event-router.service" . }}-dlq-backups
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/ignore-healthcheck: "true"
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.backup.dlq.size }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "hermes-event-router.service" . }}-dlq-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    hermes.dev/backup-routine: "true"
+  annotations:
+    # An archive without this file backed up an empty Redis, which is
+    # indistinguishable from a fleet that has had no failures.
+    hermes.dev/backup-protects: "dead-letters.jsonl"
+    hermes.dev/backup-retention: {{ .Values.backup.dlq.retention | quote }}
+    hermes.dev/backup-destination: pvc
+    # No data PVC to restore INTO, and re-injection is deliberately NOT
+    # automatic: adding a dead letter back to a live stream re-delivers a
+    # failure, and whether that is wanted depends on why it failed. The
+    # hook therefore RESTORES THE RECORD - it puts the archive back where
+    # an operator (or `hg event dlq replay`) can act on it - and reports
+    # what it staged. A hook that silently re-drove every failed delivery
+    # after a disaster would be the wrong kind of helpful.
+    hermes.dev/backup-restore-hook: |
+      {"workload": "deployment/{{ include "hermes-event-router.service" . }}-redis",
+       "container": "redis",
+       "stagePath": "/tmp/dead-letters.jsonl",
+       "command": ["sh","-c","test -s /tmp/dead-letters.jsonl && echo \"dead letters restored to /tmp/dead-letters.jsonl: $(wc -l < /tmp/dead-letters.jsonl) line(s) - replay with hg event dlq replay\""]}
+spec:
+  schedule: {{ .Values.backup.dlq.schedule | quote }}
+  concurrencyPolicy: Forbid
+  # Keep enough finished Jobs for the Backups view's per-run strip to
+  # show real history (defaults are 3/1); the long window lives in
+  # Grafana's kube_job_* series, not in retained objects.
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: dlq-backup
+              image: redis:7-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ts="$(date -u +%Y%m%d-%H%M%S)"
+                  out="/backups/dead-letters-${ts}"
+                  mkdir -p "$out"
+                  : > "$out/dead-letters.jsonl"
+                  # One line per dead letter, tagged with the stream it
+                  # came from - a replay has to know where to put it back.
+                  redis-cli -h {{ include "hermes-event-router.service" . }}-redis --scan --pattern '*:dlq' | while read -r s; do
+                    [ -n "$s" ] || continue
+                    redis-cli -h {{ include "hermes-event-router.service" . }}-redis XRANGE "$s" - + | \
+                      awk -v st="$s" 'NF{printf "{\"stream\":\"%s\",\"entry\":%s}\n", st, "\"" $0 "\""}' \
+                      >> "$out/dead-letters.jsonl"
+                  done
+                  n="$(wc -l < "$out/dead-letters.jsonl")"
+                  echo "[dlq-backup] archived ${n} dead letter line(s) -> ${out}"
+                  # Retention by directory count; timestamped names sort
+                  # chronologically, same rule every other routine uses.
+                  ls -1d /backups/dead-letters-* | sort -r | tail -n +{{ add .Values.backup.dlq.retention 1 }} | while read -r old; do
+                    rm -rf "$old"
+                  done
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ include "hermes-event-router.service" . }}-dlq-backups
+{{- end }}

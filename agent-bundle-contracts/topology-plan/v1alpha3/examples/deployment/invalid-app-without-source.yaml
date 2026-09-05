@@ -1,0 +1,9 @@
+spec:
+  id: x/a@y
+  profile: x
+  app: a
+  scope: y
+  target: y-a
+  argoDestination: y-a
+  namespace: hermes-app-x-a-y
+  application: hermes-app-x-a-y

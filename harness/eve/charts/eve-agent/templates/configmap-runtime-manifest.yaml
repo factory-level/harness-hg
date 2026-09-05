@@ -1,0 +1,21 @@
+{{- include "eve.runtimeGuard" . -}}
+{{- include "eve.computeGuard" . -}}
+{{/*
+The runtime manifest (ADR-153), mounted at /hg/runtime-manifest.json.
+
+A ConfigMap rather than a file the boot script writes, so it is readable
+from the API server while the pod is down or crash-looping - which is
+exactly when "what did this agent actually get" is the question being
+asked. Names only, never values.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eve.fullname" . }}-runtime-manifest
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    {{- include "eve.labels" . | nindent 4 }}
+data:
+  runtime-manifest.json: {{ include "eve.runtimeManifest" . | quote }}

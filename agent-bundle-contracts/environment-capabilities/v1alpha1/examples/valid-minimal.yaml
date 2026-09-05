@@ -1,0 +1,8 @@
+# The smallest useful file: one globally-reachable environment-provided
+# capability. Consumers declare `requires: [{capability: sentiment-feed, ...}]`
+# and never learn what implements it.
+version: 1
+bindings:
+  sentiment-feed:
+    implementation: external-sentiment-api
+    url: https://sentiment.example.net/v1

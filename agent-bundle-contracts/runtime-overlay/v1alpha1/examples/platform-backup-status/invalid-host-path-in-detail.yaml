@@ -1,0 +1,16 @@
+# INVALID: `archive` is not a field of this record at all. It exists in the
+# host-side manifest and stays there - the moment an archive location travels
+# into the cluster, a ConfigMap any namespace reader can list starts naming
+# where the operator's backups live. additionalProperties: false is the
+# enforcement; this fixture is what keeps it honest.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: PlatformBackupStatus
+observedAt: "2026-08-01T03:14:07Z"
+backupId: hg-2026-08-01T03-11-52z
+createdAt: "2026-08-01T03:11:52Z"
+verification:
+  state: available
+components:
+  - name: host/nexus-state
+    kind: host-archive
+    archive: host/nexus-state.tar.gz

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/runtime-overlay/v1alpha1/reconciliation-status.schema.json",
+  "title": "Destination-server reconciliation status (ConfigMap hermes-reconciliation-status)",
+  "description": "The handshake between the host reconciler and the in-cluster control plane. `hg reconcile` runs on the destination Linux server; Nexus runs in a pod on a PVC - they share no filesystem, so the reconciler publishes this document as `status.json` in a ConfigMap in the control-plane namespace and Nexus reads it with the same Kubernetes transport the Argo adapter uses. It deliberately does NOT travel through Git: the deployment repository is the reconciler's own input, so committing status there would change the desired SHA and re-trigger reconciliation forever. Every string is written already-scrubbed by the reconciler and re-bounded by the reader, because a ConfigMap is hand-editable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "observedAt", "phase"],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    }
+  },
+  "properties": {
+    "apiVersion": { "const": "nexus.hermes.ai/v1alpha1" },
+    "kind": { "const": "ReconciliationStatus" },
+    "observedAt": {
+      "description": "When the reconciler last completed a tick. A record older than the reader's staleAfterSeconds reads `unknown` - a dead timer must not present as synced.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "phase": {
+      "description": "The reconciler's state machine. `degraded` means the apply succeeded but Argo CD has not converged; `failed` means the commit was rejected by validation or the apply and is blocked until the desired SHA changes or an operator retries.",
+      "enum": [
+        "synced",
+        "change-detected",
+        "validating",
+        "applying",
+        "waiting-for-argocd",
+        "degraded",
+        "failed",
+        "authentication-required"
+      ]
+    },
+    "desiredSha": {
+      "description": "The commit the deployment repository currently points at.",
+      "$ref": "#/$defs/sha"
+    },
+    "attemptedSha": { "$ref": "#/$defs/sha" },
+    "appliedSha": {
+      "description": "The last commit applied SUCCESSFULLY. A failed apply never advances it.",
+      "$ref": "#/$defs/sha"
+    },
+    "appliedAt": { "$ref": "#/$defs/timestamp" },
+    "startedAt": { "$ref": "#/$defs/timestamp" },
+    "finishedAt": { "$ref": "#/$defs/timestamp" },
+    "attempts": {
+      "description": "How many times the blocked commit has been attempted. Present only while blocked.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "retryable": {
+      "description": "Whether `hg reconcile retry` would do anything.",
+      "type": "boolean"
+    },
+    "summary": {
+      "description": "A scrubbed one-liner. Never carries command output verbatim, a URL, or anything credential-shaped.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "version": {
+      "description": "The pinned reconciler version, so an upgrade is visible in the overlay.",
+      "type": "string",
+      "maxLength": 80
+    }
+  }
+}
