@@ -1,0 +1,16 @@
+# Valid: typed event invocation with runner-checked expectations and no
+# evaluator - the runner's receipts ARE the assertion.
+name: alert-fanout
+profile: platform-sre
+invoke:
+  event:
+    name: observability.alert
+    from: platform-sre/monitoring#alerts
+    payload: fixtures/alert-firing.json
+expect:
+  outputs:
+    - agent:
+        profile: platform-sre
+    - chatops: company_discord#channel-1
+    - chatops: company_discord#channel-2
+timeout: 300

@@ -1,0 +1,7 @@
+# The state/ stack (spec §23) - the ONLY stack whose backend is the
+# manually created root bucket + KMS key. It provisions, per agent, a
+# state bucket + deploy SA + IAM for the infra/ stacks. See README.md for
+# the manual-root creation commands and the backend login sequence.
+name: hermes-gitops-state
+runtime: bun
+description: Per-agent Pulumi state buckets, deploy service accounts, and IAM (rooted in the manual GCS bucket + Cloud KMS key)

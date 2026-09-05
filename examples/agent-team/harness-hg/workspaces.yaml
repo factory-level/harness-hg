@@ -1,0 +1,19 @@
+# Repository mounts the TEAM brings (environment-workspaces v1alpha1): a
+# git checkout granted to agents at a pinned commit. `source: self` = the
+# agent's OWN source at the deployed revision - no credential, no second
+# repo. The bootstrap may grant more (its environment spec's
+# grants.workspaces); a repository named on both sides refuses.
+# `hg workspace doctor --dir .` validates; `hg workspace verify` probes
+# the checkout. Declare least-privilege from day one.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: own-source
+    source: self
+    mount: { path: /workspaces/own-source, access: read-only }
+
+bindings:
+  - repository: own-source
+    profiles: [manager, research]
+    purpose: own-source

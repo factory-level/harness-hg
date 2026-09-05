@@ -1,0 +1,106 @@
+{{- /*
+The starter Grafana dashboard, delivered as a ConfigMap the platform Grafana
+dashboards sidecar (bootstrap/monitoring-grafana.yaml, label
+grafana_dashboard: "1", all namespaces) loads. Panels, top to bottom: a text
+panel that teaches the conventions, a live traffic timeseries (with the alert
+threshold drawn as a line), a "visits in the last 5m" stat, and a "make it
+yours" text panel. The traffic query is the SAME one charts/monitoring's
+SiteVisitsHigh alert evaluates — what fires is what you see.
+*/ -}}
+{{- $uid := include "dashboard.uid" . -}}
+{{- $persona := include "dashboard.persona" . -}}
+{{- $ds := printf "{\"type\":\"prometheus\",\"uid\":%s}" (.Values.datasourceUid | toJson) -}}
+{{- $visitsExpr := printf "sum(increase(traefik_service_requests_total{service=~%q}[5m])) or vector(0)" (include "dashboard.serviceRegex" .) | toJson -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  {{ .Release.Name }}-dashboard.json: |
+    {
+      "uid": {{ $uid | toJson }},
+      "title": {{ printf "Hermes — %s · starter" $persona | toJson }},
+      "tags": ["hermes", "starter"],
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "text",
+          "title": "Read me first",
+          "gridPos": { "x": 0, "y": 0, "w": 24, "h": 11 },
+          "options": {
+            "mode": "markdown",
+            "content": {{ include "dashboard.introMarkdown" . | toJson }}
+          }
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Site visits (trailing 5m window)",
+          "gridPos": { "x": 0, "y": 11, "w": 18, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "thresholdsStyle": { "mode": "line" } },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": {{ .Values.dashboard.visitsThreshold | float64 }} }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": {{ $visitsExpr }},
+              "legendFormat": "visits / 5m"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Visits (last 5m)",
+          "gridPos": { "x": 18, "y": 11, "w": 6, "h": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": {{ .Values.dashboard.visitsThreshold | float64 }} }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $visitsExpr }}, "instant": true }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "text",
+          "title": "Next steps",
+          "gridPos": { "x": 0, "y": 20, "w": 24, "h": 6 },
+          "options": {
+            "mode": "markdown",
+            "content": {{ include "dashboard.nextStepsMarkdown" . | toJson }}
+          }
+        }
+      ]
+    }

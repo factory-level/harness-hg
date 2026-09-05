@@ -1,0 +1,14 @@
+{
+    "name": "hermes-gitops",
+    "label": "Nexus",
+    "description": "Logical fleet, application, and organization view (ADR-42)",
+    "icon": "Globe",
+    "version": "0.1.0",
+    "tab": {
+        "path": "/nexus",
+        "override": "/"
+    },
+    "entry": "dist/index.js",
+    "css": "dist/style.css",
+    "api": "plugin_api.py"
+}

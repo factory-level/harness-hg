@@ -1,0 +1,17 @@
+# Local test config for `hg test` (read beside hermes-gitops.yaml). For an
+# Eve agent the smoke tier is built in - pods Ready, GET /eve/v1/health, and
+# one authenticated real turn over HTTP - so no `smoke:` entries are needed
+# unless the agent exposes further services.
+version: 1
+profile: .
+
+# runtime.envRequires, satisfied with LOCAL DEV values. The placeholder is
+# refused by the real-turn check (it never calls a model with a fake key);
+# supply a real ANTHROPIC_API_KEY (hg env set, or --env) to run it.
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+
+reset:
+  delete_pvcs: []
+  wipe_namespaces: []
+  preserve: []

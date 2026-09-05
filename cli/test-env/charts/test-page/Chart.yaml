@@ -1,0 +1,13 @@
+apiVersion: v2
+name: test-page
+description: >
+  PLATFORM TEST FIXTURE (declared status — #134): not an application chart,
+  a live probe the platform's own test suites and example profiles deploy.
+  A static "Hermes GitOps test page" served by nginx. The smallest possible
+  local app: if you can see the page, the whole loop worked (pulumi up ->
+  GitOps repo -> Argo CD -> this chart). Referenced from hermes-gitops.yaml
+  as {chart: charts/test-page, repo: local} — local charts version with the
+  platform revision, so this chart's version is informational only.
+type: application
+version: 0.1.0
+appVersion: "1.0"

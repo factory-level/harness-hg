@@ -1,0 +1,15 @@
+# v4 removes the legacy expose block (ADR-99): access.policy and
+# endpoints[].type were two exposure models for one surface, and ADR-27
+# requires a migration, not an addition. A v4 file still carrying expose
+# must reject - silently dropping it would unexpose services on deploy.
+contractVersion: 5
+
+endpoints:
+  - name: dashboard
+    port: 9119
+    type: authenticated
+
+expose:
+  services:
+    - name: dashboard
+      port: 9119

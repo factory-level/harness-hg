@@ -1,0 +1,21 @@
+apiVersion: v2
+name: secret-tester
+description: >
+  PLATFORM TEST FIXTURE (declared status — #134): not an application chart,
+  a live probe the platform's drift/decommission loop deploys.
+  The secret SHA tester — a small web page (separate from the wiki site)
+  that proves the platform's secret chain end-to-end WITHOUT ever exposing
+  the secret: the GitOps repo carries only the secret's sha256 checksum
+  (expectedSha256, operator-supplied via the appValues override channel),
+  the live secret reaches this pod the same way it reaches the agent
+  (the hermes-<persona>-env Secret), and the page's "Verify" button
+  compares the two server-side. Two payloads are tested on every click:
+  the expected checksum (must MATCH) and a control checksum (must
+  MISMATCH), so a broken comparator can't fake a pass. If the secret is
+  not provided at all the container exits immediately with NO_SECRET —
+  fail-fast, visible as CrashLoopBackOff and (via charts/monitoring) an
+  AgentAppUnhealthy alert. Referenced from hermes-gitops.yaml as
+  {chart: charts/secret-tester, repo: local}.
+type: application
+version: 0.1.0
+appVersion: "1.0"

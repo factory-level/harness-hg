@@ -1,0 +1,35 @@
+# Standalone cluster-values fixture for the compute=pod + ingress=cloudflare
+# golden render (infra/charts/hermes-profile/templates/tunnel/stack-cloudflare.yaml
+# + templates/pod/statefulset.yaml's cloudflared sidecar,
+# infra/scripts/render-test.sh). Mirrors tests/chart/fixtures/cluster-values-gce.yaml's
+# own rationale for being a standalone file, not layered on top of
+# infra/gitops-template/bootstrap/values/cluster-values.yaml: a real
+# providers.ingress=cloudflare cluster-values.yaml needs a `cloudflare{}`
+# block that has no schema-legal place in a cluster-values.yaml validated
+# strictly against the canonical, frozen
+# schemas/cluster-values/v1alpha1/cluster-values.schema.json (see
+# infra/charts/hermes-profile/values.yaml's `cloudflare:` header comment / Task 12
+# report for the "known schema gap" writeup). This fixture therefore does
+# NOT validate against that canonical schema (it isn't under
+# schemas/**/examples/, so `make schema-validate` never looks at it) - it
+# only needs to satisfy infra/charts/hermes-profile's own values.schema.json,
+# which IS a deliberate superset.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: cloudflare
+image:
+  repository: ghcr.io/dummy/hermes-agent
+  tag: latest
+cloudflare:
+  accountId: test-cf-account-id
+  zoneId: test-cf-zone-id
+  zoneName: agents.example.com
+  tunnel:
+    projectRepo: https://github.com/factory-level/hermes-gitops-plugin.git
+    branch: main
+    workspaceServiceAccountName: hermes-gitops-cloudflare-tunnel-workspace
+  pulumiBackend:
+    mode: self-managed
+    selfManaged:
+      backendUrl: gs://hermes-gitops-test-pulumi-state/hermes-gitops-cloudflare-tunnel

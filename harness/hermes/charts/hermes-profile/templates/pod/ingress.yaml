@@ -1,0 +1,27 @@
+{{- include "hermes.computeGuard" . -}}
+{{- include "hermes.ingressGuard" . -}}
+{{- if and (eq .Values.providers.compute "pod") (eq .Values.providers.ingress "ingress") .Values.spec.expose }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "hermes.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  rules:
+    {{- range $svc := .Values.spec.expose.services }}
+    - host: {{ printf "%s.%s" (include "hermes.name" $) ($.Values.ingress.baseDomain | default "hermes.local") }}
+      http:
+        paths:
+          - path: {{ $svc.path | default "/" }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "hermes.fullname" $ }}
+                port:
+                  number: {{ $svc.port }}
+    {{- end }}
+{{- end }}

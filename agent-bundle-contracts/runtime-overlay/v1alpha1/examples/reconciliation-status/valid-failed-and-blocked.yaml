@@ -1,0 +1,20 @@
+# A commit that failed validation. The load-bearing detail is that
+# `appliedSha` still names the PREVIOUS good commit: a failed apply never
+# advances it, so the overlay can say "running 4f2c1ab, refusing 9a3d0e2"
+# instead of implying the bad commit is live. `attempts` stays at 1 across
+# subsequent ticks - the reconciler blocks a known-bad SHA rather than
+# retrying it every minute forever.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: ReconciliationStatus
+observedAt: "2026-07-31T09:20:00Z"
+phase: failed
+desiredSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+attemptedSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+appliedSha: 4f2c1ab9d7e3c5b1a0f8e6d4c2b0a9f8e7d6c5b4
+appliedAt: "2026-07-31T09:12:41Z"
+startedAt: "2026-07-31T09:19:44Z"
+finishedAt: "2026-07-31T09:20:00Z"
+attempts: 1
+retryable: true
+summary: "validation failed: hg topology doctor exited 1"
+version: v0.4.1

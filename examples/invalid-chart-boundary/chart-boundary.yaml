@@ -1,0 +1,4 @@
+# Fixture manifest: declares sneaky-app as class application (forbidden)
+# and omits nothing else - the tree also fails location + dependency rules.
+charts:
+  - { path: charts/sneaky-app, class: application }

@@ -1,0 +1,13 @@
+# The smallest useful contribution: one agent card for one profile.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: marketing-research
+  title: Marketing Research
+spec:
+  components:
+    - id: marketing-research
+      kind: agent
+      title: Marketing Research
+      bind:
+        profile: marketing-research

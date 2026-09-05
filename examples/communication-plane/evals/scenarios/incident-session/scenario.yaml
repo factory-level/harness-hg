@@ -1,0 +1,17 @@
+# Firing and resolved notifications for ONE incident share one keyed
+# session - the evaluator reads the runner's receipts and asserts the
+# session keys match (and carry environment/profile/route).
+name: incident-session
+profile: platform-sre
+invoke:
+  events:
+    name: observability.alert
+    from: platform-sre/monitoring#alerts
+    payloads:
+      - fixtures/alert-firing.json
+      - fixtures/alert-resolved.json
+expect:
+  outputs:
+    - agent:
+        profile: platform-sre
+evaluate: evaluate.py

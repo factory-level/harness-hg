@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/communication-deployment/v1alpha1/plan.schema.json",
+  "title": "Communication plan summary (deployments/communication/plan.yaml)",
+  "description": "The whole-plane summary: which routers, producers, external inputs, edges, and ChatOps spaces the compiler emitted, and which durable provider backs queued delivery. Inspection surface for hg and doctors - the per-router values.yaml files are the operative configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "routers",
+    "producers",
+    "externalInputs",
+    "edges",
+    "chatopsSpaces"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "routers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "producers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "externalInputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "chatopsSpaces": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "durableProvider": {
+      "type": "string"
+    }
+  }
+}

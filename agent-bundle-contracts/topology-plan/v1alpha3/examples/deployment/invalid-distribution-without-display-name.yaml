@@ -1,0 +1,11 @@
+# INVALID: a distribution stamp without displayName names nothing.
+spec:
+  id: marketing-manager
+  profile: marketing-manager
+  scope: local
+  target: in-cluster
+  argoDestination: in-cluster
+  namespace: hermes-marketing-manager
+  application: hermes-marketing-manager
+  distribution:
+    name: marketing

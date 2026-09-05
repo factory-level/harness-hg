@@ -1,0 +1,37 @@
+/* Agents directory - tokens only; five-cell row grid, cells match tracks
+   (the seven-in-six wrap defect class must not recur). Header, chips,
+   shells and states are the shared primitives (primitives.css). */
+.nx-agents { max-inline-size: var(--nx-measure-wide); margin-inline: auto; display: flex; flex-direction: column; block-size: 100%; }
+.nx-agents-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nx-agents-div { inline-size: 1px; block-size: 18px; background: var(--line); }
+.nx-agents-count { color: var(--mut); }
+.nx-agents-scroll { flex: 1; min-block-size: 0; overflow: auto; }
+.nx-agents-group { margin-block-end: var(--sp-3); }
+.nx-agents-grouphead { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); font-family: var(--nx-display); }
+.nx-agents-groupname { font-weight: 650; font-size: var(--fs-md); }
+.nx-agents-groupmeta { color: var(--mut); font-family: var(--nx-body); }
+/* The row grid: the identity cell takes the slack, the trailing cells
+   (deployment, attachments, health) sit at fixed tracks so they line up
+   column to column and the eyebrow header names them. */
+.nx-agent-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 200px 160px 110px 24px;
+  align-items: center;
+  gap: var(--sp-3);
+  border-block-start: 1px solid var(--line2);
+  padding: var(--sp-2) var(--sp-4);
+}
+.nx-agent-cols { border: none; padding-block: 0 var(--sp-1); }
+.nx-agent-cols-health { justify-self: end; }
+.nx-agent-main { display: flex; align-items: center; gap: var(--sp-3); background: none; border: none; color: var(--ink); text-align: start; cursor: pointer; padding: 0; font: inherit; }
+.nx-agent-name { display: flex; flex-direction: column; }
+.nx-agent-title { font-weight: 650; }
+.nx-agent-desc { color: var(--mut); font-size: var(--fs-sm); }
+.nx-agent-deploy { color: var(--ink2); }
+.nx-agent-unknown { color: var(--mut); }
+.nx-agent-status { display: inline-flex; align-items: center; gap: 6px; justify-self: end; }
+.nx-agent-open { color: var(--mut); text-decoration: none; display: inline-flex; justify-content: center; }
+.nx-agent-open:hover { color: var(--ink); }
+.nx-agent-facts { margin: 0; }
+.nx-agent-facts dt:first-child { margin-block-start: 0; }
+.nx-agent-tabs { margin: var(--sp-3) 0; }

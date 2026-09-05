@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Harness Hg">
+  <title>Harness Hg</title>
+  <!-- The contour-sphere mark, hand-drawn at favicon scale. contour-sphere.js
+       marches the real thing from noise every frame, which a 16px icon cannot
+       carry: the rim and two offset interior contours are what survives. Keep
+       these strokes ≥1.4 — thinner ones vanish in a browser tab. -->
+  <rect width="32" height="32" rx="7" fill="#0B0D14"/>
+  <g fill="none" stroke="#F5B98C" stroke-linecap="round">
+    <circle cx="16" cy="16" r="10.6" stroke-width="2.3"/>
+    <circle cx="14.4" cy="14.2" r="6.4" stroke-width="1.6" opacity=".76"/>
+    <circle cx="13.2" cy="12.9" r="2.7" stroke-width="1.5" opacity=".55"/>
+  </g>
+</svg>

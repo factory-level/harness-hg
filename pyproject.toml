@@ -1,0 +1,82 @@
+[project]
+name = "gitops-emitter"
+version = "0.1.0"
+description = "Hermes plugin: renders and pushes fully-resolved HermesProfile GitOps records on profile install/update."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.0",
+    "python-dotenv>=1.0",
+    # Comment-preserving config.yaml round-trip for the supported
+    # plugin-config write surface (gitops_emitter/config_cli.py, issue
+    # #10 [E1]).
+    "ruamel.yaml>=0.18",
+]
+
+[project.entry-points."hermes_agent.plugins"]
+# Value is the BARE module path (no ":attr" suffix) — see the docstring in
+# gitops_emitter/__init__.py for why. The fork's PluginManager does
+# `module = entry_point.load()` then `getattr(module, "register", None)`,
+# so `ep.load()` must return the module itself.
+gitops-emitter = "gitops_emitter"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    # The Nexus dashboard plugin router (control-plane/nexus/plugin_api.py) is
+    # hosted by Hermes' own FastAPI in production; dev installs it only so
+    # plugin/tests can import and exercise the router module.
+    "fastapi>=0.110",
+]
+docs = [
+    "mkdocs-material>=9.5",
+]
+
+[tool.pytest.ini_options]
+# Scope the root `uv run --group dev pytest` (Makefile's `pytest` target,
+# part of `make test`) to gitops-emitter's OWN tests. Without this, pytest's
+# default rootdir-wide collection also picks up infra/pulumi/programs/*/tests/ -
+# those are separate, self-contained uv projects with their OWN
+# pyproject.toml/lockfile/venv (pulumi + pulumi_gcp, dependencies this
+# root venv deliberately does not have - see this repo's top-level
+# README/each program's own README for why) - collecting them here fails
+# at import time with ModuleNotFoundError, not a real test failure. Run
+# those with `cd infra/pulumi/programs/<program> && uv run --group dev pytest`
+# instead (see e.g. infra/pulumi/programs/gce-instance/README.md's "Fix round 1"
+# section).
+testpaths = ["plugin/tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["plugin/gitops_emitter"]
+
+# Package the canonical app-of-apps template + profile-record schema into
+# the wheel at build time (issue #28 [L1]) — single source of truth, no
+# committed duplicates. The mapped paths are exactly where the runtime
+# loaders resolve them via importlib.resources
+# (gitops_emitter/scaffold.py, gitops_emitter/render.py); both loaders
+# fall back to these canonical source paths when running from a source
+# checkout / editable install.
+[tool.hatch.build.targets.wheel.force-include]
+"infra/gitops-template" = "gitops_emitter/gitops_template"
+"agent-bundle-contracts/hermesprofile/v1alpha3/profile.schema.json" = "gitops_emitter/schema/hermesprofile-v1alpha3.schema.json"
+"agent-bundle-contracts/hermes-gitops-extension/v1alpha2/hermes-gitops.schema.json" = "gitops_emitter/schema/hermes-gitops-extension-v1alpha2.schema.json"
+"agent-bundle-contracts/hermes-gitops-extension/v1alpha3/hermes-gitops.schema.json" = "gitops_emitter/schema/hermes-gitops-extension-v1alpha3.schema.json"
+"agent-bundle-contracts/hermes-gitops-extension/v1alpha4/hermes-gitops.schema.json" = "gitops_emitter/schema/hermes-gitops-extension-v1alpha4.schema.json"
+"agent-bundle-contracts/hermes-gitops-extension/v1alpha5/hermes-gitops.schema.json" = "gitops_emitter/schema/hermes-gitops-extension-v1alpha5.schema.json"
+"agent-bundle-contracts/agent-team/v1alpha1/agent.schema.json" = "gitops_emitter/schema/agent-team-agent-v1alpha1.schema.json"
+"agent-bundle-contracts/agent-team/v1alpha1/apps.schema.json" = "gitops_emitter/schema/agent-team-apps-v1alpha1.schema.json"
+"agent-bundle-contracts/agent-team/v1alpha1/backup.schema.json" = "gitops_emitter/schema/agent-team-backup-v1alpha1.schema.json"
+"agent-bundle-contracts/agent-team/v1alpha1/endpoints.schema.json" = "gitops_emitter/schema/agent-team-endpoints-v1alpha1.schema.json"
+"agent-bundle-contracts/eveagent/v1alpha1/eveagent.schema.json" = "gitops_emitter/schema/eveagent-v1alpha1.schema.json"
+"agent-bundle-contracts/eveagent/v1alpha2/eveagent.schema.json" = "gitops_emitter/schema/eveagent-v1alpha2.schema.json"
+"agent-bundle-contracts/dashboard-contribution/v1alpha1/contribution.schema.json" = "gitops_emitter/schema/dashboard-contribution-v1alpha1.schema.json"
+"agent-bundle-contracts/dashboard-contribution/v1alpha1/view.schema.json" = "gitops_emitter/schema/dashboard-view-v1alpha1.schema.json"
+"agent-bundle-contracts/dashboard-contribution/v1alpha2/contribution.schema.json" = "gitops_emitter/schema/dashboard-contribution-v1alpha2.schema.json"
+"agent-bundle-contracts/dashboard-contribution/v1alpha2/view.schema.json" = "gitops_emitter/schema/dashboard-view-v1alpha2.schema.json"

@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-secret-tester
+  labels:
+    app.kubernetes.io/name: secret-tester
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: secret-tester
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: secret-tester
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Roll the pod when the app script changes.
+        checksum/app: {{ include (print $.Template.BasePath "/configmap-app.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: secret-tester
+          image: {{ .Values.image | quote }}
+          command: ["python3", "/app/server.py"]
+          env:
+            - name: SECRET_KEY
+              value: {{ .Values.secret.key | quote }}
+            - name: EXPECTED_SHA256
+              value: {{ required "secret-tester: expectedSha256 is required (the sha256 of the expected secret value - see values.yaml)" .Values.expectedSha256 | quote }}
+            - name: CONTROL_SHA256
+              value: {{ .Values.controlSha256 | quote }}
+            - name: PORT
+              value: {{ .Values.service.port | quote }}
+            - name: BASE_PATH
+              value: {{ .Values.ingress.path | quote }}
+          # The secret arrives exactly the way it arrives at the agent
+          # pod: from the per-persona env Secret. NOT optional - a
+          # missing Secret keeps the pod in CreateContainerConfigError
+          # (fail fast at scheduling); a present Secret with a missing
+          # key makes server.py exit NO_SECRET (fail fast at startup).
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secret.secretName | default (printf "%s-env" .Release.Namespace) }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          volumeMounts:
+            - name: app
+              mountPath: /app
+              readOnly: true
+          {{- with .Values.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: app
+          configMap:
+            name: {{ .Release.Name }}-app

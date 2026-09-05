@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-topology/v1alpha1/policy.schema.json",
+  "title": "Environment policy (environment/policy.yaml)",
+  "description": "Operator-owned declaration of what the environment ALLOWS. The compile-time authority for the chart-source allowlist (the Argo CD AppProject's sourceRepos is maintained separately: platform entries templated by the scaffold, remote-chart entries operator-authored in cluster-values) and for the jurisdictions profiles may be placed into. The compiler validates every app's chart source against allowedChartSources before any deployment record is generated (TOPO008) and every target's jurisdiction against allowedJurisdictions (TOPO007).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "allowedChartSources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(https://\\S+|oci://\\S+)$",
+        "description": "Remote helm repo URL prefix. `local` charts (the platform tree) are always allowed and never listed."
+      },
+      "description": "Remote chart sources apps may reference. Absent or empty: only `repo: local` charts are allowed."
+    },
+    "allowedJurisdictions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 2
+      },
+      "description": "Jurisdictions targets may declare. Absent: every declared jurisdiction is allowed."
+    }
+  }
+}

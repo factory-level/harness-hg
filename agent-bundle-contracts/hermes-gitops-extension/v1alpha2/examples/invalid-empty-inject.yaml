@@ -1,0 +1,6 @@
+# inject must carry exactly one destination - an empty mapping is the other
+# oneOf failure branch (both-forms is the first).
+contractVersion: 2
+requires:
+  - capability: content-board
+    inject: {}

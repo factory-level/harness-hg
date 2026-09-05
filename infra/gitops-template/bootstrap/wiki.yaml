@@ -1,0 +1,30 @@
+# The product manual, in-cluster (#664, ADR 0167): the wiki image serves
+# the make wiki-build output baked at the platform revision it documents;
+# /version answers the served version. Sourced from the platform repo
+# like the other control-plane singletons (scaffold tokens below).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wiki
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/component: wiki
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # "default", same reasoning as the other bootstrap-level Applications.
+  project: default
+  source:
+    repoURL: __HERMES_GITOPS_REPO_URL__
+    targetRevision: __CHART_REVISION__
+    path: control-plane/wiki/chart
+  destination:
+    name: in-cluster
+    namespace: hermes-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

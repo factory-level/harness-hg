@@ -1,0 +1,16 @@
+# The agent's Nexus card (dashboard.hermes-gitops/v1alpha2): what the
+# control plane's dashboard shows for it. `hg nexus compile --source .`
+# validates; `hg nexus emit` projects it into the destination.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: manager
+  title: manager
+spec:
+  components:
+    - id: manager
+      kind: agent
+      title: manager
+      description: Scaffolded by hg bundle init - describe what this agent does.
+      bind:
+        profile: manager

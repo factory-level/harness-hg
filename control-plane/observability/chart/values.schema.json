@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/charts/control-plane-observability/values.schema.json",
+  "title": "control-plane-observability Helm values",
+  "description": "Chart-owned validation (NOT part of the frozen contracts in agent-bundle-contracts/). Validated by Helm at template time, so a typo'd toggle fails the Argo CD render loudly instead of silently dropping a dashboard the platform promised.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "datasourceUid": { "type": "string", "minLength": 1 },
+    "overview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "reconciliation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "type": "boolean" } }
+    },
+    "backupHistory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "enabled": { "type": "boolean" } }
+    }
+  }
+}

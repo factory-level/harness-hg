@@ -1,0 +1,10 @@
+# An Eve agent overriding the runtime image tag: the deployment block
+# applies to both runtimes; runtimeImageTag is the Eve-side knob.
+contractVersion: 5
+runtime:
+  kind: eve
+  envRequires:
+    - AI_GATEWAY_API_KEY
+deployment:
+  runtimeImageTag: 0.42.0
+  diskSizeGb: 20

@@ -1,0 +1,7 @@
+version: 1
+layout: mesh
+sovereignty: permissive
+inputsHash: "0000000000000000000000000000000000000000000000000000000000000000"
+agents: []
+apps: []
+bindings: []

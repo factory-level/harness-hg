@@ -1,0 +1,17 @@
+# v1alpha2's one widening: component reference links, https only (ADR-43).
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: marketing-research
+  title: Marketing Research
+spec:
+  components:
+    - id: marketing-research
+      kind: agent
+      title: Marketing Research
+      bind:
+        profile: marketing-research
+      links:
+        repository: https://github.com/example/social-media
+        docs: https://github.com/example/social-media/blob/main/README.md
+        runbook: https://github.com/example/social-media/blob/main/RUNBOOK.md

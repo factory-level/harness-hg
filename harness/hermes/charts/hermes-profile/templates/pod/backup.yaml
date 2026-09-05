@@ -1,0 +1,262 @@
+{{- include "hermes.backupGuard" . -}}
+{{- if and .Values.spec.backup (eq (.Values.providers.backup | default "none") "pvc") -}}
+{{- $retention := .Values.spec.backup.retention | default 7 -}}
+# Backup path (providers.backup=pvc): archive the instance's data volume
+# into a per-instance backups PVC on the profile's declared schedule.
+# The application only declared INTENT (spec.backup: schedule + retention);
+# everything below - destination, image, sizing - is platform configuration
+# from cluster-values (see values.yaml's `backup:` block).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hermes.fullname" . }}-backups
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+  annotations:
+    # On WaitForFirstConsumer StorageClasses (k3s local-path, most cloud
+    # defaults) this PVC stays Pending until the FIRST backup job pod
+    # mounts it - that is its normal steady state, not un-health. Argo CD's
+    # built-in PVC health treats Pending as Progressing, which would pin
+    # the whole Application at Progressing until the first scheduled
+    # backup fires; opt this one resource out (Argo CD >= 2.8).
+    argocd.argoproj.io/ignore-healthcheck: "true"
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.backup.pvc.storageClassName }}
+  storageClassName: {{ .Values.backup.pvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.pvc.size | default "5Gi" }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "hermes.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+    # The backup-routine convention (`hg backup` discovers by this label):
+    # the ROUTINE - what to protect and how - belongs to whoever owns the
+    # data (this chart for the agent volume; an app chart for its own
+    # state). Invocation and sight belong to the platform: `hg backup
+    # list|run|verify` finds every labelled CronJob, triggers it on
+    # demand, and opens the newest artifact to assert the paths named in
+    # the annotation below are actually inside it.
+    hermes.dev/backup-routine: "true"
+  annotations:
+    # Comma-separated path patterns `hg backup verify` must find inside
+    # the newest artifact. The agent volume's tar always contains the
+    # profiles/ tree - an archive without it backed up the wrong volume.
+    hermes.dev/backup-protects: "profiles/,state.db,config.yaml,memories/,skills/,plugins/,sessions/,cron/,.hermes-db-snapshot.json"
+    # Retention and destination as READABLE facts (#282). Both are already
+    # true of this routine - retention is interpolated into the prune step
+    # below, the destination is `providers.backup` - but only as shell text
+    # and a chart value. A Backups view that had to parse a container
+    # command to tell an operator how many restore points exist would be
+    # reading the wrong thing; these annotations are the contract.
+    hermes.dev/backup-retention: {{ $retention | quote }}
+    hermes.dev/backup-destination: {{ .Values.providers.backup | default "none" | quote }}
+spec:
+  schedule: {{ .Values.spec.backup.schedule | quote }}
+  # Never overlap archive runs - a second tar racing the first on the same
+  # destination PVC produces interleaved partial archives.
+  concurrencyPolicy: Forbid
+  # Keep enough finished Jobs for the Backups view's per-run strip to
+  # show real history (defaults are 3/1); the long window lives in
+  # Grafana's kube_job_* series, not in retained objects.
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "hermes.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          # Both PVCs are ReadWriteOnce: the data volume is attached to
+          # whatever node runs the agent's StatefulSet pod, so the backup
+          # pod MUST co-schedule with it or its mount would hang forever.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      {{- include "hermes.selectorLabels" . | nindent 22 }}
+                  topologyKey: kubernetes.io/hostname
+          # Same identity story as the agent containers (statefulset.yaml):
+          # data-volume files are owned 10000:10000 (fsGroup), so the
+          # archiver runs as that UID/GID and needs nothing more.
+          securityContext:
+            fsGroup: 10000
+          containers:
+            - name: backup
+              image: {{ printf "%s:%s" .Values.backup.image.repository .Values.backup.image.tag }}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ts="$(date -u +%Y%m%d-%H%M%S)"
+                  archive="/backups/{{ include "hermes.name" . }}-${ts}.tar.gz"
+                  echo "[backup] archiving /data -> ${archive}"
+                  # SQLite consistency (#436, ADR-106): tar reads state.db and
+                  # its -wal at different instants while the agent writes, so a
+                  # raw copy can be torn. Every *.db is snapshotted through
+                  # sqlite3.backup() (the same API hermes_cli/backup.py uses)
+                  # into /tmp/snap and integrity-checked; the snapshot tree is
+                  # appended as the archive's LAST root, so extraction
+                  # overwrites the live (possibly torn) copy with the
+                  # consistent one - tar's last-member-wins is the substitution
+                  # mechanism, chosen over per-file excludes because tar
+                  # applies excludes to every root, snapshots included. The
+                  # sidecars (-wal/-shm/-journal) are excluded outright: a
+                  # fresh snapshot next to stale sidecar state is a torn
+                  # restore on the next open. Any failure is LOUD - a silent
+                  # fallback to a hot copy is the bug this step removes.
+                  # ponytail: the archive carries each db twice (live + snap);
+                  # a single-pass python tarfile writer removes that if size
+                  # ever matters.
+                  rm -rf /tmp/snap && mkdir -p /tmp/snap
+                  python3 - <<'PY'
+                  import json, os, sqlite3, sys, time
+                  # Mirrors the tar exclude list below - keep in sync.
+                  PRUNE = ("backups", "checkpoints", "cache", ".cache", "tmp",
+                           "__pycache__", "node_modules", ".venv", "venv",
+                           "site-packages", ".pytest_cache", ".mypy_cache",
+                           ".ruff_cache")
+                  dbs = []
+                  for root, dirs, files in os.walk("/data"):
+                      dirs[:] = [d for d in dirs if d not in PRUNE]
+                      for f in files:
+                          if not f.endswith(".db"):
+                              continue
+                          src = os.path.join(root, f)
+                          rel = os.path.relpath(src, "/data")
+                          dst = os.path.join("/tmp/snap", rel)
+                          os.makedirs(os.path.dirname(dst), exist_ok=True)
+                          conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+                          out = sqlite3.connect(dst)
+                          conn.backup(out)
+                          conn.close()
+                          check = out.execute("PRAGMA integrity_check").fetchone()[0]
+                          out.close()
+                          if check != "ok":
+                              print(f"[backup] FATAL {rel}: integrity_check {check}", file=sys.stderr)
+                              sys.exit(1)
+                          print(f"[backup] snapshot {rel}: integrity_check ok")
+                          dbs.append(dict(db=rel, integrity_check=check))
+                  marker = dict(
+                      takenAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                      method="sqlite3.backup + PRAGMA integrity_check",
+                      databases=dbs,
+                  )
+                  with open("/tmp/snap/.hermes-db-snapshot.json", "w") as fh:
+                      json.dump(marker, fh, indent=2)
+                  print(f"[backup] snapshot marker written ({len(dbs)} database(s))")
+                  PY
+                  # Hermes states its own backup contract in code
+                  # (hermes_cli/backup.py), and these exclusions are that
+                  # contract, not tidiness (#417). Three of them are
+                  # correctness rather than size:
+                  #
+                  #   backups/      capturing prior archives nests them
+                  #                 exponentially - every run tars the last.
+                  #   gateway state PIDs, locks and gateway_state.json belong
+                  #                 to the SOURCE machine's process namespace.
+                  #                 Restoring them leaves the gateway stuck
+                  #                 "starting" and disconnected from the
+                  #                 portal - upstream's _IMPORT_SKIP_NAMES
+                  #                 exists for exactly this failure.
+                  #   caches/deps   a plugin venv or pip cache under
+                  #                 HERMES_HOME turns one archive into
+                  #                 hundreds of thousands of entries; upstream
+                  #                 records this as the "backup stuck for
+                  #                 days" symptom.
+                  #
+                  # NOT excluded, deliberately: skills/.archive holds
+                  # restorable user skills, and logs/ is history Hermes keeps
+                  # in its own backups too.
+                  # GNU tar exits 1 (not 0) when a file CHANGED while being
+                  # read - routine under a live agent (a session log mid
+                  # append), and exactly the class the db snapshot above
+                  # already handles for the files whose consistency is
+                  # guaranteed. Everything else is best-effort, as it always
+                  # was; only exit >1 (fatal) fails the job. Found live: the
+                  # manager's first python-image run died on a mid-append
+                  # file that busybox tar used to ship silently.
+                  set +e
+                  tar czf "${archive}" \
+                    --exclude=./backups \
+                    --exclude=./checkpoints \
+                    --exclude=./cache \
+                    --exclude=./.cache \
+                    --exclude=./tmp \
+                    --exclude='*/__pycache__' \
+                    --exclude='*.pyc' \
+                    --exclude='*.pyo' \
+                    --exclude='*/node_modules' \
+                    --exclude='*/.venv' \
+                    --exclude='*/venv' \
+                    --exclude='*/site-packages' \
+                    --exclude='*/.pytest_cache' \
+                    --exclude='*/.mypy_cache' \
+                    --exclude='*/.ruff_cache' \
+                    --exclude='*gateway.pid' \
+                    --exclude='*cron.pid' \
+                    --exclude='*gateway.lock' \
+                    --exclude='*gateway_state.json' \
+                    --exclude='*processes.json' \
+                    --exclude='*.db-wal' \
+                    --exclude='*.db-shm' \
+                    --exclude='*.db-journal' \
+                    -C /data . -C /tmp/snap .
+                  rc=$?
+                  set -e
+                  if [ "$rc" -gt 1 ]; then
+                    echo "[backup] FATAL tar exited ${rc}" >&2
+                    exit "$rc"
+                  fi
+                  # Retention: keep the newest {{ $retention }} archives.
+                  # Timestamped names sort lexicographically = chronologically.
+                  ls -1 /backups/*.tar.gz | sort -r | tail -n +{{ add $retention 1 }} | while read -r old; do
+                    echo "[backup] pruning ${old} (retention: {{ $retention }})"
+                    rm -f "${old}"
+                  done
+                  echo "[backup] done: $(ls -1 /backups/*.tar.gz | wc -l) archive(s) retained"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 10000
+                runAsGroup: 10000
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  # NOT readOnly, deliberately (#436, found live): the
+                  # wal-mode databases on this volume need a writable -shm
+                  # for the snapshot's mode=ro connection to join the live
+                  # agent's locking protocol. A read-only filesystem made
+                  # sqlite3.connect fail outright ("unable to open database
+                  # file") on every wal db without a live -shm - and the
+                  # read-only heap fallback would bypass writer coordination
+                  # anyway. The connection stays mode=ro; tar only reads.
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            # The StatefulSet's volumeClaimTemplate "data" at replica 0 -
+            # replicas is pinned to 1 (see statefulset.yaml), so this name
+            # is stable by construction.
+            - name: data
+              persistentVolumeClaim:
+                claimName: data-{{ include "hermes.fullname" . }}-0
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ include "hermes.fullname" . }}-backups
+{{- end -}}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/topology-plan/v1alpha1/provenance.schema.json",
+  "title": "Catalogue provenance record (catalog/profiles/<name>/provenance.yaml)",
+  "description": "Provenance beside the verbatim contract copy. The catalogue is TWO plain files per profile: contract.yaml is the authored hermes-gitops.yaml copied byte-for-byte (comments, line endings, everything - validated by the authoring schemas, not here), and this file records where it came from. No YAML embedding, so the TypeScript and Python emitters produce identical bytes with no shared serializer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "sourceSha"
+  ],
+  "properties": {
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40,
+      "description": "The profile name (distribution.yaml name) - also the directory name, which is the record's identity."
+    },
+    "sourceSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The source commit the contract was read at (all zeros for an uncommitted local preview)."
+    }
+  }
+}

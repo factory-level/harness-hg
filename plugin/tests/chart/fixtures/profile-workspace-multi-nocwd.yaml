@@ -1,0 +1,19 @@
+# NEGATIVE fixture: two workspace repositories and NO terminalCwd - the
+# chart must refuse to render (see render-test.sh's workspace section).
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  workspace:
+    repositories:
+      - name: strategy-context
+        source: git@github.com:factorylevel/strategy-context.git
+        sha: 0123456789abcdef0123456789abcdef01234567
+        mountPath: /workspaces/strategy-context
+        access: read-only
+        gitAuthSecretRef: hermes-strategy-context-git
+      - name: playbooks
+        source: https://github.com/factorylevel/playbooks
+        sha: fedcba9876543210fedcba9876543210fedcba98
+        mountPath: /workspaces/playbooks
+        access: read-write

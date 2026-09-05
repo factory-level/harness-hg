@@ -1,0 +1,15 @@
+# INVALID: bundle-local repository authoring was retired in #365 -
+# workspace repositories are profile capabilities, declared once in
+# environment/workspaces.yaml. v1alpha3 drops the fields from the schema
+# outright instead of parsing-then-refusing them in code.
+version: 3
+bundles:
+  - name: marketing-core
+    profiles:
+      - name: manager
+    repositories:
+      - name: social
+        source: https://example.com/social.git
+        sha: 0123456789012345678901234567890123456789
+        mountPath: /workspaces/social
+        access: read-only

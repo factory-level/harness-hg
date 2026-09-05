@@ -1,0 +1,31 @@
+name: Bug report
+description: Something does not work the way the docs say it does.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`make version` in the platform checkout, or the version in the docs header."
+      placeholder: v0.231.8-dev+abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: loop
+    attributes:
+      label: Which loop
+      options: [dev (hg up on k3d), agent-bundle (no cluster), ops (a hosted environment), docs site]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected, what you got. Paste the output in a code block. Never paste a secret.
+    validations:
+      required: true
+  - type: textarea
+    id: proof
+    attributes:
+      label: Proof output
+      description: "If a `hg … prove` command is involved, paste its `--json` result."

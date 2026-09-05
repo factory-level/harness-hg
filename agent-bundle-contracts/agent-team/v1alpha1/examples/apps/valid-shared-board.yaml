@@ -1,0 +1,42 @@
+# One shared board owned by the manager; its alert output routes to the
+# SRE agent and a ChatOps space. Declared once, never per agent.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Apps
+apps:
+  - name: content-kanban
+    agent: marketing-manager
+    chart: content-kanban
+    repo: oci://registry.example.dev/hermes/charts
+    version: 0.3.0
+    topology: {multiplicity: singleton, dataBoundary: global}
+    endpoints:
+      - name: api
+        service: hermes-marketing-manager-content-kanban-content-kanban
+        port: 80
+        path: /api
+        type: private
+        provides: content-board
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+        subject: groupKey
+        adapter:
+          type: webhook
+          inject: {appValue: {path: alerts.webhookUrl}}
+    routes:
+      - name: kanban-alerts
+        from: {app: content-kanban, output: alerts}
+        delivery:
+          mode: queued
+          guarantee: at-least-once
+          ordering: {mode: fifo, key: subject}
+        outputs:
+          - agent:
+              profile: marketing-sre
+              handler: alerts
+              session: {mode: keyed, key: subject}
+          - chatops: company_discord#sre-alerts
+  - name: test-page
+    agent: marketing-manager
+    chart: cli/test-env/charts/test-page
+    repo: local

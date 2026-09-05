@@ -1,0 +1,52 @@
+# The Hermes GitOps deployment config — one optional file, sitting BESIDE
+# distribution.yaml at the distribution root. It carries ALL deployment
+# intent; distribution.yaml stays pure Hermes and is never read for it
+# (_docs/wiki/reference/profile-record.md).
+#
+# Plain Hermes ignores this file entirely; the Hermes GitOps plugin consumes
+# it. Every block is optional ({} is a valid file). No file at all means the
+# profile declares no infra intent — the agent pod still renders, zero apps.
+#
+# v1 scope: single cluster, pod compute. Networking, backups, and placement
+# are platform concerns — this file only DECLARES intent (spec ADR-010).
+
+# The Helm apps this profile launches. Each entry is a real chart: from a
+# remote Helm repo (repo: https://... or oci://..., version REQUIRED), or
+# shipped with the platform (repo: local — chart is a PATH into the
+# platform chart tree, and no version field: it versions with the platform).
+# Remote repos must also be on the AppProject's sourceRepos allowlist.
+apps:
+  - name: test-page
+    chart: cli/test-env/charts/test-page  # chart path in the platform chart tree
+    repo: local               # reserved word: ships with the platform
+  # The profile's observability payload: a Grafana dashboard + alert rules
+  # + their contact point, picked up by the platform Grafana's sidecars
+  # (see _docs/wiki/platform/observability.md). alert.webhookUrl is
+  # valuesRequired - the operator (or the local testing CLI, which points
+  # it at its own alert sink automatically) must supply a receiver.
+  - name: monitoring
+    chart: control-plane/monitoring/chart
+    repo: local
+    values:
+      alert:
+        siteVisits5m:
+          threshold: 100
+    valuesRequired:
+      - alert.webhookUrl
+
+# Services the agent wants reachable. The platform decides HOW (v1:
+# Cloudflare Tunnel); the distribution only says WHAT and on which port.
+expose:
+  services:
+    - name: tools
+      port: 8080
+      path: /
+  access:
+    policy: service-token
+
+# Agent pod knobs. diskSizeGb minimum is 10.
+deployment:
+  diskSizeGb: 10
+
+# gitAuthSecretRef: <name-of-k8s-secret>   # only needed for PRIVATE repos;
+                                           # this example repo is public.

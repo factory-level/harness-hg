@@ -1,0 +1,79 @@
+# The service's python code + served data files, projected from committed
+# chart files (synced from control-plane/nexus - see Chart.yaml). The UI
+# bundles (dist/index.js, standalone.js, style.css) are NOT embedded here:
+# every chart file lands in the Helm release Secret twice (chart file +
+# rendered manifest), and #804 found the release at 1,072,560 bytes against
+# the 1MiB cap. #807 dropped index.js believing nothing in-cluster read it -
+# wrong: standalone.js is a shell that imports index.js at runtime, and the
+# deployed Nexus served a blank page. The dist ConfigMap is therefore
+# provisioned OUTSIDE the release (the Pulumi bootstrap, or `hg up` in the
+# local loop) and mounted by name: .Values.dist.configMapName
+# (nexus-ui-dist - a new name, because this release used to own nexus-dist).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-code
+  labels: {hermes-gitops.factorylevel.dev/plane: control-plane, hermes-gitops.factorylevel.dev/component: nexus, app.kubernetes.io/name: nexus}
+data:
+  plugin_api.py: |
+{{ .Files.Get "files/plugin_api.py" | indent 4 }}
+  standalone.py: |
+{{ .Files.Get "files/standalone.py" | indent 4 }}
+  features.json: |
+{{ .Files.Get "files/features.json" | indent 4 }}
+  inventory.json: |
+{{ .Files.Get "files/inventory.json" | indent 4 }}
+  panels.json: |
+{{ .Files.Get "files/panels.json" | indent 4 }}
+---
+# Operator configuration, resolved at Path.home()/.hermes/plugins/
+# hermes-gitops/config.yaml - HOME points at the state volume, and this
+# file is subPath-mounted onto that exact path.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nexus-config
+  labels: {hermes-gitops.factorylevel.dev/plane: control-plane, hermes-gitops.factorylevel.dev/component: nexus, app.kubernetes.io/name: nexus}
+data:
+  config.yaml: |
+    repoPath: /repo
+    cacheSeconds: {{ .Values.cacheSeconds }}
+    staleAfterSeconds: {{ .Values.staleAfterSeconds }}
+    backupStaleHours: {{ .Values.backupStaleHours }}
+    evalStaleHours: {{ .Values.evalStaleHours }}
+    {{- with .Values.kubeContext }}
+    kubeContext: {{ . | quote }}
+    {{- end }}
+    integrations:
+      argocd: {baseUrl: {{ .Values.argocdBaseUrl | quote }}}
+      grafana:
+        baseUrl: {{ .Values.grafanaBaseUrl | quote }}
+        {{- with .Values.grafanaProbeBaseUrl }}
+        # Server-side health probe only (#556) - never handed to the browser.
+        probeBaseUrl: {{ . | quote }}
+        {{- end }}
+      # READ, not linked: the alert and uptime sources query this.
+      prometheus: {baseUrl: {{ .Values.prometheusBaseUrl | quote }}}
+      router: {baseUrl: {{ .Values.routerBaseUrl | quote }}}
+    # External tool URLs (#469, spec §23) - rendered whole, same reason as
+    # capabilities below: an id the chart does not know about still
+    # reaches the backend, which is the one that gates each value.
+    toolUrls: {{ .Values.toolUrls | toJson }}
+    workspace:
+      identityHeader: {{ .Values.workspace.identityHeader | quote }}
+      ownerEmails: {{ .Values.workspace.ownerEmails | toJson }}
+    oidc:
+      issuer: {{ .Values.oidc.issuer | quote }}
+      clientId: {{ .Values.oidc.clientId | quote }}
+      roleClaim: {{ .Values.oidc.roleClaim | quote }}
+      roles:
+        owner: {{ .Values.oidc.roles.owner | toJson }}
+        operator: {{ .Values.oidc.roles.operator | toJson }}
+        viewer: {{ .Values.oidc.roles.viewer | toJson }}
+    adapters:
+      argo: {enabled: {{ .Values.adapters.argo.enabled }}}
+      gateway: {enabled: {{ .Values.adapters.gateway.enabled }}}
+    # Deployment capabilities (ADR-84). Rendered whole so a key the chart
+    # does not know about still reaches the backend, which resolves any
+    # non-boolean as absent.
+    capabilities: {{ .Values.capabilities | toJson }}

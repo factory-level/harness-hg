@@ -1,0 +1,721 @@
+/* Workspace / Fleet Canvas - tokens only. The world is a CSS transform;
+   the dot grid rides background vars; in-world stacking uses named
+   layer requests.
+
+   The object grammar is the old board's (ADR-58), restored: SHAPE
+   encodes kind (six silhouettes, non-interchangeable footprints from
+   geometry.ts), HUE encodes kind (the Kind-Is-Hue rule - --kindhue set
+   once per kind class, washes via color-mix), MATERIAL encodes
+   authorship (crisp --sf is machine-known; --sticky paper is
+   human-authored; dashed is provisional). Health is the only other
+   colour and lives on the bead, never the body. */
+.nx-workspace { display: flex; flex-direction: column; block-size: 100%; }
+.nx-canvas {
+  flex: 1;
+  min-block-size: 0;
+  overflow: hidden;
+  background-color: var(--paper);
+  /* The board is paper; the dot grid earns its place as drag alignment,
+     not decoration - knocked back, never full-strength. Beads, badge
+     halos and connector labels knock out against --paper, so the canvas
+     ground and --paper must stay the same colour. */
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--dot) 55%, transparent) 1px, transparent 1px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.nx-canvas:active { cursor: grabbing; }
+/* An armed tool changes what a press means - the cursor says so; a
+   PLACEMENT tool additionally claims the press even over a card. */
+.nx-canvas-placing, .nx-canvas-placing:active { cursor: crosshair; }
+.nx-canvas-placing-through .nx-world > * { pointer-events: none; }
+.nx-world {
+  transform-origin: 0 0;
+  position: relative;
+  /* The world must have REAL extent: the edge layer is an svg sized
+     100% of it, and a zero-height svg viewport disables rendering of
+     every stroke in it (this is why connections were invisible). */
+  inline-size: 100%;
+  block-size: 100%;
+  z-index: var(--nx-z-world);
+}
+
+/* --- Cards: one element, per-kind silhouette ----------------------- */
+.nx-cardnode {
+  z-index: var(--nx-z-object);
+  --kindhue: var(--acc);
+  background: var(--sf);
+  border: none;
+  border-block-start: 4px solid var(--kindhue);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shl);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 14px 16px;
+  cursor: pointer;
+  text-align: start;
+  transition: transform var(--ease-quick), box-shadow var(--ease-quick);
+}
+.nx-cardnode:hover {
+  z-index: var(--nx-z-object-active);
+  transform: translateY(-2px);
+}
+/* Focus rides the shared ring in the card's own hue; selection (below)
+   is the louder edit-accent ring and wins when both apply. */
+.nx-cardnode:focus-visible { outline: 2px solid var(--kindhue); outline-offset: 2px; }
+.nx-cardnode-title {
+  font-family: var(--nx-display);
+  font-weight: 700;
+  font-size: var(--fs-md);
+  letter-spacing: -0.01em;
+  line-height: var(--lh-snug);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-inline-size: 100%;
+}
+.nx-cardnode-sub { color: var(--mut); font-size: var(--fs-xs); line-height: var(--lh-snug); }
+
+/* Agent: TALL CARD - KIND'S BAR - LIFTED. The only object with a real
+   shadow, because it is the only one you operate. */
+.nx-cardnode-agent {
+  --kindhue: var(--kind-agent);
+  padding: 18px;
+  box-shadow: var(--sh);
+}
+.nx-cardnode-agent .nx-cardnode-title {
+  font-size: var(--fs-2xl);
+  letter-spacing: var(--track-tight);
+  line-height: var(--lh-tight);
+  white-space: normal;
+  margin-block-start: var(--sp-3);
+}
+.nx-cardnode-agent .nx-cardnode-sub { margin-block-start: auto; font-size: var(--fs-xs); font-weight: 600; }
+/* The identity slot: a fixed height that clears the overhanging art, so
+   the name row sits at one offset whether the avatar or the rings
+   fallback renders - both hang off the card's top-left corner. */
+.nx-cardnode-head { display: block; block-size: 40px; flex: none; }
+/* The rings fallback takes the avatar's overhang slot, knocked out of
+   the board by a paper disc so it reads as the same fixture. */
+.nx-rings-overhang {
+  inset-block-start: -18px;
+  inset-inline-start: -18px;
+  inline-size: 56px;
+  block-size: 56px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 0 0 3px var(--paper);
+  display: inline-grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: var(--nx-z-badge);
+}
+/* The avatar floats free over the card's top-left - no plate, no ring.
+   The inset clip removes the 1px layer edge Chrome paints on animated
+   WebP under non-integer canvas zoom (1/128 of the source). */
+.nx-ava-overhang {
+  inset-block-start: -36px;
+  inset-inline-start: -36px;
+  inline-size: 112px;
+  block-size: 112px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  clip-path: inset(0.78125%);
+  pointer-events: none;
+  z-index: var(--nx-z-badge);
+}
+.nx-cardnode-desc {
+  color: var(--mut);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  margin-block-start: var(--sp-2);
+  text-wrap: pretty;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Tool / application: WIDE PLAQUE - TIGHT RADIUS - a nameplate, not a
+   card. */
+.nx-cardnode-tool, .nx-cardnode-application, .nx-cardnode-external-tool, .nx-cardnode-group {
+  border-radius: var(--radius-md);
+  border-block-start-width: 3px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 11px;
+  padding: 0 13px;
+}
+.nx-cardnode-tool { --kindhue: var(--kind-tool); }
+.nx-cardnode-application { --kindhue: var(--kind-tool); }
+.nx-cardnode-group { --kindhue: var(--kind-group); }
+/* Plaque anatomy: the avatar/monogram tile, then a name/kind column. */
+.nx-tile-ava {
+  inline-size: 44px;
+  block-size: 44px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex: none;
+}
+.nx-cardnode-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+}
+.nx-cardnode-body .nx-cardnode-title { font-size: var(--fs-md); letter-spacing: -0.01em; }
+
+/* External tool: the SAME plaque, chamfered on its left so the boundary
+   of the managed environment reads as a silhouette before any text
+   does. clip-path clips box-shadow, so depth moves to a drop-shadow
+   filter and focus to an outline. */
+.nx-cardnode-external-tool {
+  --kindhue: var(--kind-external-tool);
+  clip-path: polygon(22px 0, 100% 0, 100% 100%, 22px 100%, 0 calc(100% - 22px), 0 22px);
+  padding-inline-start: 26px;
+  box-shadow: none;
+  filter: var(--dsh);
+}
+.nx-cardnode-external-tool:hover { box-shadow: none; }
+.nx-cardnode-external-tool:focus-visible {
+  box-shadow: none;
+  outline: 2px solid var(--kindhue);
+  outline-offset: 2px;
+}
+
+/* Person: the only circle on the board. Humans have no health and no
+   shadow-lift race - a quiet ring in the people hue. */
+.nx-cardnode-person {
+  --kindhue: var(--kind-person);
+  border-radius: 50%;
+  border: 2px solid var(--kindhue);
+  border-block-start-width: 2px;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  text-align: center;
+  color: var(--kindhue);
+}
+.nx-cardnode-mono {
+  font-family: var(--nx-display);
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+}
+/* The name lives OUTSIDE the circle and outside the hit area. */
+.nx-cardnode-personlabel {
+  inset-block-start: calc(100% + 10px);
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  inline-size: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  color: var(--ink);
+}
+.nx-cardnode-personlabel .nx-cardnode-title { white-space: normal; line-height: 1.2; }
+.nx-cardnode-personlabel .nx-cardnode-sub { font-size: var(--fs-xs); }
+
+/* Agent bundle: the fanned hand - four mini-cards in the bundle hue,
+   only the front card named; the ghost states the empty case plainly. */
+.nx-cardnode-agent-bundle {
+  --kindhue: var(--kind-agent-bundle);
+  border-radius: var(--radius);
+  border-block-start-width: 3px;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: center;
+}
+.nx-hand { display: block; }
+.nx-hand-card {
+  inline-size: 88px;
+  block-size: 108px;
+  border-radius: var(--radius-md);
+  background: var(--sf);
+  border: 1px solid var(--line);
+  border-block-start: 3px solid var(--kindhue);
+  box-shadow: var(--shl);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+.nx-hand-c0 { inset-inline-start: 8px; inset-block-start: 22px; rotate: -12deg; }
+.nx-hand-c1 { inset-inline-start: 56px; inset-block-start: 10px; rotate: -4deg; }
+.nx-hand-c2 { inset-inline-start: 126px; inset-block-start: 10px; rotate: 4deg; }
+.nx-hand-c3 { inset-inline-start: 174px; inset-block-start: 22px; rotate: 12deg; }
+.nx-hand-name {
+  font-family: var(--nx-body);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  color: var(--mut);
+  padding: 6px;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nx-hand-ghost {
+  inline-size: 100%;
+  block-size: 124px;
+  border: 2px dashed color-mix(in srgb, var(--mut) 65%, transparent);
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mut);
+  font-size: var(--fs-xs);
+  margin-block-end: auto;
+}
+
+/* Comm panels: a READOUT you operate, never a card - tinted ground,
+   directional spine, cut corner. */
+.nx-cardnode-comm-in, .nx-cardnode-comm-out {
+  --kindhue: var(--comm);
+  background: var(--commsf);
+  border-block-start: none;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  color: var(--ink2);
+  padding: 14px 16px;
+}
+.nx-cardnode-comm-in {
+  /* The spine is DIRECTION, not decoration: left = inbound (ADR-58,
+     user-approved restoration). impeccable-disable-line side-tab */
+  border-inline-start: 4px solid var(--comm); /* impeccable-disable-line side-tab */
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+}
+.nx-cardnode-comm-out {
+  border-inline-end: 4px solid var(--comm); /* impeccable-disable-line side-tab -- the outbound spine, right = out */
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  align-items: flex-end;
+  text-align: end;
+}
+.nx-cardnode-comm-in .nx-cardnode-title, .nx-cardnode-comm-out .nx-cardnode-title {
+  font-size: var(--fs-xl);
+  letter-spacing: var(--track-tight);
+}
+.nx-cardnode-comm-in .nx-cardnode-sub, .nx-cardnode-comm-out .nx-cardnode-sub {
+  color: var(--comm);
+  font-family: var(--nx-display);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: var(--track-wide);
+  text-transform: uppercase;
+}
+
+/* An unresolved binding is the one place a card looks provisional: a
+   dashed edge, and it stops asserting a shadow it hasn't earned.
+   (Declared AFTER the kind blocks so the same-specificity cascade
+   settles it - no priority escape hatch needed.) */
+.nx-cardnode-orphan {
+  border: 1px dashed var(--mut);
+  border-block-start-width: 1px;
+  box-shadow: none;
+  filter: none;
+  clip-path: none;
+  opacity: 0.85;
+  color: var(--mut);
+  cursor: default;
+}
+.nx-cardnode-orphan:hover { transform: none; box-shadow: none; }
+
+/* The status bead: half outside the card, knocked out of the board by
+   a ring of the board's own paper. */
+.nx-cardnode-bead {
+  inset-block-start: -7px;
+  inset-inline-end: -7px;
+  z-index: var(--nx-z-badge);
+  background: var(--paper);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--paper);
+  display: inline-flex;
+}
+.nx-cardnode-selected, .nx-cardnode-selected:focus-visible { outline: 2px solid var(--edit-acc); outline-offset: 3px; }
+
+/* --- The badge strip (ADR-58): domain fixtures clipped to the card's
+   BOTTOM edge, knocked out of the board by the paper halo. A badge only
+   exists when its domain has rows - never an empty circle. */
+.nx-badges {
+  inset-inline-start: 16px;
+  inset-block-end: -14px;
+  display: flex;
+  gap: 8px;
+  z-index: var(--nx-z-badge);
+}
+/* The 76px plaques have no vertical padding - drop the strip lower so
+   it doesn't land on the name row (carried override). */
+.nx-cardnode-tool .nx-badges, .nx-cardnode-application .nx-badges, .nx-cardnode-group .nx-badges { inset-block-end: -20px; }
+/* A badge is a labelled pill - the domain glyph and its count - never a
+   bare glyph the reader has to decode. */
+.nx-badge {
+  min-inline-size: 28px;
+  block-size: 26px;
+  padding: 0 9px 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--sf);
+  box-shadow: 0 0 0 3px var(--paper), var(--shl);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-family: var(--nx-display);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  transition: transform var(--ease-quick);
+}
+.nx-badge:hover { transform: translateY(-2px); }
+.nx-badge-gh, .nx-badge-iam { color: var(--ink2); }
+.nx-badge-comm { color: var(--comm); }
+/* Alerting stays neutral ALWAYS: it would warm only when something is
+   firing, and firing state is not readable per card. */
+.nx-badge-alert { color: var(--mut); }
+
+/* The bubble (rendered in the top layer by HoverPopover). */
+.nx-bpop { max-inline-size: 250px; font-family: var(--nx-body); }
+.nx-bpop-domain { margin: 0; font-family: var(--nx-display); font-size: var(--fs-sm); font-weight: 700; }
+.nx-bpop-count { margin: 2px 0 6px; color: var(--mut); font-size: var(--fs-xs); }
+.nx-bpop-rows { list-style: none; margin: 0; padding: 0; border-block-start: 1px solid var(--line2); }
+.nx-bpop-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.nx-bpop-row a { color: var(--acc); }
+.nx-bpop-detail { color: var(--mut); }
+.nx-bpop-faces { display: inline-flex; gap: 4px; margin-block-start: 6px; }
+.nx-bpop-note { margin: 6px 0 0; color: var(--mut); font-size: var(--fs-2xs); font-style: italic; }
+
+/* Mount tri-state dot (tokenized - the old literals become the health
+   vocabulary: mounted ok, pending warn, unknown mut). */
+.nx-attach-dot { inline-size: 6px; block-size: 6px; border-radius: 50%; flex: none; display: inline-block; }
+.nx-attach-mounted { background: var(--ok); }
+.nx-attach-pending { background: var(--warn); }
+.nx-attach-unknown { background: var(--mut); }
+/* The connect tool's picked first endpoint: the old target-ring
+   grammar - a soft halo plus the edit accent. */
+.nx-world [data-pending] {
+  outline: 2px solid var(--edit-acc);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--edit-acc) 30%, transparent);
+}
+
+/* Space-hold pan: every press is a pan while held, and the hand says so
+   over whatever the pointer covers. */
+.nx-canvas-spacepan,
+.nx-canvas-spacepan * {
+  cursor: grab;
+}
+
+/* --- Connectors: pencil, not plumbing ------------------------------ */
+.nx-edgelayer { inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; pointer-events: none; z-index: var(--nx-z-world-content); }
+/* Dashed IS authorship: an operator-drawn wire is a pencil stroke on
+   the board, same statement as the sticky's paper. */
+.nx-edge {
+  stroke: var(--marker);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 5 5;
+}
+/* The invisible fat twin under each wire: the layer is click-through
+   (pointer-events: none inherits), but the hit stroke re-opts in - so
+   wires are selectable without the board losing click-through anywhere
+   else. 14px of stroke is the forgiving target. */
+.nx-edge-hit {
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.nx-edge-selected {
+  stroke: var(--edit-acc);
+  stroke-width: 2.5;
+}
+/* The live wire: provisional by material - edit accent, dashed, and it
+   solidifies into a .nx-edge only when the second endpoint commits. */
+.nx-wire {
+  stroke: var(--edit-acc);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 6 5;
+}
+
+/* --- Sticky notes: the human-authorship material ------------------- */
+.nx-note {
+  z-index: var(--nx-z-object);
+  background: var(--sticky);
+  color: var(--stickyink);
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shl);
+  padding: var(--sp-3);
+  font-family: var(--nx-body);
+  font-size: var(--fs-sm);
+  font-style: italic;
+  line-height: var(--lh-body);
+  cursor: pointer;
+  display: block;
+  overflow-wrap: anywhere;
+}
+.nx-note:hover { z-index: var(--nx-z-object-active); }
+.nx-note-alt { background: var(--sticky2); }
+.nx-note-editor { inline-size: 100%; min-block-size: 80px; background: transparent; border: none; color: inherit; font: inherit; resize: none; }
+.nx-note-editor:focus-visible { outline: 2px solid var(--edit-acc); }
+
+/* --- Shapes: quiet regions, coloured by their palette token -------- */
+.nx-shape {
+  z-index: var(--nx-z-world-content);
+  border: 1.5px solid var(--shp-stroke, var(--shp-apricot-stroke));
+  background: var(--shp-fill, var(--shp-apricot-fill));
+  border-radius: var(--radius-lg);
+  display: inline-flex;
+  /* A rect is a REGION: its label sits at the top-left corner where
+     cards won't cover it. Closed shapes centre theirs. */
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 6px 12px;
+  color: var(--shp-stroke, var(--shp-apricot-stroke));
+  font-family: var(--nx-display);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.nx-shape-ellipse, .nx-shape-pill, .nx-shape-diamond { align-items: center; justify-content: center; }
+.nx-shape-ellipse { border-radius: 50%; }
+.nx-shape-pill { border-radius: var(--radius-pill); }
+.nx-shape-diamond { rotate: 45deg; border-radius: var(--radius-md); }
+
+/* --- Text labels --------------------------------------------------- */
+.nx-textlabel { z-index: var(--nx-z-world-content); font-family: var(--nx-display); font-weight: 700; color: var(--ink); opacity: 0.8; cursor: pointer; max-inline-size: 480px; white-space: pre-wrap; }
+.nx-textlabel-sm { font-size: var(--fs-base); }
+.nx-textlabel-md { font-size: var(--fs-2xl); }
+.nx-textlabel-lg { font-size: var(--fs-4xl); }
+.nx-textlabel-editor { background: var(--sf); border: 1px solid var(--edit-acc); border-radius: var(--radius-sm); padding: 2px 6px; font-size: var(--fs-2xl); color: var(--ink); opacity: 1; }
+
+/* --- Selection marquee --------------------------------------------- */
+.nx-marquee {
+  border: 1px dashed var(--edit-acc);
+  background: color-mix(in srgb, var(--edit-acc) 10%, transparent);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  z-index: var(--nx-z-fixture);
+}
+
+/* --- Chrome around the canvas: Astryx controls; only layout and the
+   signature bits keep rules here. -------------------------------------- */
+/* --- The canvas's docked chrome: the OLD board's placement restored -
+   every control lives ON the canvas (zoom island top-start, sheets
+   plate bottom-start, control island bottom-centre, lockup corner).
+   The footer bar is gone; a floating island's height change reflows
+   nothing. The hanging-tab experiment is retired - the plate is the
+   robust grammar. */
+.nx-sheetplate {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-inline-size: min(60vw, 720px);
+  overflow-x: auto;
+  background: var(--sf);
+  border: 1px solid var(--line);
+  border-inline-start: none;
+  border-block-end: none;
+  border-radius: 0 var(--radius) 0 var(--radius);
+  box-shadow: var(--shl);
+  padding: 7px 12px 7px 14px;
+  z-index: var(--nx-z-chrome);
+}
+/* The sheet tabs are the header's pill tabs (chrome.css .nx-root
+   .astryx-tab) - one tab look in the app. Only the label is local. */
+.nx-sheetplate .nx-sheetstrip-label { font-size: var(--fs-2xs); letter-spacing: var(--track-wide); flex: none; }
+.nx-sheettab-add {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--mut);
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  cursor: pointer;
+  flex: none;
+}
+.nx-sheettab-add:hover:not(:disabled) { color: var(--acc); border-color: var(--acc); }
+.nx-sheettab-add:disabled { opacity: 0.4; cursor: default; }
+/* Delete shares the add pill's look (one strip, one control grammar) and
+   only appears while editing; the last sheet keeps it disabled. */
+.nx-sheettab-delete { border-style: solid; }
+.nx-sheettab-input {
+  border: 1px solid var(--edit-acc);
+  border-radius: var(--radius-pill);
+  background: var(--sf);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 3px 12px;
+  inline-size: 150px;
+  flex: none;
+}
+/* The control island and zoom island are .nx-island shells; only their
+   padding and stacking are local. */
+.nx-ctrlisland { gap: var(--sp-3); padding: 4px 8px; z-index: var(--nx-z-chrome); }
+/* The mode entrance stands out from the neutral pills beside it. */
+.nx-editcta .astryx-button {
+  background: var(--accsf);
+  color: var(--acc);
+}
+.nx-ws-savestate { display: inline-flex; align-items: center; gap: 8px; }
+.nx-ws-mut { color: var(--mut); }
+.nx-ws-toolbar { display: inline-flex; gap: 10px; align-items: center; }
+/* The tool rail: the old board's grammar on Astryx behavior - an island
+   of GLYPH-OVER-LABEL buttons, so every tool states its utility. Insert
+   sits in the island but across a divider: adding from your system and
+   drawing on the board are different acts sharing a region. */
+.nx-ws-rail {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  background: var(--sf);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shl);
+  padding: 3px;
+}
+.nx-ws-raildiv { inline-size: 1px; background: var(--line); margin: 4px 3px; }
+.nx-ws-rail .astryx-button {
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 52px;
+  block-size: auto;
+  min-block-size: 0;
+  padding: 5px 8px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--mut);
+}
+.nx-ws-rail .astryx-button:hover { color: var(--ink); }
+.nx-ws-rail .astryx-button[aria-pressed="true"] { color: var(--acc); background: var(--accsf); }
+.nx-railglyph { display: inline-flex; inline-size: 16px; block-size: 16px; }
+/* The ContextMenu's trigger wrapper (an unhookable library div between
+   the body and the canvas) must be layout-transparent: target it
+   structurally so the canvas keeps filling the row. */
+.nx-ws-body > :has(> .nx-canvas) { display: flex; flex: 1; min-inline-size: 0; min-block-size: 0; }
+/* The Insert library FLOATS over the canvas (nx-pin-inline-end) - it
+   must never reflow the world under the pointer when Edit toggles, and
+   it covers only the height it needs, not the whole column. */
+.nx-insert {
+  inline-size: 240px;
+  block-size: fit-content;
+  max-block-size: calc(100% - 16px);
+  margin: 8px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shx);
+  padding: 10px 12px;
+  overflow: auto;
+  z-index: var(--nx-z-panel);
+}
+.nx-insert-head { display: flex; justify-content: space-between; align-items: center; font-family: var(--nx-display); font-weight: 650; font-size: var(--fs-md); margin-block-end: 6px; }
+.nx-insert-family { margin: var(--sp-3) 0 var(--sp-1); }
+.nx-ws-body { display: flex; gap: 10px; flex: 1; min-block-size: 0; }
+/* --- Zoom island: the canvas's own controls, top-start. ------------- */
+.nx-zoomisland { flex-direction: column; gap: 2px; padding: 3px; z-index: var(--nx-z-chrome); }
+/* --- Drag-to-place: the pointer-following chip + the board's invite. */
+.nx-dragchip {
+  --kindhue: var(--acc);
+  background: var(--sf);
+  border: 1px solid var(--line);
+  border-block-start: 3px solid var(--kindhue);
+  border-radius: var(--radius-md);
+  box-shadow: var(--sh);
+  color: var(--ink);
+  font-family: var(--nx-display);
+  font-size: var(--fs-base);
+  font-weight: 650;
+  padding: 8px 14px;
+  opacity: 0.9;
+  z-index: var(--nx-z-menu);
+}
+.nx-canvas-droppable {
+  cursor: copy;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--edit-acc) 45%, transparent);
+}
+/* --- Insert panel anatomy: kind rows, then draggable candidate tiles. */
+.nx-insert-hint { color: var(--mut); font-size: var(--fs-xs); font-style: italic; margin: 2px 0 var(--sp-2); }
+.nx-insert-kindrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  text-align: start;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  padding: 6px 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.nx-insert-kindrow:hover { background: var(--pophov); }
+.nx-insert-chev { margin-inline-start: auto; color: var(--mut); display: inline-flex; }
+.nx-insert-kinddot { inline-size: 8px; block-size: 8px; border-radius: 50%; flex: none; background: var(--acc); }
+.nx-insert-kinddot-person { background: var(--kind-person); }
+.nx-insert-kinddot-group { background: var(--kind-group); }
+.nx-insert-kinddot-agent { background: var(--kind-agent); }
+.nx-insert-kinddot-agent-bundle { background: var(--kind-agent-bundle); }
+.nx-insert-kinddot-tool { background: var(--kind-tool); }
+.nx-insert-kinddot-external-tool { background: var(--kind-external-tool); }
+.nx-insert-kinddot-comm-in { background: var(--kind-comm-in); }
+.nx-insert-kinddot-comm-out { background: var(--kind-comm-out); }
+.nx-insert-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  text-align: start;
+  background: var(--sf);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  padding: 8px 10px;
+  font: inherit;
+  margin-block-end: 6px;
+  cursor: grab;
+  touch-action: none;
+  transition: transform var(--ease-quick), box-shadow var(--ease-quick);
+}
+.nx-insert-tile:hover { transform: translateY(-1px); box-shadow: var(--shl); border-color: var(--acc); }
+.nx-insert-tile:active { cursor: grabbing; }
+.nx-insert-tileava { display: inline-flex; inline-size: 36px; block-size: 36px; flex: none; align-items: center; justify-content: center; }
+.nx-insert-tileart { inline-size: 36px; block-size: 36px; object-fit: contain; image-rendering: pixelated; }
+.nx-insert-tilebody { display: flex; flex-direction: column; gap: 1px; min-inline-size: 0; }
+.nx-insert-tilename { font-family: var(--nx-display); font-weight: 650; font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-insert-tilekind { color: var(--mut); font-size: var(--fs-2xs); }
+/* --- The card drawer body ------------------------------------------ */
+.nx-cd { display: flex; flex-direction: column; gap: 12px; }
+.nx-cd-head { display: flex; align-items: center; gap: 14px; --kindhue: var(--acc); }
+.nx-cd-agent { --kindhue: var(--kind-agent); }
+.nx-cd-tool, .nx-cd-application { --kindhue: var(--kind-tool); }
+.nx-cd-person { --kindhue: var(--kind-person); }
+.nx-cd-group { --kindhue: var(--kind-group); }
+.nx-cd-agent-bundle { --kindhue: var(--kind-agent-bundle); }
+.nx-cd-external-tool { --kindhue: var(--kind-external-tool); }
+.nx-cd-ava { display: inline-flex; flex: none; color: var(--kindhue); }
+.nx-cd-art { inline-size: 64px; block-size: 64px; object-fit: contain; image-rendering: pixelated; }
+.nx-cd-id { display: flex; align-items: center; gap: 10px; }
+.nx-cd-kind { color: var(--kindhue); }
+.nx-cd-desc { color: var(--ink2); line-height: var(--lh-body); margin: 0; text-wrap: pretty; }
+.nx-cd-facts { display: flex; flex-direction: column; border-block-start: 1px solid var(--line2); padding-block-start: 6px; }
+/* The contextual bar's pinned frame; the Toolbar inside brings its own
+   surface. */
+.nx-ctxbar { z-index: var(--nx-z-chrome); box-shadow: var(--sh); border-radius: var(--radius-pill); }
+.nx-ctxbar-what { color: var(--mut); font-weight: 650; padding-inline-start: 6px; }

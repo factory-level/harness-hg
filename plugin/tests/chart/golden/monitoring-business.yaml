@@ -1,0 +1,687 @@
+---
+# Source: monitoring/templates/alertmanagerconfig.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hermes-social-media-alertmanager-webhook
+  labels: {hermes-gitops.factorylevel.dev/plane: workload, hermes-gitops.factorylevel.dev/component: monitoring, app.kubernetes.io/name: monitoring}
+type: Opaque
+stringData:
+  url: "https://sink.invalid/alerts"
+---
+# Source: monitoring/templates/configmap-alerts.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-alerts
+  namespace: hermes-social-media
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    grafana_alert: "1"
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/instance: monitoring
+data:
+  monitoring-alerts.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: "hermes-social-media-alerts"
+        receivers:
+          - uid: "hermes-social-media-wh"
+            type: webhook
+            settings:
+              url: "https://sink.invalid/alerts"
+              httpMethod: POST
+    groups:
+      - orgId: 1
+        name: "monitoring"
+        folder: Hermes GitOps
+        interval: 1m
+        rules:
+          - uid: "hermes-social-media-visits"
+            title: "SiteVisitsHigh (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(increase(traefik_service_requests_total{service=~\"hermes-social-media-.*@kubernetes\"}[5m])) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: the per-instance Pulumi override channel
+                          # delivers the threshold as a STRING ("3"), and
+                          # Grafana's threshold evaluator silently errors on
+                          # string params (masked by execErrState: OK) - the
+                          # rule imports fine and then never, ever fires.
+                          - 100
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              persona: "social-media"
+              severity: warning
+            annotations:
+              summary: "Site visits for profile social-media exceeded 100 in the last 5 minutes"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-social-media-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          - uid: "hermes-social-media-bizfail"
+            title: "BusinessOutcomeFailures (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 3600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  # `or vector(0)` so a pipeline that has never failed
+                  # evaluates to 0 rather than NoData - NoData with
+                  # noDataState: OK is indistinguishable from healthy, and
+                  # this rule must not be silent for that reason.
+                  expr: "sum(increase(hermes_business_outcome_total{event=\"content.published/v1\",outcome=\"failed\"}[1h])) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64 for the same reason as siteVisits5m: a
+                          # string threshold silently errors and the rule
+                          # never fires, masked by execErrState: OK.
+                          - 0
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              persona: "social-media"
+              severity: warning
+              hermes_signal: business
+            annotations:
+              # The dedupe window is DURABLE where the environment declares
+              # a durable provider (#444: Redis SETNX, 7-day window, same
+              # shape as the delivery done-marker), so a retry crossing a
+              # router restart no longer double-counts; without Redis the
+              # in-memory window applies and the old caveat stands. A
+              # producer that mints fresh eventIds for one subject is
+              # reported as hermes_business_eventid_varied_total.
+              summary: "social-media reported a terminal failure for content.published/v1 in the last hour"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-social-media-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          - uid: "hermes-social-media-bizidle"
+            title: "BusinessOutputBelowMinimum (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  # Gated on router liveness: with the router silent this
+                  # expression is NoData (noDataState: OK below), and the
+                  # telemetry rule fires instead. A missing telemetry
+                  # source must never masquerade as an idle pipeline -
+                  # they need different responses (#407).
+                  expr: "(sum(increase(hermes_business_outcome_total{event=\"content.published/v1\",outcome=\"succeeded\"}[24h])) or vector(0)) and on() (sum(hermes_router_up) > 0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        # LT minCount: fewer than the declared floor
+                        # succeeded in the window. minCount 1 is the
+                        # dead-man half - a pipeline that stopped looks
+                        # exactly like one with nothing to do, and only a
+                        # deliberately chosen window tells them apart.
+                        type: lt
+                        params:
+                          - 3
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              persona: "social-media"
+              severity: warning
+              hermes_signal: business
+            annotations:
+              summary: "social-media produced fewer than 3 successful content.published/v1 in the last 24h"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-social-media-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          # The telemetry guard (#407): fires when the event router - the
+          # ONLY source of hermes_business_outcome_total - stops
+          # reporting. While this fires, the business rules above are
+          # BLIND, not green; giving that state its own alert is what
+          # keeps "no telemetry" from masquerading as "healthy output".
+          - uid: "hermes-social-media-biztelem"
+            title: "BusinessTelemetryMissing (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(hermes_router_up) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 1.0
+            noDataState: Alerting
+            # Alerting, unlike every other rule here: this rule IS the
+            # blind-detector, so a Prometheus query error - a state in
+            # which the business rules are just as blind as when the
+            # router is down - must fire it, not resolve it. execErrState
+            # OK on the guard itself would violate the exact contract the
+            # guard exists to keep (ADR-101; Codex catch).
+            execErrState: Alerting
+            for: 0s
+            labels:
+              persona: "social-media"
+              severity: warning
+              hermes_signal: business
+            annotations:
+              summary: "Business telemetry for social-media is missing: the event router is not reporting, so the business-outcome rules are blind - this is not evidence the pipeline is healthy"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-social-media-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          - uid: "hermes-social-media-agent"
+            title: "HermesAgentDown (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(min_over_time(kube_statefulset_status_replicas_ready{namespace=\"hermes-social-media\",statefulset=\"hermes-social-media\"}[2m])) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 1
+            noDataState: OK
+            execErrState: OK
+            for: 5m
+            labels:
+              persona: "social-media"
+              severity: critical
+            annotations:
+              summary: "Hermes agent hermes-social-media has no ready pod"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-social-media-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          - uid: "hermes-social-media-apps"
+            title: "AgentAppUnhealthy (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(max_over_time(kube_deployment_status_replicas_unavailable{namespace=\"hermes-social-media\"}[2m])) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+            noDataState: OK
+            execErrState: OK
+            for: 5m
+            labels:
+              persona: "social-media"
+              severity: critical
+            annotations:
+              summary: "One or more agent-app Deployments of profile social-media have unavailable replicas"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-social-media-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+---
+# Source: monitoring/templates/configmap-dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-dashboard
+  namespace: hermes-social-media
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/instance: monitoring
+  annotations:
+    grafana_folder: Workloads
+data:
+  monitoring-dashboard.json: |
+    {
+      "uid": "hermes-social-media-dash",
+      "title": "Hermes — social-media",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Site visits (trailing 5m window)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "thresholdsStyle": { "mode": "line" } },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum(increase(traefik_service_requests_total{service=~\"hermes-social-media-.*@kubernetes\"}[5m])) or vector(0)",
+              "legendFormat": "visits / 5m"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Visits (last 5m)",
+          "gridPos": { "x": 12, "y": 0, "w": 4, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(increase(traefik_service_requests_total{service=~\"hermes-social-media-.*@kubernetes\"}[5m])) or vector(0)", "instant": true }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Agent ready pods",
+          "gridPos": { "x": 16, "y": 0, "w": 4, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(kube_statefulset_status_replicas_ready{namespace=\"hermes-social-media\",statefulset=\"hermes-social-media\"}) or vector(0)", "instant": true }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "App unavailable replicas",
+          "gridPos": { "x": 20, "y": 0, "w": 4, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=\"hermes-social-media\"}) or vector(0)", "instant": true }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "MTD estimated spend (USD)",
+          "gridPos": { "x": 0, "y": 8, "w": 6, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [ { "color": "green", "value": null } ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "max(hermes_cost_usd_mtd{profile=\"social-media\"}) or vector(0)", "instant": true }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Token usage by type (tokens/h)",
+          "gridPos": { "x": 6, "y": 8, "w": 10, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "stacking": { "mode": "normal" } }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (type) (rate(hermes_usage_tokens_total{profile=\"social-media\"}[1h])) * 3600",
+              "legendFormat": "{{type}}"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Estimated cost rate (USD/h)",
+          "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": { "unit": "currencyUSD" },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(rate(hermes_estimated_cost_usd_total{profile=\"social-media\"}[1h])) * 3600 or vector(0)", "legendFormat": "USD/h" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "Agent freshness (s since last observer event)",
+          "description": "The in-pod observer's heartbeat. A climbing number means the agent runtime stopped emitting - the same fact the Nexus overlay levels.",
+          "gridPos": { "x": 0, "y": 16, "w": 6, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 900 },
+                  { "color": "red", "value": 3600 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "instant": true,
+              "expr": "time() - max(hermes_observer_last_event_timestamp_seconds{profile=\"social-media\"})" }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Uptime probe success ratio (10m)",
+          "description": "External Gatus probes for this persona's group, scraped into Prometheus (ADR-55). Empty until the uptime workload's /metrics is scraped - absence here matches the overlay's uptime source saying not configured.",
+          "gridPos": { "x": 6, "y": 16, "w": 18, "h": 8 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (name) (rate(gatus_results_total{group=~\".*social-media.*\", success=\"true\"}[10m])) / sum by (name) (rate(gatus_results_total{group=~\".*social-media.*\"}[10m]))",
+              "legendFormat": "{{name}}"
+            }
+          ]
+        }
+      ]
+    }
+---
+# Source: monitoring/templates/configmap-uptime-dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: monitoring-uptime-dashboard
+  namespace: hermes-social-media
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: monitoring
+    app.kubernetes.io/instance: monitoring
+  annotations:
+    grafana_folder: Workloads
+data:
+  monitoring-uptime-dashboard.json: |
+    {
+      "uid": "hermes-social-media-uptime",
+      "title": "Hermes — social-media application uptime",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Available replicas by application",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum by (deployment) (kube_deployment_status_replicas_available{namespace=\"hermes-social-media\"})", "legendFormat": "{{deployment}}" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Unavailable replicas (now)",
+          "description": "Non-zero means an application in this profile is not fully up.",
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum by (deployment) (kube_deployment_status_replicas_unavailable{namespace=\"hermes-social-media\"})", "legendFormat": "{{deployment}}" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Agent ready pods",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {"type":"prometheus","uid":"prometheus"}, "expr": "sum(kube_statefulset_status_replicas_ready{namespace=\"hermes-social-media\",statefulset=\"hermes-social-media\"}) or vector(0)", "legendFormat": "ready" }
+          ]
+        }
+      ]
+    }
+---
+# Source: monitoring/templates/alertmanagerconfig.yaml
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: hermes-social-media-alerts
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    app.kubernetes.io/name: monitoring
+    # The selector bootstrap/monitoring-stack.yaml matches on. Without
+    # this label the object is inert and the alerts keep hitting "null".
+    hermes_alertmanager_config: "1"
+spec:
+  route:
+    receiver: profile
+    # hermes_component is one of the platform's identity labels, so an
+    # agent's alerts group together rather than by alertname alone.
+    groupBy: ["alertname", "hermes_component"]
+    groupWait: "30s"
+    groupInterval: "5m"
+    repeatInterval: "4h"
+  receivers:
+    - name: profile
+      webhookConfigs:
+        - urlSecret:
+            name: hermes-social-media-alertmanager-webhook
+            key: url
+          sendResolved: true

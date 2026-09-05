@@ -1,0 +1,21 @@
+spec:
+  persona: echo
+  runtime: eve
+  source: https://github.com/factorylevel/eve-agents.git
+  sourceSubdir: agents/echo
+  sha: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  envRequires:
+    - ANTHROPIC_API_KEY
+  apps:
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm
+      version: 1.9.1
+      values:
+        replicas: 1
+    - name: docs-site
+      chart: charts/test-page
+      repo: local
+  backup:
+    schedule: "0 3 * * *"
+    retention: 14

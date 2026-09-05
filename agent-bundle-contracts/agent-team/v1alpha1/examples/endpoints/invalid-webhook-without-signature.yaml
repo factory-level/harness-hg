@@ -1,0 +1,7 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Endpoints
+endpoints:
+  - name: hooks
+    path: /webhooks/brand-brief
+    port: 8644
+    type: webhook

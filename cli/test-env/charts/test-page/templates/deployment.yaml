@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-test-page
+  labels:
+    app.kubernetes.io/name: test-page
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: test-page
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: test-page
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: test-page
+          image: {{ .Values.image | quote }}
+          command: ["/bin/sh", "-c"]
+          # Write the page before exec'ing nginx — overriding the entrypoint
+          # is the simplest thing that needs no ConfigMap coordination.
+          args:
+            - |
+              set -e
+              mkdir -p /usr/share/nginx/html
+              cat > /usr/share/nginx/html/index.html <<'HTML'
+              <!doctype html>
+              <html>
+                <head><title>{{ .Values.page.title }}</title></head>
+                <body>
+                  <h1>{{ .Values.page.title }}</h1>
+                  <p>{{ .Values.page.body }}</p>
+                </body>
+              </html>
+              HTML
+              exec nginx -g 'daemon off;'
+          ports:
+            - containerPort: 80
+          {{- with .Values.resources }}
+          resources: {{- toYaml . | nindent 12 }}
+          {{- end }}

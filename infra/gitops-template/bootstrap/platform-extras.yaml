@@ -1,0 +1,72 @@
+# The operator's own tree (ADR-19, #173).
+#
+# `platform/` is the one directory in this repository that NO tool reads or
+# writes. It is where an environment puts Kubernetes manifests the platform
+# does not model — a NetworkPolicy, a PriorityClass, a ConfigMap some
+# workload expects, a CRD the fleet uses but the charts do not install.
+# Everything in it is synced by this Application.
+#
+# Why it exists at all: ADR-19 sanctioned the GitOps repository as a
+# BOUNDED authoring surface rather than pretending it is purely generated,
+# because it already was one — `bootstrap/monitoring-grafana.yaml` is the
+# alerting configuration surface by design. Sanctioning that without giving
+# the operator a tree of their own leaves them editing files the platform
+# also manages, which is how a later release quietly overwrites their work.
+#
+# `project: hermes-gitops`, NOT `default`
+# ---------------------------------------
+# Every other Application in bootstrap/ uses `default`, and that is a
+# deliberate bootstrapping exemption: the `hermes-gitops` AppProject is
+# created by this same bootstrap/ sync, so referencing it from a manifest in
+# that sync would deadlock (Argo CD cannot admit an Application whose
+# project does not exist, and the project cannot be created until the
+# Application syncs).
+#
+# This Application does not need the exemption and must not inherit it. An
+# operator tree is exactly the place where the `sourceRepos` allowlist and
+# the project's destination/resource rules should apply — `default` permits
+# any repository and any destination, which would make `platform/` the one
+# way to bypass the boundary the AppProject exists to enforce.
+#
+# The cost is an ordering requirement rather than a deadlock: this
+# Application stays Unknown/OutOfSync until `bootstrap/project.yaml` has
+# synced once. That resolves itself on the first reconcile and is visible in
+# the Argo CD UI, which is a better failure than a silent bypass.
+#
+# An empty platform/ is normal. The tree ships with a README and nothing
+# else; `directory.recurse` over a directory of one markdown file produces
+# no resources, and the Application sits Synced and empty until an operator
+# puts something there.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-extras
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/component: platform
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: hermes-gitops
+  source:
+    repoURL: __GITOPS_REPO_URL__
+    targetRevision: __GITOPS_BRANCH__
+    path: platform
+    directory:
+      recurse: true
+      # A README is documentation, not a manifest. Without this exclusion
+      # Argo CD reports the tree as containing an invalid resource rather
+      # than as empty.
+      exclude: "{README.md,**/README.md}"
+  destination:
+    server: https://kubernetes.default.svc
+    # Deliberately NOT a namespace the platform owns: a manifest here
+    # carries its own `metadata.namespace`, and this is only the fallback
+    # for cluster-scoped resources.
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false

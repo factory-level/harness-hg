@@ -1,0 +1,11 @@
+# Local test config for `hg test` (see agents/echo/hermes-gitops.test.yaml).
+version: 1
+profile: .
+
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+
+reset:
+  delete_pvcs: []
+  wipe_namespaces: []
+  preserve: []

@@ -1,0 +1,16 @@
+# INVALID: a filesystem path where an artifact reference belongs. This is
+# the single most important refusal in the contract - a publisher that can
+# name a path can ask the control plane to surface anything on the box,
+# and the results are browser-visible by design. https, or nothing.
+apiVersion: hermes.dev/eval-result/v1alpha1
+records:
+  - runId: run-1
+    componentId: marketing-sre
+    suite: sre-behaviour
+    scenario: acknowledges-alert
+    status: pass
+    harness: local-harness
+    ranAt: "2026-08-01T07:00:00Z"
+    artifacts:
+      - label: transcript
+        url: /home/operator/.hermes-gitops/eval-runs/latest/response.txt

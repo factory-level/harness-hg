@@ -1,0 +1,12 @@
+# The LOCAL environment binding: the real connection alias rebound to the
+# recording provider (messages captured to the local sink, never sent) and
+# Redis Streams as the durable transport. The authored routes are
+# identical in every environment - only this file changes.
+version: 1
+
+chatopsConnections:
+  company_discord:
+    provider: recording
+
+durableProvider:
+  plugin: redis-streams

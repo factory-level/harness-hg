@@ -1,0 +1,25 @@
+# An Eve agent at agents/echo/: the runtime block carries the env contract
+# (there is no distribution.yaml), and the v4 surfaces apply unchanged.
+contractVersion: 5
+runtime:
+  kind: eve
+  envRequires:
+    - AI_GATEWAY_API_KEY
+    - name: ECHO_GREETING
+      required: false
+      secret: false
+      description: Greeting prefix the agent uses.
+topology:
+  supportedLayouts: [single]
+endpoints:
+  - name: api
+    type: authenticated
+    port: 3000
+    path: /eve/
+requires:
+  - capability: content-board
+    optional: true
+    inject:
+      env: CONTENT_BOARD_URL
+deployment:
+  diskSizeGb: 20

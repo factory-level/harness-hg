@@ -1,0 +1,654 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/hermes-profile/values.schema.json",
+  "title": "hermes-profile Helm values",
+  "description": "Hand-composed union of the two canonical contracts this chart is rendered with: schemas/cluster-values/v1alpha1/cluster-values.schema.json (providers/image/platformRepo/appProject/secretBackend) and schemas/hermesprofile/v1alpha2/profile.schema.json (spec), plus chart-owned knobs (ingress/networkPolicy/probes) not covered by either canonical schema. Kept in sync by hand, checked two ways: tests/chart/'s golden renders prove `helm template` still succeeds against a handful of fixed example fixtures (NOT a general drift check - a fixture that doesn't exercise a newly-added canonical value wouldn't catch its absence here); tests/test_values_schema_subset.py is the actual drift check - it asserts this schema's providers.{compute,secret,ingress} enums remain a superset of the canonical cluster-values schema's, so a valid canonical cluster-values.yaml is never silently rejected here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "providers",
+    "spec"
+  ],
+  "properties": {
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "compute",
+        "secret",
+        "ingress"
+      ],
+      "properties": {
+        "compute": {
+          "type": "string",
+          "enum": [
+            "pod"
+          ]
+        },
+        "secret": {
+          "type": "string",
+          "enum": [
+            "k8s"
+          ]
+        },
+        "ingress": {
+          "type": "string",
+          "enum": [
+            "ingress",
+            "cloudflare",
+            "none"
+          ]
+        },
+        "backup": {
+          "type": "string",
+          "enum": [
+            "pvc",
+            "none"
+          ]
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "platformRepo": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The platform (hermes-gitops-plugin) repo + revision Argo CD renders this chart from; reused as the Application source for spec.apps[] entries with repo: local.",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "appProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Argo CD AppProject the child Applications are created in, plus the remote helm repo allowlist gating spec.apps[].repo (repo: local is always allowed). Must mirror the scaffolded GitOps repo's bootstrap/project.yaml sourceRepos.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRepos": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(https://|oci://)"
+          }
+        }
+      }
+    },
+    "appsManagedExternally": {
+      "type": "boolean",
+      "description": "Suppress templates/apps.yaml: the hermes-gitops-apps ApplicationSet owns the child Applications instead (#498). Chart-only value set via the agents ApplicationSet's valuesObject; never part of cluster-values or a profile record."
+    },
+    "secretBackend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "k8s": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "persona",
+        "source",
+        "sha"
+      ],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "gitAuthSecretRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceSubdir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "distributionVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseImageTag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diskSizeGb": {
+              "type": "integer",
+              "minimum": 10
+            }
+          }
+        },
+        "workspace": {
+          "type": "object",
+          "description": "Workspace repository mounts for an INDEPENDENTLY deployed profile (#362). Arrives via the deployments/workspaces/profiles/<name>.yaml value file the workspace compiler emits, never via the frozen profile record. Item shape is byte-identical to hermes-bundle's spec.repositories so the boot logic ports verbatim - keep the two in step.",
+          "additionalProperties": false,
+          "required": [
+            "repositories"
+          ],
+          "properties": {
+            "sizeGb": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "terminalCwd": {
+              "type": "string",
+              "pattern": "^/"
+            },
+            "repositories": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "source",
+                  "sha",
+                  "mountPath",
+                  "access"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 40
+                  },
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "sha": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  "mountPath": {
+                    "type": "string",
+                    "pattern": "^/workspaces/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*$"
+                  },
+                  "access": {
+                    "type": "string",
+                    "enum": [
+                      "read-only",
+                      "read-write"
+                    ]
+                  },
+                  "gitAuthSecretRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253,
+                    "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "apps": {
+          "type": "array",
+          "description": "The resolved helm apps this profile launches - one Argo CD Application each (templates/apps.yaml). Values are already merged (author defaults + fleet defaults + per-instance overrides); valuesRequired was validated and dropped by the emitter.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "chart",
+              "repo"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+              },
+              "chart": {
+                "type": "string",
+                "minLength": 1
+              },
+              "repo": {
+                "type": "string",
+                "pattern": "^(local|https://.+|oci://.+)$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "values": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "env": {
+          "description": "COMPILED environment variables, injected into the agent container as explicit env (ADR-36, ADR-97). Written by the topology compiler into deployments/agents/<id>/values.yaml - the materialized half of requires[]: each key is the inject.env target a capability declaration named (convention HERMES_CAP_<NAME>_URL), each value the resolved provider URL. Never authored by hand and never part of the profile record; it arrives as a separate ApplicationSet value layer. The chart's envGuard fails the render on any key that collides with a chart-owned variable or a declared envRequires name - explicit env beats envFrom in Kubernetes, so an unchecked collision would silently shadow a secret.",
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Z][A-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "envRequires": {
+          "description": "Every environment variable this profile needs, WITH the metadata the declaration carried. v1alpha2 and earlier stored a flat array of names, discarding the description, the required flag and the secret-versus-config distinction - the three facts the capability model and the secret lifecycle need (#141, #171, #149). Both shapes are accepted: a bare string is an entry with name only, and means `required: true, secret: true` by the same conservative default the resolver applies.",
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "required": {
+                    "description": "Absent means REQUIRED - the same default the distribution manifest applies, so an entry that says nothing is treated as mandatory rather than optional.",
+                    "type": "boolean"
+                  },
+                  "secret": {
+                    "description": "A credential rather than configuration. Absent means TRUE: treating an unclassified value as a secret costs an ExternalSecret; treating a secret as config puts it in a rendered manifest.",
+                    "type": "boolean"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "expose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "services"
+          ],
+          "properties": {
+            "services": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "port"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/"
+                  }
+                }
+              }
+            },
+            "access": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "service-token",
+                    "idp",
+                    "mixed"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "backup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schedule"
+          ],
+          "properties": {
+            "schedule": {
+              "type": "string",
+              "minLength": 1
+            },
+            "retention": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "connections": {
+          "description": "Connection projections (ADR-152), layered from deployments/connections/profiles/<name>.yaml: one ExternalSecret each from hermes-secrets/<secretName>, mounted via envFrom. Never authored in the record.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "provider",
+              "secretName",
+              "keys"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 40
+              },
+              "provider": {
+                "type": "string"
+              },
+              "secretName": {
+                "type": "string"
+              },
+              "keys": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Z][A-Z0-9_]*$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "baseDomain": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "cloudflare": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Chart-only knobs for the Cloudflare Tunnel ingress path (providers.ingress == 'cloudflare'); not part of either canonical schema \u2014 see values.yaml's `cloudflare:` header comment.",
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "zoneId": {
+          "type": "string"
+        },
+        "zoneName": {
+          "type": "string"
+        },
+        "cloudflaredImage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "access": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "idpId": {
+              "type": "string"
+            }
+          }
+        },
+        "apiToken": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remoteSecretKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "tunnel": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "projectRepo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "workspaceServiceAccountName": {
+              "type": "string"
+            }
+          }
+        },
+        "pulumiBackend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "pulumi-cloud",
+                "self-managed"
+              ]
+            },
+            "pulumiCloud": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "remoteSecretKey": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "selfManaged": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "backendUrl": {
+                  "type": "string"
+                },
+                "remotePassphraseKey": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      }
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "startup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "periodSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "liveness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "periodSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "periodSeconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "pvc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": {
+              "type": "string"
+            },
+            "storageClassName": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "observerUrl": {
+          "type": "string",
+          "description": "HERMES_OBSERVER_URL for the agent container (#476). Empty = lifecycle emission off. http(s) URL of the observer sink; metadata-only records, fire-and-forget."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# FIFO without an ordering key has no group to order - rejected.
+contractVersion: 5
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      delivery:
+        mode: queued
+        ordering:
+          mode: fifo
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts

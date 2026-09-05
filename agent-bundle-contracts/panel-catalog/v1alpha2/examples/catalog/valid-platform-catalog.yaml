@@ -1,0 +1,30 @@
+# The shipped catalog's shape: a literal platform dashboard uid, and the
+# {instance} token for a per-agent dashboard.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha2
+kind: PanelCatalog
+panels:
+  - id: system-firing-alerts
+    surface: system
+    title: Firing alerts
+    dashboard: hg-control-plane-overview
+    panelId: 1
+    size: compact
+  - id: agent-ready-pods
+    surface: agent
+    title: Agent ready pods
+    dashboard: "{instance}"
+    panelId: 3
+    size: compact
+    range: 24h
+  # v1alpha2: a context-aware entry - the namespace template
+  # variable may be filled from the Nexus `target` context, and nothing
+  # else may reach it.
+  - id: backup-history-target
+    surface: backup
+    title: Backup runs for the selected component
+    dashboard: hg-backup-history
+    panelId: 3
+    size: wide
+    range: 7d
+    variables:
+      namespace: target

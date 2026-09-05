@@ -1,0 +1,5 @@
+# `hermes` is selected by OMITTING the runtime block, never by naming it -
+# there is one spelling per runtime.
+contractVersion: 5
+runtime:
+  kind: hermes

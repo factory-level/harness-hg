@@ -1,0 +1,485 @@
+{{- include "hermes.computeGuard" . -}}
+{{- include "hermes.envGuard" . -}}
+{{- if eq .Values.providers.compute "pod" -}}
+{{- $repo := .Values.image.repository -}}
+{{- $tag := .Values.image.tag -}}
+{{- if and .Values.spec.deployment .Values.spec.deployment.baseImageTag -}}
+{{- $tag = .Values.spec.deployment.baseImageTag -}}
+{{- end -}}
+{{- $image := printf "%s:%s" $repo $tag -}}
+{{- $diskSizeGb := 10 -}}
+{{- if and .Values.spec.deployment .Values.spec.deployment.diskSizeGb -}}
+{{- $diskSizeGb = .Values.spec.deployment.diskSizeGb -}}
+{{- end -}}
+{{- $gitURL := include "hermes.gitCloneURL" . -}}
+{{- $workspace := .Values.spec.workspace -}}
+{{- if $workspace -}}
+{{- if and (gt (len $workspace.repositories) 1) (not $workspace.terminalCwd) -}}
+{{- fail "spec.workspace: several repositories need an explicit terminalCwd - with one repository it defaults to its mountPath" -}}
+{{- end -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "hermes.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  # Hermes is single-host per instance: the profile's state.db (SQLite) and
+  # the s6-supervised gateway process are not designed for concurrent
+  # multi-replica access to the same /opt/data volume. Never scale this
+  # StatefulSet beyond 1 - a second replica would race the first for the
+  # same PVC (ReadWriteOnce) and the same SQLite files.
+  replicas: 1
+  serviceName: {{ include "hermes.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "hermes.selectorLabels" . | nindent 6 }}
+  # Delete the PVC when the StatefulSet itself is deleted (uninstalling this
+  # instance should reclaim its disk), but keep it across a scale-down/up
+  # cycle (whenScaled: Retain) - moot at replicas:1 today, but the safer
+  # default if that ever changes.
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "hermes.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ $diskSizeGb }}Gi
+    {{- if $workspace }}
+    # Workspace checkouts live on their own claim (named `workspaces-*` so
+    # the backup ledger's declarative excuse covers it - the contents are
+    # reproducible from Git by declaration). Rendered ONLY when a workspace
+    # is bound: an unbound profile's StatefulSet is byte-identical to
+    # before this feature existed. Known cost (ADR-76): volumeClaimTemplates
+    # are immutable on a live StatefulSet, so binding a FIRST workspace to
+    # an existing profile needs a one-time
+    # `kubectl delete statefulset <name> --cascade=orphan` before sync.
+    - metadata:
+        name: workspaces
+        labels:
+          {{- include "hermes.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ $workspace.sizeGb | default 20 }}Gi
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "hermes.labels" . | nindent 8 }}
+      annotations:
+        # Rolls the pod whenever the profile record changes (new sha,
+        # persona, envRequires, ...) even though none of this
+        # chart's own template bytes changed.
+        checksum/profile: {{ include "hermes.profileChecksum" . }}
+        {{- if .Values.metrics.enabled }}
+        # Rolls the pod when the chart-shipped observer-metrics plugin
+        # source changes (the plugin only reloads at process start).
+        checksum/observer-metrics-plugin: {{ print (.Files.Get "files/plugins/observer-metrics/plugin.yaml") (.Files.Get "files/plugins/observer-metrics/__init__.py") | sha256sum }}
+        # The platform Prometheus's default annotation-driven job scrapes
+        # these - no scrape-config edits anywhere.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metrics.port | quote }}
+        prometheus.io/path: /metrics
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "hermes.fullname" . }}
+      # Pod-level securityContext only carries fsGroup; each container sets
+      # its own runAsUser/Group (the ingress sidecars have their own image
+      # constraints - see their securityContext comments below). fsGroup
+      # alone only affects mounted-volume group ownership/permissions, not
+      # any container's process UID, so it's safe to apply pod-wide: every
+      # container that mounts `data` gets group-write access to it
+      # regardless of which UID it runs as.
+      securityContext:
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: bootstrap-distribution
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          # Overrides the image's s6 ENTRYPOINT entirely (this job needs no
+          # supervision - it runs once to completion per boot). `git` and
+          # `hermes` are both on PATH via image-level ENV (Dockerfile `apt-get
+          # install ... git ...` and `ENV PATH="/opt/hermes/bin:...`),
+          # independent of ENTRYPOINT/CMD, so both are available here even
+          # though /init never runs in this container.
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: HERMES_PROFILE_NAME
+              value: {{ include "hermes.name" . | quote }}
+            - name: HERMES_DIST_SOURCE
+              value: {{ $gitURL | quote }}
+            - name: HERMES_DIST_SHA
+              value: {{ .Values.spec.sha | quote }}
+            - name: HERMES_DIST_SUBDIR
+              value: {{ .Values.spec.sourceSubdir | default "" | quote }}
+            - name: HERMES_OBSERVER_METRICS
+              value: {{ .Values.metrics.enabled | ternary "1" "0" | quote }}
+          # runAsUser/Group 10000 (this container only - see the pod-level
+          # securityContext comment above for why it's not set pod-wide):
+          # the UID the image's `hermes` user is baked in at (Dockerfile
+          # `RUN useradd -u 10000 -m -d /opt/data hermes`,
+          # hermes-agent-gitops fork, ~line 92). The Dockerfile
+          # itself never sets `USER hermes` (its only USER directive is
+          # `USER root` at ~line 214, right before the runtime-stage COPY
+          # layers) and its ENTRYPOINT is s6-overlay's `/init` (~line 360),
+          # so the image's *default* `docker run` identity is root,
+          # dropping to `hermes` per-service via `s6-setuidgid hermes`
+          # inside docker/main-wrapper.sh and docker/stage2-hook.sh at
+          # runtime - neither of which this initContainer goes through (see
+          # `command` above), so that drop never happens here; we set the
+          # target UID directly instead. docker/stage2-hook.sh's own guard
+          # (`cur_uid != 0 && cur_uid != $(id -u hermes)` => hard fail)
+          # would tolerate this UID too, for what it's worth, since it's
+          # exactly the image's baked-in hermes UID - but this container
+          # bypasses that script entirely, so it's moot here; it mattered
+          # more before the s6-bypass fix below (see the main container's
+          # own command comment) and is kept for the main container's own
+          # rationale. Live-verified end-to-end in this task's k3d check
+          # (see the Task 8 report) - a fresh PVC's mkdir/write both
+          # succeed under UID 10000 thanks to fsGroup + OnRootMismatch.
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            {{- if $workspace }}
+            # The whole claim, writable: the sync routine owns the
+            # physical checkouts under /workspaces/repos. Per-repository
+            # credentials mount beside it, only here - the agent container
+            # never sees them.
+            - name: workspaces
+              mountPath: /workspaces
+            {{- range $workspace.repositories }}
+            {{- if .gitAuthSecretRef }}
+            - name: repository-{{ .name }}-git
+              mountPath: /run/secrets/repositories/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.spec.envRequires }}
+            - name: env-secret
+              mountPath: /run/secrets/hermes-env
+              readOnly: true
+            {{- end }}
+            {{- if .Values.spec.gitAuthSecretRef }}
+            # Private spec.source credential (issue #18 [G1]) - consumed
+            # by boot.sh's auth setup, scheme-dependent (username+password
+            # for https, ssh-privatekey for git@/ssh). The mount is
+            # non-optional: a referenced-but-absent Secret keeps the pod
+            # in a clear CreateContainerConfigError instead of a
+            # confusing anonymous-clone failure.
+            - name: git-auth
+              mountPath: /git-auth
+              readOnly: true
+            {{- end }}
+            - name: api-key-secret
+              mountPath: /run/secrets/hermes-api-key
+              readOnly: true
+            {{- if .Values.metrics.enabled }}
+            - name: observer-plugins
+              mountPath: /plugins
+              readOnly: true
+            {{- end }}
+      containers:
+        - name: hermes-agent
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          # Overrides the image's s6 ENTRYPOINT (command), not just args -
+          # this is a deliberate departure from the fork's docker-compose
+          # default (`entrypoint` unset, `command: ["gateway", "run"]`,
+          # which DOES go through /init). Live-verified in this task's k3d
+          # check: going through /init, docker/cont-init.d/02-reconcile-profiles
+          # unconditionally reconciles and *starts* an s6-supervised gateway
+          # for the image's built-in "default" profile (independent of
+          # whatever `hermes profile use` set as active), and s6's
+          # `main-hermes` service starts a SECOND gateway process for it
+          # under supervision. Our own container CMD then execs a THIRD
+          # `hermes gateway run` (for the active/support-agent profile) as
+          # main-wrapper.sh's "main program" - all three race for
+          # API_SERVER_PORT 8642, and the pod crash-loops with "[Errno 98]
+          # address already in use". Invoking the CLI directly (no /init, no
+          # s6, no cont-init.d, no reconcile-profiles) sidesteps all of that
+          # for this single-tenant pod: only the one profile installed by
+          # the initContainer ever runs. Trade-off: s6's auto-restart-on-crash
+          # supervision is skipped - acceptable, since Kubernetes' own pod
+          # restartPolicy already provides container-level restart.
+          # No HERMES_UID/HERMES_GID env vars are set here: those exist to
+          # trigger stage2-hook.sh's root-only usermod/groupmod remap for
+          # the docker-compose root-then-drop flow, which this pod also
+          # doesn't go through at all now (see securityContext comment
+          # above for the separate, still-applicable UID/GID rationale).
+          command: ["/opt/hermes/bin/hermes"]
+          args: ["gateway", "run"]
+          # See the bootstrap-distribution initContainer's securityContext
+          # comment for the UID/GID rationale (same image, same baked-in
+          # hermes UID 10000) - set per-container, not pod-wide, so the
+          # ingress sidecars keep their own image's default where needed.
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          env:
+            - name: API_SERVER_HOST
+              value: "0.0.0.0"
+            - name: API_SERVER_PORT
+              value: "8642"
+            - name: API_SERVER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermes.apiKeySecretName" . }}
+                  key: password
+            # Explicit env beats envFrom in k8s precedence, which is why
+            # the per-profile secret-driven opt-out uses the DISTINCT
+            # HERMES_OBSERVER_METRICS_DISABLED variable (via envFrom
+            # below) instead of overriding this one.
+            - name: HERMES_OBSERVER_METRICS
+              value: {{ .Values.metrics.enabled | ternary "1" "0" | quote }}
+            - name: HERMES_OBSERVER_METRICS_PORT
+              value: {{ .Values.metrics.port | quote }}
+            {{- with .Values.observability.observerUrl }}
+            {{- /* Lifecycle records (#476): the fork's hermes_lifecycle
+                 module emits metadata-only cron/agent/tool/gateway
+                 records here, fire-and-forget. Unset = module no-op. */}}
+            - name: HERMES_OBSERVER_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- /* Compiled capability injections (ADR-97): spec.env is the
+                 topology compiler's resolved requires[] URLs, layered from
+                 deployments/agents/<id>/values.yaml. envGuard (called at
+                 the top of this file) has already refused any name that
+                 collides with the chart-owned variables above or with a
+                 declared envRequires entry; undeclared agentSecrets keys
+                 are covered by the preview gate's reserved-env check,
+                 which sees the Secret names this render cannot. Sorted
+                 for stable renders. */}}
+            {{- range $name, $value := .Values.spec.env | default dict }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if or .Values.spec.envRequires .Values.spec.connections }}
+          envFrom:
+            {{- if .Values.spec.envRequires }}
+            - secretRef:
+                name: {{ include "hermes.envSecretName" . }}
+            {{- end }}
+            {{- range .Values.spec.connections | default list }}
+            # A projected connection (ADR-152, pod/connections.yaml).
+            - secretRef:
+                name: {{ include "hermes.fullname" $ }}-connection-{{ .name }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8642
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          # GET /health is unauthenticated (gateway/platforms/api_server.py,
+          # hermes-agent-gitops fork, ~line 1836 - `_handle_health`
+          # does not call `_check_auth`, unlike every other route including
+          # `/health/detailed`), so probes need no credentials.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8642
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8642
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8642
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            {{- if $workspace }}
+            {{- range $workspace.repositories }}
+            # One checkout, selectively mounted: subPath addresses the
+            # physical clone, readOnly is a REAL kernel mount option -
+            # read-only is enforced by the filesystem, not by prompt.
+            - name: workspaces
+              mountPath: {{ .mountPath }}
+              subPath: repos/{{ .name }}
+              readOnly: {{ eq .access "read-only" }}
+            {{- end }}
+            {{- end }}
+        - name: dashboard
+          # The Hermes browser dashboard (`hermes dashboard`: the web SPA +
+          # JSON-RPC/WS gateway, image-bundled dist) as its own supervised
+          # container. In the s6 image this is an s6 service slot, but this
+          # pod deliberately bypasses /init (see the hermes-agent command
+          # comment above), so the slot never starts there - this sidecar is
+          # the pod-world equivalent, honoring the same env contract
+          # (HERMES_DASHBOARD + the dashboard_auth provider vars, delivered
+          # via the profile's env Secret). When the trio is absent the
+          # container idles instead of exiting: a clean exit would
+          # crash-loop under restartPolicy Always, and rendering the
+          # container conditionally on Secret CONTENTS is impossible at
+          # template time (Helm only sees the Secret's name).
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              export HOME=/opt/data
+              cd /opt/data
+              case "${HERMES_DASHBOARD:-}" in
+                1|true|TRUE|True|yes|YES|Yes) ;;
+                *) echo "[dashboard] HERMES_DASHBOARD not set - idling."; exec sleep infinity ;;
+              esac
+              # Non-loopback bind fails closed without an auth provider
+              # (June 2026 hardening); idle loudly instead of crash-looping.
+              if [ -z "${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:-}" ] && [ -z "${HERMES_DASHBOARD_OAUTH_CLIENT_ID:-}" ]; then
+                echo "[dashboard] enabled but no auth provider configured;" \
+                     "set HERMES_DASHBOARD_BASIC_AUTH_USERNAME/_PASSWORD or" \
+                     "HERMES_DASHBOARD_OAUTH_CLIENT_ID - idling." >&2
+                exec sleep infinity
+              fi
+              exec /opt/hermes/bin/hermes dashboard \
+                --host "${HERMES_DASHBOARD_HOST:-0.0.0.0}" \
+                --port "${HERMES_DASHBOARD_PORT:-9119}" \
+                --no-open
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          {{- if or .Values.spec.envRequires .Values.spec.connections }}
+          envFrom:
+            {{- if .Values.spec.envRequires }}
+            - secretRef:
+                name: {{ include "hermes.envSecretName" . }}
+            {{- end }}
+            {{- range .Values.spec.connections | default list }}
+            # A projected connection (ADR-152, pod/connections.yaml).
+            - secretRef:
+                name: {{ include "hermes.fullname" $ }}-connection-{{ .name }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: dashboard
+              containerPort: 9119
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+        {{- if eq .Values.providers.ingress "cloudflare" }}
+        - name: cloudflared
+          # Pod-path delivery of the Cloudflare Tunnel ingress path (Task
+          # 12) - the tunnel/DNS/Access resources themselves are
+          # provisioned by templates/tunnel/stack-cloudflare.yaml's Stack
+          # CR (infra/pulumi/programs/cloudflare-tunnel); this sidecar just runs
+          # the `cloudflared` connector inside the SAME pod network
+          # namespace as the main container, so `cloudflared tunnel run`
+          # (authenticated via the TUNNEL_TOKEN env var it reads
+          # natively - NOT a `--token` argv, which would leak the token
+          # to anything that can read this pod's process list / `docker
+          # inspect`/`kubectl exec ... ps`, e.g. `oc debug`, a shared
+          # PID namespace, or CRI-level introspection - a review finding
+          # fixed here) can reach the agent's exposed ports via localhost
+          # (see stack-cloudflare.yaml's header comment on the ingress
+          # config's `service: http://localhost:<port>` convention).
+          # hermes.cloudflareConfigGuard (invoked from
+          # templates/tunnel/cf-tunnel-token-secret.yaml, not repeated
+          # here) already fails the whole render loudly if `cloudflare:`
+          # config is incomplete, so this block can assume it's present.
+          image: {{ printf "%s:%s" .Values.cloudflare.cloudflaredImage.repository .Values.cloudflare.cloudflaredImage.tag }}
+          imagePullPolicy: IfNotPresent
+          command: ["cloudflared"]
+          args: ["tunnel", "run"]
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hermes.cfTunnelTokenSecretName" . }}
+                  key: value
+          # allowPrivilegeEscalation/runAsNonRoot only (no fixed
+          # runAsUser/Group, unlike the hermes-agent containers above) -
+          # this task had no live cluster to confirm cloudflared's
+          # official image's baked-in non-root UID against, unlike UID
+          # 10000 for hermes-agent (live-verified in Task 8). Setting
+          # runAsNonRoot:true without a specific UID still fails the pod
+          # loudly (not silently as root) if that assumption is ever
+          # wrong for a given cloudflared image tag - see
+          # _docs/wiki/platform/tunneling.md for this disclosed gap.
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+        {{- end }}
+      volumes:
+        - name: boot-script
+          configMap:
+            name: {{ include "hermes.fullname" . }}-boot
+            defaultMode: 0755
+        {{- if .Values.spec.gitAuthSecretRef }}
+        - name: git-auth
+          secret:
+            secretName: {{ .Values.spec.gitAuthSecretRef }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if $workspace }}
+        {{- range $workspace.repositories }}
+        {{- if .gitAuthSecretRef }}
+        # Namespace-local by construction: a Secret volume can only name a
+        # Secret in this Release's namespace. Non-optional on purpose - a
+        # referenced-but-absent credential is a visible
+        # CreateContainerConfigError, not an anonymous-clone mystery.
+        - name: repository-{{ .name }}-git
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+            defaultMode: 0400
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.spec.envRequires }}
+        - name: env-secret
+          secret:
+            secretName: {{ include "hermes.envSecretName" . }}
+        {{- end }}
+        {{- if .Values.metrics.enabled }}
+        - name: observer-plugins
+          configMap:
+            name: {{ include "hermes.fullname" . }}-plugins
+        {{- end }}
+        - name: api-key-secret
+          secret:
+            secretName: {{ include "hermes.apiKeySecretName" . }}
+            # Renamed at mount time (password -> API_SERVER_KEY) so the
+            # initContainer's generic "copy every file under this dir into
+            # .env" loop (pod/configmap-boot.yaml) writes the right key name
+            # without special-casing this one secret.
+            items:
+              - key: password
+                path: API_SERVER_KEY
+{{- end -}}

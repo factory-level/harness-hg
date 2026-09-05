@@ -1,0 +1,29 @@
+# A repeated delivery policy declared once as an `x-` anchor and referenced
+# by alias - the `x-` key is scratch space the readers ignore.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Apps
+x-alert-delivery: &alert-delivery
+  mode: queued
+  guarantee: at-least-once
+  ordering: {mode: fifo, key: subject}
+apps:
+  - name: monitoring
+    agent: marketing-manager
+    chart: control-plane/monitoring/chart
+    repo: local
+    outputs:
+      - {name: alerts, event: observability.alert/v1, subject: groupKey, adapter: {type: webhook, inject: {appValue: {path: alert.webhookUrl}}}}
+    routes:
+      - name: monitoring-alerts
+        from: {app: monitoring, output: alerts}
+        delivery: *alert-delivery
+        outputs: [{chatops: company_discord#sre-alerts}]
+  - name: monitoring
+    agent: marketing-research
+    chart: control-plane/monitoring/chart
+    repo: local
+    routes:
+      - name: monitoring-alerts
+        from: {app: monitoring, output: alerts}
+        delivery: *alert-delivery
+        outputs: [{chatops: company_discord#sre-alerts}]

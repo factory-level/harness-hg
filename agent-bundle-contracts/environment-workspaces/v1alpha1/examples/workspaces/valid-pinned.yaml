@@ -1,0 +1,21 @@
+# A pinned repository bound to two profiles. Bundle membership is absent by
+# design: the same declaration compiles for bundled and independent profiles.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: strategy-context
+    source:
+      url: git@github.com:organization/strategy-context.git
+      revision:
+        mode: pinned
+        sha: 0123456789abcdef0123456789abcdef01234567
+      authSecretRef: hermes-strategy-context-git
+    mount:
+      path: /workspaces/strategy-context
+      access: read-only
+
+bindings:
+  - repository: strategy-context
+    profiles: [marketing-manager, marketing-research]
+    purpose: strategy-context

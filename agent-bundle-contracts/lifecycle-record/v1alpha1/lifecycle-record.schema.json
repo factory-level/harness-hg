@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/lifecycle-record/v1alpha1/lifecycle-record.schema.json",
+  "title": "Lifecycle record",
+  "description": "ONE record shape for every plane that emits lifecycle telemetry (#349): the Discord gateway, the native cron scheduler, the event router, alerting, and agent and tool execution.\n\nDeliberately transport-agnostic. The planes do not share a bus, a store or a delivery mechanism, and forcing them onto one would couple their failure domains - the point of the shared envelope is that a trace can be FOLLOWED across them, not that they become one system. A record is a fact about something that happened; where it is written is the emitter's business.\n\nMetadata only. Payloads never enter a record: `redactedSource` and `redactedTarget` carry references, and a digest carries content-identity without content. That is a schema-level guarantee rather than a convention, because the debug observer writes these to disk.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "recordId", "traceId", "plane", "type", "occurredAt"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Envelope version. A bump is a new schema directory, like every other frozen contract here."
+    },
+    "recordId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "This record, uniquely. A UUID rather than a sequence: records are emitted by several processes that share no counter."
+    },
+    "traceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "The whole causal chain, from the first inbound event to the last delivery. `hg event status --correlation <id>` selects on exactly this."
+    },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "The external identity a trace corresponds to - a Discord message id, an Alertmanager fingerprint, a cron job name. What an operator holds when they arrive asking about a specific thing."
+    },
+    "causationId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "The `recordId` of the record that DIRECTLY caused this one. traceId groups; causationId orders - without it a trace is a bag of events and the tree cannot be rebuilt."
+    },
+    "plane": {
+      "type": "string",
+      "enum": ["gateway", "cron", "router", "alert", "agent", "tool"],
+      "description": "Which subsystem emitted this. Closed: a new plane is a deliberate contract change, not something a new emitter can introduce by writing an unfamiliar string."
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$",
+      "maxLength": 64,
+      "description": "Dotted event name within the plane - `cron.triggered`, `tool.failed`, `agent.completed`. Not enumerated: the ladder is owned by each plane and a frozen list here would make adding a lifecycle step a schema bump."
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the thing happened, as the emitter saw it. RFC 3339, always UTC."
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the observer wrote it down. Separate from occurredAt on purpose: the gap IS the observer's lag, and collapsing them hides a backed-up sink."
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "For a completion record, how long the thing took."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["success", "failure", "refused", "timeout"],
+      "description": "Terminal records only. `refused` is distinct from `failure`: an unauthorized actor or a disabled job is a working system saying no, and lumping it with breakage makes both unreadable."
+    },
+    "deploymentRevision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "What was running when this happened - a profile record sha, a chart revision. Without it a trace from last week cannot be attributed to the code that produced it."
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40,
+      "description": "The agent profile this record belongs to, where one applies."
+    },
+    "redactedSource": {
+      "$ref": "#/$defs/actorRef",
+      "description": "Where this came from, as a reference."
+    },
+    "redactedTarget": {
+      "$ref": "#/$defs/actorRef",
+      "description": "Where it went, as a reference."
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Content identity WITHOUT content. Proves two records concern the same message, or that a delivered body matches a sent one, while carrying nothing quotable."
+    },
+    "testRun": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Marks a record as belonging to a deliberate proof run (`hg communication prove`, `hg cron run`). Present means a HUMAN OR HARNESS asked for this; absent means it happened on its own. `hg cron` uses exactly this to tell a manual trigger from an autonomous one, which is #349's exit proof."
+    },
+    "detail": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean"] },
+      "maxProperties": 20,
+      "description": "Plane-specific scalars - a job name, an exit code, a queue depth. Scalars only, and bounded: a nested object here is how a payload gets smuggled into a record that promises not to carry one."
+    }
+  },
+  "$defs": {
+    "actorRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["user", "channel", "profile", "job", "tool", "service", "alert"],
+          "description": "What sort of thing this is."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "A stable identifier, never a display name and never content. A Discord snowflake, a profile name, a channel id. Display names change and are frequently personal; ids are what an operator can actually look up."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "An OPTIONAL human-readable hint (`#manager`, `research`). Present only where the emitter knows it is not personal data - a channel name, never a username."
+        }
+      }
+    }
+  }
+}

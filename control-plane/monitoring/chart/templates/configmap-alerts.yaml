@@ -1,0 +1,315 @@
+{{- /*
+Grafana alerting provisioning for this profile, delivered as a ConfigMap:
+the platform Grafana's alerts sidecar (bootstrap/monitoring-grafana.yaml,
+label grafana_alert: "1", all namespaces) imports it as a provisioning
+file. One contact point (Discord and/or generic webhook, from values) and
+one rule group; every rule routes to the contact point directly via
+notification_settings — no notification-policy-tree edits, so profiles
+never fight over Grafana's root policy.
+*/ -}}
+{{- include "monitoring.receiversGuard" . -}}
+{{- if include "monitoring.rulesWouldRender" . }}
+{{- $uid := include "monitoring.uidbase" . -}}
+{{- $cp := include "monitoring.contactPoint" . -}}
+{{- $persona := include "monitoring.persona" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    grafana_alert: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  {{ .Release.Name }}-alerts.yaml: |
+    apiVersion: 1
+    {{- include "hermes-alerting.contactPoints" (dict "uidPrefix" $uid "name" $cp "webhookUrl" .Values.alert.webhookUrl "discordUrl" .Values.alert.discordUrl) | nindent 4 }}
+    groups:
+      - orgId: 1
+        name: {{ .Release.Name | quote }}
+        folder: Hermes GitOps
+        interval: {{ .Values.alert.evaluationInterval }}
+        rules:
+          {{- if .Values.alert.siteVisits5m.enabled }}
+          - uid: {{ printf "%s-visits" $uid | quote }}
+            title: {{ printf "SiteVisitsHigh (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: {{ printf "sum(increase(traefik_service_requests_total{service=~%q}[5m])) or vector(0)" (include "monitoring.serviceRegex" .) | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: the per-instance Pulumi override channel
+                          # delivers the threshold as a STRING ("3"), and
+                          # Grafana's threshold evaluator silently errors on
+                          # string params (masked by execErrState: OK) - the
+                          # rule imports fine and then never, ever fires.
+                          - {{ .Values.alert.siteVisits5m.threshold | float64 }}
+            noDataState: OK
+            execErrState: OK
+            for: {{ .Values.alert.siteVisits5m.pendingFor }}
+            labels:
+              persona: {{ $persona | quote }}
+              severity: warning
+            annotations:
+              summary: {{ printf "Site visits for profile %s exceeded %v in the last 5 minutes" $persona .Values.alert.siteVisits5m.threshold | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.alert.business.failures.enabled }}
+          {{- $ev := required "alert.business.failures.event is required when the rule is enabled" .Values.alert.business.failures.event }}
+          - uid: {{ printf "%s-bizfail" $uid | quote }}
+            title: {{ printf "BusinessOutcomeFailures (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 3600
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  # `or vector(0)` so a pipeline that has never failed
+                  # evaluates to 0 rather than NoData - NoData with
+                  # noDataState: OK is indistinguishable from healthy, and
+                  # this rule must not be silent for that reason.
+                  expr: {{ printf "sum(increase(hermes_business_outcome_total{event=%q,outcome=\"failed\"}[1h])) or vector(0)" $ev | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64 for the same reason as siteVisits5m: a
+                          # string threshold silently errors and the rule
+                          # never fires, masked by execErrState: OK.
+                          - {{ .Values.alert.business.failures.threshold | float64 }}
+            noDataState: OK
+            execErrState: OK
+            for: {{ .Values.alert.business.failures.pendingFor }}
+            labels:
+              persona: {{ $persona | quote }}
+              severity: warning
+              hermes_signal: business
+            annotations:
+              # The dedupe window is DURABLE where the environment declares
+              # a durable provider (#444: Redis SETNX, 7-day window, same
+              # shape as the delivery done-marker), so a retry crossing a
+              # router restart no longer double-counts; without Redis the
+              # in-memory window applies and the old caveat stands. A
+              # producer that mints fresh eventIds for one subject is
+              # reported as hermes_business_eventid_varied_total.
+              summary: {{ printf "%s reported a terminal failure for %s in the last hour" $persona $ev | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.alert.business.inactivity.enabled }}
+          {{- $ev := required "alert.business.inactivity.event is required when the rule is enabled" .Values.alert.business.inactivity.event }}
+          {{- $w := .Values.alert.business.inactivity.window }}
+          {{- $min := .Values.alert.business.inactivity.minCount | default 1 }}
+          - uid: {{ printf "%s-bizidle" $uid | quote }}
+            title: {{ printf "BusinessOutputBelowMinimum (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  # Gated on router liveness: with the router silent this
+                  # expression is NoData (noDataState: OK below), and the
+                  # telemetry rule fires instead. A missing telemetry
+                  # source must never masquerade as an idle pipeline -
+                  # they need different responses (#407).
+                  expr: {{ printf "(sum(increase(hermes_business_outcome_total{event=%q,outcome=\"succeeded\"}[%s])) or vector(0)) and on() (sum(hermes_router_up) > 0)" $ev $w | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        # LT minCount: fewer than the declared floor
+                        # succeeded in the window. minCount 1 is the
+                        # dead-man half - a pipeline that stopped looks
+                        # exactly like one with nothing to do, and only a
+                        # deliberately chosen window tells them apart.
+                        type: lt
+                        params:
+                          - {{ $min | float64 }}
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              persona: {{ $persona | quote }}
+              severity: warning
+              hermes_signal: business
+            annotations:
+              summary: {{ printf "%s produced fewer than %v successful %s in the last %s" $persona $min $ev $w | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+          {{- if or .Values.alert.business.failures.enabled .Values.alert.business.inactivity.enabled }}
+          # The telemetry guard (#407): fires when the event router - the
+          # ONLY source of hermes_business_outcome_total - stops
+          # reporting. While this fires, the business rules above are
+          # BLIND, not green; giving that state its own alert is what
+          # keeps "no telemetry" from masquerading as "healthy output".
+          - uid: {{ printf "%s-biztelem" $uid | quote }}
+            title: {{ printf "BusinessTelemetryMissing (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(hermes_router_up) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 1.0
+            noDataState: Alerting
+            # Alerting, unlike every other rule here: this rule IS the
+            # blind-detector, so a Prometheus query error - a state in
+            # which the business rules are just as blind as when the
+            # router is down - must fire it, not resolve it. execErrState
+            # OK on the guard itself would violate the exact contract the
+            # guard exists to keep (ADR-101; Codex catch).
+            execErrState: Alerting
+            for: 0s
+            labels:
+              persona: {{ $persona | quote }}
+              severity: warning
+              hermes_signal: business
+            annotations:
+              summary: {{ printf "Business telemetry for %s is missing: the event router is not reporting, so the business-outcome rules are blind - this is not evidence the pipeline is healthy" $persona | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+          {{- if .Values.alert.health.enabled }}
+          - uid: {{ printf "%s-agent" $uid | quote }}
+            title: {{ printf "HermesAgentDown (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: {{ printf "sum(min_over_time(kube_statefulset_status_replicas_ready{namespace=%q,statefulset=%q}[%s])) or vector(0)" .Release.Namespace (include "monitoring.agentStatefulSet" .) .Values.alert.health.lookback | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: lt
+                        params:
+                          - 1
+            noDataState: OK
+            execErrState: OK
+            for: {{ .Values.alert.health.pendingFor }}
+            labels:
+              persona: {{ $persona | quote }}
+              severity: critical
+            annotations:
+              summary: {{ printf "Hermes agent %s has no ready pod" (include "monitoring.agentStatefulSet" .) | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          - uid: {{ printf "%s-apps" $uid | quote }}
+            title: {{ printf "AgentAppUnhealthy (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: {{ printf "sum(max_over_time(kube_deployment_status_replicas_unavailable{namespace=%q}[%s])) or vector(0)" .Release.Namespace .Values.alert.health.lookback | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+            noDataState: OK
+            execErrState: OK
+            for: {{ .Values.alert.health.pendingFor }}
+            labels:
+              persona: {{ $persona | quote }}
+              severity: critical
+            annotations:
+              summary: {{ printf "One or more agent-app Deployments of profile %s have unavailable replicas" $persona | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+{{- end }}

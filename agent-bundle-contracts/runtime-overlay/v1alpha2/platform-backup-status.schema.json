@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/runtime-overlay/v1alpha2/platform-backup-status.schema.json",
+  "title": "Platform backup status (ConfigMap hermes-platform-backup-status)",
+  "description": "v1alpha2 adds `gcs` and `gcs-emulated` to destinationClass, and object generations to each component. The emulated value exists because the local loop backs up to fake-gcs-server, and a record reporting plain `gcs` for an emulator would claim off-site durability that does not exist - the one thing an emulation must never be allowed to do. What the operator host knows about the last PLATFORM backup, published for the in-cluster control plane. The same handshake problem as the reconciliation record: `hg platform backup create` runs on the destination server and writes its manifest to a host directory; Nexus runs in a pod and shares no filesystem with it, so the facts travel as `status.json` in a ConfigMap and are read with the Kubernetes transport every other adapter already uses. It carries no host paths, no archive locations and no credentials - the manifest keeps those, and the manifest never leaves the host. Per-routine facts (schedule, retention, protected paths) are NOT here: those are live CronJob state that Nexus reads directly, and a stale copy of them would be worse than none.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "observedAt",
+    "backupId",
+    "createdAt",
+    "verification"
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "nexus.hermes.ai/v1alpha2"
+    },
+    "kind": {
+      "const": "PlatformBackupStatus"
+    },
+    "observedAt": {
+      "description": "When this record was published. A record older than the reader's stale window reads `unknown` - a dead backup timer must not present as protected.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "backupId": {
+      "description": "The id of the backup this record describes - the scaffold directory name on the host, which is a timestamp, not a path.",
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "createdAt": {
+      "description": "When the backup itself was taken. Deliberately separate from observedAt: re-publishing after a restore updates one and not the other.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "environment": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "destinationClass": {
+      "description": "WHERE the backup went, as a class rather than a location. The path or bucket name is a host fact and stays on the host. `gcs-emulated` is a local-loop sink that speaks the GCS API but provides no off-site durability, and every surface must render it differently from `gcs`.",
+      "enum": [
+        "local-directory",
+        "gcs",
+        "gcs-emulated"
+      ]
+    },
+    "verification": {
+      "description": "The two states, kept as two separate facts. `available` means uploaded, checksummed and manifested; `restorable` means a restore actually replayed it. RPO/RTO derive only from `restorable`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "available",
+            "restorable"
+          ]
+        },
+        "restoredAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "durationSeconds": {
+          "description": "Measured restore duration. Absent means `unmeasured` - never render a zero here.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "allOf": [
+        {
+          "description": "`restorable` without a restore time is the exact claim this contract exists to prevent: it would let `we restored it once, at some point` render as a verified restore point. The state and its timestamp arrive together or not at all.",
+          "if": {
+            "properties": {
+              "state": {
+                "const": "restorable"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "restoredAt"
+            ]
+          }
+        }
+      ]
+    },
+    "components": {
+      "description": "One entry per thing the backup covers, in manifest order. Bounded because a ConfigMap is not a database.",
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "kind"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "kind": {
+            "enum": [
+              "volume-archive",
+              "host-archive",
+              "declarative"
+            ]
+          },
+          "profile": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "routine": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "sizeKB": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "checksum": {
+            "description": "The archive's sha256, abbreviated. Enough to tell two artifacts apart and to show that content WAS verified; not enough to be mistaken for the artifact.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{12}$"
+          },
+          "consistency": {
+            "description": "How the artifact was made consistent - the sentence that stops `sha256 matched` being read as `the data is usable`.",
+            "type": "string",
+            "maxLength": 200
+          },
+          "detail": {
+            "description": "Scrubbed prose. The writer drops it entirely for host archives, whose detail is a host path.",
+            "type": "string",
+            "maxLength": 200
+          },
+          "generation": {
+            "description": "The object generation a completed upload received. This is what a restore SELECTS by, so it is the difference between 'we have a backup' and 'we can name which one'. Absent for a local-directory sink, which has no such concept.",
+            "type": "string",
+            "pattern": "^[0-9]{1,32}$"
+          }
+        }
+      }
+    },
+    "summary": {
+      "description": "A scrubbed one-liner. Never command output, a URL, or anything credential-shaped.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "version": {
+      "description": "The pinned CLI version that wrote the backup, so an upgrade is visible in the overlay.",
+      "type": "string",
+      "maxLength": 80
+    }
+  }
+}

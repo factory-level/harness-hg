@@ -1,0 +1,26 @@
+# unrelated-sre: contract v3, a webhook-capable gateway, and deliberately
+# NO communication block - profile isolation is proven by this persona's
+# silence, not by its absence.
+contractVersion: 3
+
+endpoints:
+  - name: hooks
+    port: 8644
+    path: /webhooks/alerts
+    type: webhook
+    signature: hmac-sha256
+
+# The surface EXISTS (so receiving nothing stays a real assertion) - the
+# same v1 exposure duality as platform-sre.
+expose:
+  services:
+    - name: hooks
+      port: 8644
+      path: /
+  access:
+    policy: service-token
+
+apps:
+  - name: monitoring
+    chart: control-plane/monitoring/chart
+    repo: local

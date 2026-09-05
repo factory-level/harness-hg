@@ -1,0 +1,8 @@
+# Capability names are DNS labels (the same rule provides: enforces on
+# the endpoint side) - an underscore must reject, or the two halves of
+# the model could never match.
+version: 1
+bindings:
+  sentiment_feed:
+    implementation: external-sentiment-api
+    url: https://sentiment.example.net/v1

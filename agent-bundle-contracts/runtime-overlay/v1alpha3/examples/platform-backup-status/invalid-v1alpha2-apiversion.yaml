@@ -1,0 +1,10 @@
+# INVALID: the v1alpha2 apiVersion under the v1alpha3 schema - the
+# version names which fields a producer could have written.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: PlatformBackupStatus
+observedAt: "2026-08-18T03:14:07Z"
+backupId: hg-x
+createdAt: "2026-08-18T03:11:52Z"
+destinationClass: gcs
+verification:
+  state: available

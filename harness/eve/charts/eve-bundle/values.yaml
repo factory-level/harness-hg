@@ -1,0 +1,81 @@
+# Default values for eve-bundle (ADR-150). In a cluster the bundles
+# ApplicationSet layers cluster-values.yaml (WHERE) then
+# deployments/bundles/<name>/values.yaml (WHAT, compiled by `hg bundle`).
+# Like eve-agent this chart ships no strict values.schema.json: the same
+# cluster-values file serves every chart and unread keys land here too.
+
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+  # The bundle rule (hermes-bundle/templates/backup.yaml): providers.backup
+  # ALONE decides whether the routine renders - bundling retires each
+  # member's own CronJob and their declared intent has nowhere else to live.
+  backup: none
+
+# -- runtimeImage: the eve-runtime image, every member builds and runs on it
+# (spec.deployment.runtimeImageTag overrides the tag for the whole bundle).
+# DRIFT-GATED against versions.json runtimes.eve.version.
+runtimeImage:
+  repository: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime
+  tag: "0.42.0"
+  pullPolicy: IfNotPresent
+
+routeAuth:
+  username: agent
+
+# -- spec: the compiled bundle record (deployments/bundles/<name>/values.yaml).
+# profiles[] are the members; each is an installed EveAgent record's
+# source/sha/sourceSubdir plus the bundle declaration's per-member facts.
+# apiServerPort, when declared, is the member's listen port; otherwise
+# members take 3000, 3001, ... in declaration order.
+spec:
+  runtime: eve
+  name: unset
+  profiles:
+    - name: unset
+      source: https://example.invalid/unset.git
+      sha: "0000000000000000000000000000000000000000"
+      gatewayEnabled: true
+      repositoryRefs: []
+  repositories: []
+  deployment:
+    diskSizeGb: 20
+    workspaceSizeGb: 20
+  dashboard:
+    enabled: false
+    port: 9119
+
+backup:
+  schedule: "30 3 * * *"
+  retention: 7
+  image:
+    repository: python
+    tag: "3.12-slim"
+  pvc:
+    size: 5Gi
+    storageClassName: ""
+
+ingress:
+  baseDomain: hermes.local
+
+networkPolicy:
+  enabled: false
+
+probes:
+  startup:
+    failureThreshold: 60
+    periodSeconds: 5
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 10
+    failureThreshold: 3
+
+shutdown:
+  gracePeriodSeconds: 120
+
+routePrefix: ""
+
+resources: {}

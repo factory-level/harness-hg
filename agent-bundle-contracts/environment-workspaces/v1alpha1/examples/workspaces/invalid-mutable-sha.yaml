@@ -1,0 +1,21 @@
+# Mutable refs are not runtime revisions: a pinned revision must be a
+# full 40-character commit SHA, never a branch or tag name.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: strategy-context
+    source:
+      url: git@github.com:organization/strategy-context.git
+      revision:
+        mode: pinned
+        sha: main
+      authSecretRef: hermes-strategy-context-git
+    mount:
+      path: /workspaces/strategy-context
+      access: read-only
+
+bindings:
+  - repository: strategy-context
+    profiles: [marketing-manager]
+    purpose: strategy-context

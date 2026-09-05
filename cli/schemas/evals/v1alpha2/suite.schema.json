@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/evals/v1alpha2/suite.schema.json",
+  "title": "Eval suite",
+  "description": "Root document of an OPTIONAL evals/ directory consumed only by `hg eval --dir` — an eval-authoring contract for the local CLI, never a deployment contract. Nothing in profile installation, rendering, reconciliation or `hg validate` reads this file; a repo without one is fully valid and deployable. It lives outside plugin/schemas/ on purpose: those are frozen deployment surfaces, this versions with the CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "name"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/evals/v1alpha2",
+      "description": "Pins the authoring contract this suite was written against; the runner refuses versions it does not implement instead of guessing."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "The suite's name, printed in run output and recorded in the result document."
+    },
+    "scenarios": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$",
+      "description": "Directory of scenario subdirectories, relative to the suite root and contained within it. Defaults to `scenarios`."
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Suite-wide fallbacks a scenario may override; a scenario's own field always wins.",
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "description": "Fallback wall-clock budget in seconds for scenarios that declare no timeout of their own."
+        },
+        "repeat": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Fallback runs-per-invocation for scenarios that declare no repeat of their own."
+        }
+      }
+    }
+  }
+}

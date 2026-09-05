@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/dashboard-plan/v1alpha1/provenance.schema.json",
+  "title": "Dashboard catalogue provenance (catalog/dashboard/sources/<id>/provenance.yaml)",
+  "description": "Provenance beside the verbatim copies of a repository's authored dashboard files. Like the topology catalogue, the copies themselves are byte-for-byte and validated by the authoring schemas, not here; the record's identity is its directory name. Richer than the frozen two-key topology provenance because a dashboard source spans several authored files: the paths are listed so the compiler can report exactly which file a finding came from.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceSha",
+    "sourcePaths"
+  ],
+  "properties": {
+    "sourceSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The source commit the dashboard files were read at (all zeros for an uncommitted local preview)."
+    },
+    "sourcePaths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*\\.yaml$",
+        "maxLength": 300,
+        "description": "Repository-relative path of one authored dashboard file. Every segment starts with an alphanumeric, so absolute paths and dot-dot traversal are unrepresentable."
+      }
+    }
+  }
+}

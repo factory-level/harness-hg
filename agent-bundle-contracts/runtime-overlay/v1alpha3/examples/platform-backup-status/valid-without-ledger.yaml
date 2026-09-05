@@ -1,0 +1,10 @@
+# A record written before the writer computed the ledger - the field is
+# optional, absence tolerated.
+apiVersion: nexus.hermes.ai/v1alpha3
+kind: PlatformBackupStatus
+observedAt: "2026-08-18T03:14:07Z"
+backupId: hg-2026-08-18T03-11-52z
+createdAt: "2026-08-18T03:11:52Z"
+destinationClass: local-directory
+verification:
+  state: available

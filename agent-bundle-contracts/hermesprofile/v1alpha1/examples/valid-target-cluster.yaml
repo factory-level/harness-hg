@@ -1,0 +1,10 @@
+# Valid: a profile record placing this instance on a remote workload
+# cluster (issue #9 [C3]). spec.targetCluster names an Argo CD-registered
+# cluster (issue #5 [C1]); the hermes-gitops-profiles ApplicationSet's
+# parameterized destination reads it (issue #8 [C2]). Omitting the field
+# (see valid-minimal.yaml) deploys to the control-plane cluster itself.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  targetCluster: workload-eu-1

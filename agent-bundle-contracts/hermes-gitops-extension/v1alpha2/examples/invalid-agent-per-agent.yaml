@@ -1,0 +1,6 @@
+# per-agent multiplicity is only meaningful for bundled apps - an agent
+# cannot be paired with itself.
+contractVersion: 2
+topology:
+  agent:
+    multiplicity: per-agent

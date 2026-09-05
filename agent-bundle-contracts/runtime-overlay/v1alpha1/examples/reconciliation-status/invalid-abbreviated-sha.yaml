@@ -1,0 +1,9 @@
+# INVALID: an abbreviated SHA. The reconciler applies an exact commit and the
+# record must name it exactly - an abbreviation is ambiguous, and this field is
+# what an operator compares against `git rev-parse HEAD` when deciding whether
+# the server is running what they pushed.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: ReconciliationStatus
+observedAt: "2026-07-31T09:13:00Z"
+phase: synced
+appliedSha: 4f2c1ab

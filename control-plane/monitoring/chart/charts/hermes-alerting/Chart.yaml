@@ -1,0 +1,9 @@
+apiVersion: v2
+name: hermes-alerting
+description: >-
+  Shared Grafana alert-delivery templates for charts/monitoring and
+  control-plane/fleet-dashboard/chart. A LIBRARY chart - it renders nothing on its own.
+type: library
+# Informational only, like every other local chart: these version with the
+# platform revision, not independently. Bump only if a consumer needs to pin.
+version: 0.1.0

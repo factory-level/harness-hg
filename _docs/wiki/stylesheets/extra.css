@@ -1,0 +1,760 @@
+/* Harness Hg wiki theme — the Nexus visual language.
+ *
+ * Every token below is ported verbatim from dashboard/src/style.css, which is
+ * the source of truth for the product's design system. When Nexus changes a
+ * value, change it here to match; do not invent a docs-only colour.
+ *
+ * Dark-first, like Nexus and like mkdocs.yml's palette order. The peach accent
+ * (--acc) is the single interaction colour; the ok/warn/crit ramp is reserved
+ * for status and is not used for decoration. Nexus encodes object *kind* with a
+ * pastel hue set — the docs have no kinds, so that layer is deliberately absent.
+ */
+
+/* ---------- Brand faces ----------
+ * Self-hosted rather than fetched from Google Fonts: the same three OFL-1.1
+ * woff2 files Nexus ships (dashboard/nexus/fonts/, ADR-105). `theme.font: false`
+ * in mkdocs.yml is what stops Material requesting Inter over the network.
+ * Variable ranges, not static cuts — 650 is a real weight in this system. */
+@font-face {
+  font-family: "Figtree";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../assets/fonts/figtree-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../assets/fonts/nunito-sans-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../assets/fonts/nunito-sans-latin-italic.woff2") format("woff2");
+}
+
+:root {
+  --nx-display: "Figtree", ui-sans-serif, system-ui, sans-serif;
+  --nx-body: "Nunito Sans", ui-sans-serif, system-ui, sans-serif;
+  --nx-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Nexus caps its reading column; Material's default is far wider. */
+  --nx-measure: 920px;
+
+  /* Material composes `--md-text-font-family` as `var(--md-text-font, _), <fallbacks>`.
+   * With `theme.font: false` it never sets `--md-text-font`, so the literal
+   * placeholder `_` becomes the first family and every page renders in the
+   * system fallback. These two are the knobs that actually take effect. */
+  --md-text-font: "Nunito Sans";
+  --md-code-font: ui-monospace;
+}
+
+/* ---------- Dark (slate) — the default scheme ----------
+ * dashboard/src/style.css `.nx-root[data-nx-theme="dark"]` */
+[data-md-color-scheme="slate"] {
+  --nx-bg: #0b0d14;
+  --nx-sf: #141824;
+  --nx-sf2: #10141e;
+  --nx-sf3: #1c2233;
+  --nx-ink: #ebeaf4;
+  --nx-ink2: #afb0c8;
+  --nx-mut: #8a8ca6;
+  --nx-line: rgba(175, 176, 200, 0.13);
+  --nx-line2: rgba(175, 176, 200, 0.07);
+  --nx-acc: #f5b98c;
+  --nx-accsf: #2d2927;
+  --nx-ok: #a9dcc4;
+  --nx-warn: #efd9a0;
+  --nx-crit: #f0a98f;
+  --nx-dot: rgba(175, 176, 200, 0.13);
+  --nx-shl: 0 8px 20px rgba(0, 0, 0, 0.32);
+
+  --md-default-bg-color: var(--nx-bg);
+  --md-default-fg-color: var(--nx-ink);
+  --md-default-fg-color--light: var(--nx-ink2);
+  --md-default-fg-color--lighter: var(--nx-mut);
+  --md-default-fg-color--lightest: var(--nx-line);
+
+  --md-primary-fg-color: var(--nx-bg);
+  --md-primary-fg-color--light: var(--nx-sf);
+  --md-primary-fg-color--dark: var(--nx-sf2);
+  --md-primary-bg-color: var(--nx-ink);
+  --md-primary-bg-color--light: var(--nx-mut);
+
+  --md-accent-fg-color: var(--nx-acc);
+  --md-accent-fg-color--transparent: var(--nx-accsf);
+
+  --md-typeset-color: var(--nx-ink);
+  --md-typeset-a-color: var(--nx-acc);
+
+  --md-code-bg-color: var(--nx-sf2);
+  --md-code-fg-color: var(--nx-ink2);
+
+  --md-footer-bg-color: var(--nx-sf2);
+  --md-footer-bg-color--dark: var(--nx-bg);
+
+  --md-typeset-table-color: var(--nx-line);
+}
+
+/* ---------- Light (default) ----------
+ * dashboard/src/style.css `.nx-root` */
+[data-md-color-scheme="default"] {
+  --nx-bg: #eeeff4;
+  --nx-sf: #ffffff;
+  --nx-sf2: #f7f8fb;
+  --nx-sf3: #eaecf3;
+  --nx-ink: #141824;
+  --nx-ink2: #3e4256;
+  --nx-mut: #6d7188;
+  --nx-line: rgba(20, 24, 36, 0.11);
+  --nx-line2: rgba(20, 24, 36, 0.06);
+  --nx-acc: #b36a33;
+  --nx-accsf: #fbebdf;
+  --nx-ok: #3e8a6b;
+  --nx-warn: #8a6a18;
+  --nx-crit: #b8543a;
+  --nx-dot: rgba(20, 24, 36, 0.14);
+  --nx-shl: 0 4px 12px rgba(20, 24, 36, 0.07);
+
+  --md-default-bg-color: var(--nx-bg);
+  --md-default-fg-color: var(--nx-ink);
+  --md-default-fg-color--light: var(--nx-ink2);
+  --md-default-fg-color--lighter: var(--nx-mut);
+  --md-default-fg-color--lightest: var(--nx-line);
+
+  --md-primary-fg-color: var(--nx-sf);
+  --md-primary-fg-color--light: var(--nx-sf2);
+  --md-primary-fg-color--dark: var(--nx-sf3);
+  --md-primary-bg-color: var(--nx-ink);
+  --md-primary-bg-color--light: var(--nx-mut);
+
+  --md-accent-fg-color: var(--nx-acc);
+  --md-accent-fg-color--transparent: var(--nx-accsf);
+
+  --md-typeset-color: var(--nx-ink);
+  --md-typeset-a-color: var(--nx-acc);
+
+  --md-code-bg-color: var(--nx-sf2);
+  --md-code-fg-color: var(--nx-ink2);
+
+  --md-footer-bg-color: var(--nx-sf2);
+  --md-footer-bg-color--dark: var(--nx-sf3);
+
+  --md-typeset-table-color: var(--nx-line);
+}
+
+/* No page-ground dot grid. Nexus draws one on `.nx-world` because that surface
+ * is a pannable canvas and the grid reports position; a documentation page is a
+ * reading surface, where the same texture is only decoration. `--nx-dot` stays
+ * defined so the token set still mirrors the product's.
+ */
+
+/* Nexus's header is a floating island on a transparent bar, which does not
+ * survive Material's sticky-nav layout. The honest translation is a quiet
+ * surface with the same hairline the rest of the system uses. */
+.md-header {
+  background-color: var(--nx-sf);
+  color: var(--nx-ink);
+  border-bottom: 1px solid var(--nx-line);
+  box-shadow: none;
+}
+.md-header--shadow {
+  box-shadow: var(--nx-shl);
+}
+.md-tabs {
+  background-color: var(--nx-sf);
+  color: var(--nx-ink);
+  border-bottom: 1px solid var(--nx-line);
+}
+
+/* The brand lockup, as Nexus draws it (dashboard/src/index.tsx:1318-1329,
+ * `.nx-brand*` in style.css): the contour mark, a hairline, then "Harness" in
+ * ink with a smaller "Hg" in the accent, baseline-aligned — the product is
+ * Harness Hg (the 2026-08 rename, #649); "Hermes" is the upstream agent. The mark itself is
+ * ink — `HermesMark` strokes `currentColor` and `.nx-brand` sets `--ink` — so
+ * the accent appears exactly once, on the "Hg". */
+.md-header__topic:first-child .md-ellipsis {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 0;
+}
+.md-header__topic:first-child .md-ellipsis::before {
+  content: "Harness";
+  font-family: var(--nx-display);
+  font-size: 0.725rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--nx-ink);
+}
+.md-header__topic:first-child .md-ellipsis::after {
+  content: "HG";
+  font-family: var(--nx-display);
+  font-size: 0.525rem;
+  font-weight: 700;
+  color: var(--nx-acc);
+}
+.md-header__button.md-logo {
+  padding-right: 0.6rem;
+  margin-right: 0.2rem;
+  border-right: 1px solid var(--nx-line);
+}
+
+/* Nexus tints the mark with `currentColor` so it retints with the theme. An
+ * <img> cannot see the site's `data-md-color-scheme`, so the image is masked
+ * out and repainted instead — same result, and the file stays a plain SVG that
+ * also works as the favicon. */
+.md-header__button.md-logo img,
+.md-nav__button.md-logo img {
+  visibility: hidden;
+}
+.md-header__button.md-logo,
+.md-nav__button.md-logo {
+  position: relative;
+}
+.md-header__button.md-logo::after,
+.md-nav__button.md-logo::after {
+  content: "";
+  position: absolute;
+  inset: 0.4rem;
+  right: 0.6rem;
+  background-color: var(--nx-ink);
+  -webkit-mask-image: url("../assets/mark.svg");
+  mask-image: url("../assets/mark.svg");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.md-nav__button.md-logo::after {
+  right: 0.4rem;
+}
+
+/* ---------- Typography ---------- */
+.md-typeset {
+  font-family: var(--nx-body);
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5 {
+  font-family: var(--nx-display);
+  color: var(--nx-ink);
+}
+.md-typeset h1 {
+  font-weight: 700;
+  font-size: 1.62rem;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+}
+.md-typeset h2 {
+  font-weight: 700;
+  font-size: 1.18rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin-top: 2.2em;
+}
+.md-typeset h3 {
+  font-weight: 650;
+  font-size: 0.94rem;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+.md-typeset h4 {
+  font-weight: 650;
+  font-size: 0.8rem;
+  letter-spacing: -0.01em;
+}
+
+/* Nexus's section rule: a dashed hairline under every h2, the same device the
+ * canvas uses to separate operational sections. `.nx-sect-rule`. */
+.md-typeset h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px dashed var(--nx-line);
+}
+
+/* The eyebrow. Every page opens with a bolded "What this page tells you:" lead
+ * paragraph; this gives it the muted, quiet treatment Nexus gives a caption
+ * rather than letting bold text shout at the top of every page. */
+.md-typeset h1 + p > strong:first-child {
+  font-family: var(--nx-display);
+  font-weight: 650;
+  color: var(--nx-mut);
+}
+.md-typeset h1 + p {
+  color: var(--nx-ink2);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  margin-bottom: 2em;
+}
+
+/* Nexus caps its reading column. Reference tables and code still get the full
+ * width, because scanning them is the job. */
+.md-content__inner {
+  max-width: var(--nx-measure);
+  margin-inline: auto;
+}
+
+/* ---------- Navigation ----------
+ * The Nexus tab pill: accent wash, ink text, no shadow, fully rounded.
+ * `.nx-tab.on` in dashboard/src/style.css. */
+.md-nav {
+  font-size: 0.68rem;
+}
+.md-nav__title {
+  font-family: var(--nx-display);
+  font-weight: 650;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--nx-mut);
+}
+.md-nav__link {
+  border-radius: 999px;
+  padding: 0.16rem 0.5rem;
+  margin-inline-start: -0.5rem;
+  color: var(--nx-mut);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.md-nav__link:hover {
+  background-color: var(--nx-sf3);
+  color: var(--nx-ink);
+}
+.md-nav__link--active,
+.md-nav__link--active:hover {
+  background-color: var(--nx-accsf);
+  color: var(--nx-ink);
+  font-weight: 600;
+}
+.md-tabs__link {
+  font-family: var(--nx-display);
+  font-weight: 600;
+  opacity: 1;
+  color: var(--nx-mut);
+}
+.md-tabs__link--active,
+.md-tabs__link:hover {
+  color: var(--nx-ink);
+}
+
+/* ---------- Surfaces ----------
+ * One card recipe: --sf on a 1px --line, 14px radius, the resting shadow.
+ * Everything that is a "surface" in Nexus uses it, so everything here does. */
+.md-typeset table:not([class]) {
+  background-color: var(--nx-sf);
+  border: 1px solid var(--nx-line);
+  border-radius: 14px;
+  box-shadow: var(--nx-shl);
+  font-size: 0.72rem;
+  overflow: hidden;
+}
+.md-typeset table:not([class]) th {
+  font-family: var(--nx-display);
+  font-weight: 650;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--nx-mut);
+  background-color: var(--nx-sf2);
+  border-bottom: 1px solid var(--nx-line);
+}
+.md-typeset table:not([class]) td {
+  border-top: 1px solid var(--nx-line2);
+}
+
+.md-typeset pre > code {
+  border: 1px solid var(--nx-line);
+  border-radius: 14px;
+}
+.md-typeset code {
+  border-radius: 8px;
+  font-size: 0.86em;
+}
+.md-typeset :not(pre) > code {
+  background-color: var(--nx-sf3);
+  padding: 0.1em 0.35em;
+}
+
+.md-typeset blockquote {
+  border-left: 2px solid var(--nx-line);
+  color: var(--nx-ink2);
+}
+.md-typeset hr {
+  border-bottom: 1px dashed var(--nx-line);
+}
+
+/* ---------- Admonitions ----------
+ * Quiet by default. Nexus has no decorative callout; the only ones that carry
+ * colour are the ones carrying status, and they borrow the status ramp rather
+ * than Material's stock rainbow. */
+.md-typeset .admonition,
+.md-typeset details {
+  font-size: 0.72rem;
+  border: 1px solid var(--nx-line);
+  border-left-width: 1px;
+  border-radius: 14px;
+  box-shadow: none;
+  background-color: var(--nx-sf);
+}
+.md-typeset .admonition-title,
+.md-typeset summary {
+  font-family: var(--nx-display);
+  font-weight: 650;
+  background-color: var(--nx-sf2);
+  border-bottom: 1px solid var(--nx-line2);
+}
+.md-typeset .admonition-title::before,
+.md-typeset summary::before {
+  background-color: var(--nx-mut);
+}
+.md-typeset .note > .admonition-title::before,
+.md-typeset .note > summary::before {
+  background-color: var(--nx-acc);
+}
+.md-typeset .warning > .admonition-title::before,
+.md-typeset .warning > summary::before {
+  background-color: var(--nx-warn);
+}
+.md-typeset .danger > .admonition-title::before,
+.md-typeset .danger > summary::before {
+  background-color: var(--nx-crit);
+}
+.md-typeset .tip > .admonition-title::before,
+.md-typeset .tip > summary::before {
+  background-color: var(--nx-ok);
+}
+
+/* ---------- Buttons and search ----------
+ * `.nx-btn`: a pill whose hover promotes the border, never a fill change. */
+.md-typeset .md-button {
+  font-family: var(--nx-display);
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid var(--nx-line);
+  color: var(--nx-ink);
+}
+.md-typeset .md-button:hover {
+  border-color: var(--nx-acc);
+  background-color: transparent;
+  color: var(--nx-acc);
+}
+.md-search__form {
+  border-radius: 999px;
+  background-color: var(--nx-sf3);
+}
+.md-search__input::placeholder {
+  color: var(--nx-mut);
+}
+
+/* ---------- Heading permalinks ----------
+ * Was a caduceus tinted gold — Hermes-family, not Nexus. A plain accent mark
+ * that only appears on hover is the quieter, on-brand behaviour. */
+.md-typeset .headerlink {
+  color: var(--nx-line);
+}
+.md-typeset .headerlink:hover,
+.md-typeset :target > .headerlink {
+  color: var(--nx-acc);
+}
+
+/* ---------- Scrollbars ----------
+ * Nexus treats these as product chrome rather than leaving them to the OS. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--nx-line) transparent;
+}
+
+
+/* ---------- Header utilities: install quick action + version (#616) ----------
+ * Both live in Material's `.md-header__source` area, beside the repository
+ * link. They are utilities, not navigation: pill-shaped like every other
+ * control in the system, quiet until hovered, and the version is a status
+ * readout rather than a link that wants clicking. */
+.hg-utils {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: 0.6rem;
+}
+
+/* Material sizes `.md-header__source` for a repository name alone and lets it
+ * wrap; two pills beside it need the row to grow instead of stacking. */
+.md-header__source {
+  display: flex;
+  align-items: center;
+  max-width: none;
+  width: auto;
+}
+
+.hg-install {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--nx-line);
+  border-radius: 999px;
+  font-family: var(--nx-display);
+  font-weight: 600;
+  font-size: 0.6rem;
+  color: var(--nx-ink);
+  white-space: nowrap;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.hg-install:hover,
+.hg-install:focus-visible {
+  border-color: var(--nx-acc);
+  color: var(--nx-acc);
+}
+.hg-install__icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: none;
+}
+
+/* The version reads as two parts, like the brand lockup: the tier in the
+ * accent, the number in muted ink. It is generated — see
+ * infra/scripts/derive-version.py. */
+.hg-version {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background-color: var(--nx-sf3);
+  font-family: var(--nx-display);
+  /* DESIGN.md's label step (10.5px at Material's 20px root) — the same size the
+   * "Hg" half of the brand lockup uses, which is the right relationship: both
+   * are small identifying marks beside a larger name. */
+  font-size: 0.525rem;
+  white-space: nowrap;
+}
+.hg-version__tier {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nx-acc);
+}
+.hg-version__num {
+  font-weight: 600;
+  color: var(--nx-mut);
+}
+
+/* Narrow widths: the repository name is already hidden by Material below
+ * 76.25em, and two more pills beside a hamburger is clutter. The install
+ * action survives, because it is the one a phone reader is most likely to
+ * want; the version does not, because it is reference, not navigation. */
+@media screen and (max-width: 76.1875em) {
+  .hg-version {
+    display: none;
+  }
+}
+@media screen and (max-width: 44.9375em) {
+  .hg-install__label {
+    display: none;
+  }
+  .hg-install {
+    padding: 0.2rem 0.3rem;
+  }
+}
+
+
+/* ---------- Screenshots ----------
+ * The Nexus captures are dark-on-dark against the dark theme, so without a
+ * frame they bleed into the page and stop reading as a separate artefact.
+ * Same card recipe as everything else: 1px --line, 14px radius. */
+.md-typeset img {
+  max-width: 100%;
+  border: 1px solid var(--nx-line);
+  border-radius: 14px;
+}
+
+
+/* ---------- Page actions: breadcrumb + copy-page (ADR 0176) ----------
+ * The bar sits at the top of the article, INSIDE `.md-typeset`, so the first
+ * job is undoing the typeset styling its links and buttons would inherit.
+ * Everything else reuses recipes already in this file: the `.hg-install` pill
+ * for the control, the card recipe (--sf on 1px --line, 14px radius, --shl)
+ * for the menu, and the eyebrow's muted display face for the crumbs. */
+.hg-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.6rem;
+}
+
+.hg-crumbs {
+  font-family: var(--nx-display);
+  font-weight: 600;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nx-mut);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hg-crumbs span + span::before {
+  content: "›";
+  margin: 0 0.4em;
+  color: var(--nx-line);
+}
+
+.hg-copy {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  flex: none;
+}
+
+/* The pill, split: the action and the disclosure share one border. */
+.md-typeset .hg-copy__go,
+.md-typeset .hg-copy__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.24rem 0.6rem;
+  border: 1px solid var(--nx-line);
+  background: transparent;
+  font-family: var(--nx-display);
+  font-weight: 600;
+  font-size: 0.6rem;
+  line-height: 1.4;
+  color: var(--nx-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.md-typeset .hg-copy__go {
+  border-radius: 999px 0 0 999px;
+  border-right-width: 0;
+}
+.md-typeset .hg-copy__more {
+  border-radius: 0 999px 999px 0;
+  padding-inline: 0.42rem;
+}
+.md-typeset .hg-copy__go:hover,
+.md-typeset .hg-copy__more:hover,
+.md-typeset .hg-copy__go:focus-visible,
+.md-typeset .hg-copy__more:focus-visible {
+  border-color: var(--nx-acc);
+  color: var(--nx-acc);
+}
+.hg-copy--done .hg-copy__go {
+  color: var(--nx-ok);
+  border-color: var(--nx-ok);
+}
+.hg-copy__icon {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: none;
+}
+.hg-copy__more svg {
+  width: 0.66rem;
+  height: 0.66rem;
+}
+
+/* The menu: the same card every other surface here uses. */
+.hg-copy__menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 5;
+  min-width: 12.5rem;
+  padding: 0.3rem;
+  background-color: var(--nx-sf);
+  border: 1px solid var(--nx-line);
+  border-radius: 14px;
+  box-shadow: var(--nx-shl);
+}
+.md-typeset .hg-copy__menu > a,
+.md-typeset .hg-copy__menu > button {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.32rem 0.5rem;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font-family: var(--nx-body);
+  font-size: 0.66rem;
+  font-weight: 500;
+  text-align: start;
+  text-decoration: none;
+  color: var(--nx-ink2);
+  cursor: pointer;
+}
+.md-typeset .hg-copy__menu > a:hover,
+.md-typeset .hg-copy__menu > button:hover,
+.md-typeset .hg-copy__menu > a:focus-visible,
+.md-typeset .hg-copy__menu > button:focus-visible {
+  background-color: var(--nx-sf3);
+  color: var(--nx-ink);
+}
+
+/* "On this page": the same uppercase label the primary nav titles use, and an
+ * accent rule on the active entry — the rail readers scan while reading. */
+.md-nav--secondary .md-nav__title {
+  font-family: var(--nx-display);
+  font-weight: 650;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--nx-mut);
+  box-shadow: none;
+}
+.md-nav--secondary .md-nav__link {
+  border-radius: 0;
+  border-inline-start: 2px solid transparent;
+  padding-inline-start: 0.5rem;
+  margin-inline-start: 0;
+}
+.md-nav--secondary .md-nav__link--active {
+  background-color: transparent;
+  border-inline-start-color: var(--nx-acc);
+  color: var(--nx-ink);
+}
+
+@media screen and (max-width: 44.9375em) {
+  .hg-actions {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .hg-crumbs {
+    max-width: 100%;
+  }
+}
+
+/* The roadmap kanban: Material's grid cards, pinned to one column per lane
+   on wide screens and stacking on narrow ones. */
+.md-typeset .grid.kanban {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.md-typeset .grid.kanban > ul > li > p:first-child {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--nx-mute, inherit);
+}
+@media screen and (max-width: 59.9375em) {
+  .md-typeset .grid.kanban {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .grid.kanban {
+    grid-template-columns: 1fr;
+  }
+}

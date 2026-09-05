@@ -1,0 +1,26 @@
+# Example distribution — a REALISTIC persona (as opposed to
+# distribution.yaml at this repo's root, which is a zero-secret smoke-test
+# fixture). "persona-echo" needs one real secret (an Anthropic API key).
+#
+# This file is PURE Hermes: the plugin no longer reads extension blocks
+# embedded here. The persona's infra intent (helm apps, expose,
+# deployment knobs) lives in hermes-gitops.yaml BESIDE this file — the
+# shape a real Hermes GitOps operator's own repo takes.
+#
+# examples/rendered/profile-echo.yaml is the exact HermesProfile record the
+# real gitops-emitter render pipeline (gitops_emitter/render.py) produces
+# from this file + hermes-gitops.yaml plus a fixed, documented hook
+# payload — see tests/test_persona_echo_example.py, which regenerates it
+# and asserts the two stay in lockstep (run with PERSONA_ECHO_UPDATE=1 to
+# regenerate after an intentional change here).
+name: persona-echo
+version: 1.0.0
+description: "Echoes back whatever it's told — a minimal but realistic example persona."
+hermes_requires: ""
+author: "Hermes GitOps examples"
+license: "MIT"
+
+env_requires:
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic API key — persona-echo's model provider"
+    required: true

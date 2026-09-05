@@ -1,0 +1,65 @@
+{
+  "apiVersion": "nexus.hermes.ai/v1alpha1",
+  "kind": "NexusWorkspace",
+  "environment": "default",
+  "revision": 4,
+  "savedAt": "2026-09-03T00:00:00Z",
+  "savedBy": "operator",
+  "featureFlags": { "canvas-objects": true },
+  "adoptedRelationships": true,
+  "sheets": [
+    {
+      "id": "default",
+      "name": "Fleet Canvas",
+      "mode": "operational",
+      "viewport": { "x": -40, "y": 12, "zoom": 1 },
+      "settings": { "sourceBadges": ["argocd", "grafana"] },
+      "cards": [
+        { "ref": "manager", "position": { "x": 420, "y": 160 } },
+        { "ref": "research", "position": { "x": 810, "y": 10 } },
+        { "ref": "research", "position": { "x": 810, "y": 300 }, "id": "research-2", "displayMode": "badge" }
+      ],
+      "objects": [
+        {
+          "id": "vendor",
+          "kind": "external-tool",
+          "title": "Vendor",
+          "subtitle": "outside the fleet",
+          "url": "https://example.com/vendor",
+          "members": ["manager"],
+          "icon": "app-postiz"
+        }
+      ],
+      "shapes": [
+        { "id": "region", "x": 500, "y": 20, "w": 360, "h": 680, "label": "content loop", "shape": "ellipse", "color": "mint", "rotation": 45 },
+        { "id": "legacy", "x": 0, "y": 0, "w": 20, "h": 20, "label": "" },
+        { "id": "brace", "x": 1, "y": 2, "w": 40, "h": 200, "label": "", "shape": "brace-l" }
+      ],
+      "texts": [
+        { "id": "t-md", "x": 60, "y": 40, "text": "The operation", "size": "md" },
+        { "id": "t-lg", "x": 0, "y": 0, "text": "Big", "size": "lg", "font": "mono" }
+      ],
+      "notes": [
+        { "id": "n1", "x": 1240, "y": 90, "text": "ship the reel before Friday", "w": 200, "h": 120 }
+      ],
+      "connections": [
+        { "id": "conn-1", "from": "manager", "to": "research", "label": "coordinates" },
+        { "id": "conn-2", "from": "manager", "to": "shape:region", "label": "", "kind": "observes", "arrows": "end" },
+        { "id": "conn-3", "from": "text:t-lg", "to": "research-2", "label": "instance" }
+      ],
+      "groups": [
+        { "id": "g1", "name": "Loop", "members": ["card:manager", "shape:region"] }
+      ]
+    },
+    {
+      "id": "notes",
+      "name": "Notes",
+      "mode": "concept",
+      "cards": [],
+      "shapes": [],
+      "texts": [],
+      "notes": [],
+      "connections": []
+    }
+  ]
+}

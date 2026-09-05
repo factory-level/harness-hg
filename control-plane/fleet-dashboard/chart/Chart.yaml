@@ -1,0 +1,26 @@
+apiVersion: v2
+name: fleet-dashboard
+description: >
+  Fleet-wide budget/TCO observability payload: one Grafana dashboard
+  (per-persona MTD estimated spend vs budget, spend trajectory, token
+  usage, observer health) and per-persona BudgetExceeded alert rules,
+  all rendered as ConfigMaps the platform Grafana's sidecars pick up
+  from hermes-monitoring (see bootstrap/monitoring-stack.yaml). Pure
+  ConfigMap chart - no workload. Budgets live in
+  bootstrap/fleet-dashboard.yaml's helm.valuesObject; editing that file
+  IS the budget-edit workflow. Installed once per cluster by
+  bootstrap/fleet-dashboard.yaml as {path: charts/fleet-dashboard} from
+  the platform repo - local charts version with the platform revision,
+  so this chart's version is informational only.
+type: application
+version: 0.1.0
+appVersion: "1.0"
+
+# The shared Grafana alert-delivery templates (#619). The subchart is COMMITTED
+# under charts/ rather than fetched: `helm dependency update` runs nowhere in
+# this repo, because Argo CD syncs this chart from a bare Git path. Regenerate
+# the copy with `make alerting-lib`; `make alerting-lib-drift` gates it.
+dependencies:
+  - name: hermes-alerting
+    version: 0.1.0
+    repository: ""

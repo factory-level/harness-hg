@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "_comment": "The canonical control-plane inventory (design 15, ADR-55): one name, one abbreviation, one install path and one version authority per workload - declared ONCE, as data, exactly like the feature registry. Consumed by GET /nexus/inventory, imported by the System view at build time, joined with live source levels by `hg observability inspect`, and cited (never restated) by _docs/wiki/platform/observability.md. `source` names the overlay source kind whose level stands in for this workload; null means no source levels it yet and it must render unknown, never green.",
+  "workloads": [
+    {
+      "id": "argocd",
+      "name": "ArgoCD",
+      "abbr": "AC",
+      "role": "Reconciles the GitOps repository into the cluster",
+      "namespace": "argocd",
+      "installedBy": "pulumi stage 3 (infra/src/components/argocd); locally hg up ensureArgoCd",
+      "versionAuthority": "infra stack config, plus a third copy in cli/src/lib.ts (gaps §03)",
+      "source": "argocd"
+    },
+    {
+      "id": "prometheus",
+      "name": "Prometheus",
+      "abbr": "PR",
+      "role": "Scrapes and stores every metric the platform reads",
+      "namespace": "hermes-monitoring",
+      "installedBy": "bootstrap/monitoring-stack.yaml (kube-prometheus-stack)",
+      "versionAuthority": "kube-prometheus-stack pinned in platform code, not environment config (ADR-45 Cost)",
+      "source": "grafana"
+    },
+    {
+      "id": "grafana",
+      "name": "Grafana",
+      "abbr": "GF",
+      "role": "Dashboards and per-profile alert rules",
+      "namespace": "hermes-monitoring",
+      "installedBy": "bootstrap/monitoring-stack.yaml (kube-prometheus-stack)",
+      "versionAuthority": "kube-prometheus-stack pinned in platform code, not environment config (ADR-45 Cost)",
+      "source": "grafana"
+    },
+    {
+      "id": "alertmanager",
+      "name": "Alertmanager",
+      "abbr": "AM",
+      "role": "Notification routing authority for PrometheusRule alerts",
+      "namespace": "hermes-monitoring",
+      "installedBy": "bootstrap/monitoring-stack.yaml (kube-prometheus-stack)",
+      "versionAuthority": "kube-prometheus-stack pinned in platform code, not environment config (ADR-45 Cost)",
+      "source": "grafana"
+    },
+    {
+      "id": "communication-router",
+      "name": "Communication router",
+      "abbr": "RT",
+      "role": "Fans events out to agent gateways and ChatOps",
+      "namespace": "hermes-system",
+      "installedBy": "bootstrap/applicationsets (communication records); locally hg up ensureEventRouter",
+      "versionAuthority": "hermes-event-router chart at the platform revision (router.ts ships in the chart)",
+      "source": "communication"
+    },
+    {
+      "id": "communication-queue",
+      "name": "Communication queue",
+      "abbr": "MQ",
+      "role": "Redis Streams durable transport and dead-letter queues",
+      "namespace": "hermes-system",
+      "installedBy": "hermes-event-router chart, when a durable provider is declared",
+      "versionAuthority": "hermes-event-router chart at the platform revision",
+      "source": "communication"
+    },
+    {
+      "id": "webhook-gateway",
+      "name": "Webhook gateway",
+      "abbr": "WH",
+      "role": "Signature-verified external webhook ingress on the router",
+      "namespace": "hermes-system",
+      "installedBy": "hermes-event-router chart (external inputs in the compiled routing record)",
+      "versionAuthority": "hermes-event-router chart at the platform revision",
+      "source": "communication"
+    },
+    {
+      "id": "cloudflare-tunnel",
+      "name": "Cloudflare Tunnel",
+      "abbr": "CF",
+      "role": "Publishes declared hostnames without opening the cluster",
+      "namespace": "per profile",
+      "installedBy": "PKO Stack CR per profile (providers.ingress=cloudflare only)",
+      "versionAuthority": "infra/pulumi/programs/cloudflare-tunnel at the pinned program revision",
+      "source": null
+    },
+    {
+      "id": "chatops",
+      "name": "ChatOps providers",
+      "abbr": "CH",
+      "role": "Provider plugins delivering to chat spaces",
+      "namespace": "hermes-system",
+      "installedBy": "inside the communication router (connection bindings)",
+      "versionAuthority": "hermes-event-router chart at the platform revision",
+      "source": "communication"
+    },
+    {
+      "id": "backup-services",
+      "name": "Backup services",
+      "abbr": "BK",
+      "role": "Labelled CronJobs archiving every declared state volume",
+      "namespace": "per profile + hermes-gitops",
+      "installedBy": "hermes-profile chart (spec.backup) and charts/nexus backup.yaml",
+      "versionAuthority": "the owning chart at the platform revision",
+      "source": "backup"
+    },
+    {
+      "id": "nexus",
+      "name": "Nexus",
+      "abbr": "NX",
+      "role": "The operational dashboard - a projection, never an authority",
+      "namespace": "hermes-gitops",
+      "installedBy": "charts/nexus (ADR-48); locally hg up ensureNexus",
+      "versionAuthority": "control-plane/nexus/chart at the platform revision (dist built from nexus-ui)",
+      "source": null
+    },
+    {
+      "id": "hermes-runtime",
+      "name": "Hermes runtime",
+      "abbr": "HG",
+      "role": "The agent runtime every profile instance runs",
+      "namespace": "per profile",
+      "installedBy": "hermes-profile chart via the ApplicationSet",
+      "versionAuthority": "hermes.source in stack config (the fork); image imported by hg up locally",
+      "source": "argocd"
+    },
+    {
+      "id": "reconciler",
+      "name": "Reconciliation service",
+      "abbr": "RC",
+      "role": "Host systemd timer applying the deployment repository (ADR-54)",
+      "namespace": "operator host",
+      "installedBy": "hg reconcile install (systemd user timer); pulumi reconciler component",
+      "versionAuthority": "reconcile config.json version pin, rewritten by pulumi up",
+      "source": "reconciliation"
+    }
+  ]
+}

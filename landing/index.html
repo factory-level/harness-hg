@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harness Hg — your agent fleet, described in Git</title>
+<meta name="description" content="A GitOps control plane for agent harnesses. One command renders your agent and everything it needs into Git as a pull request, and Argo CD makes your cluster match it. Mercury runs no controller of its own.">
+<meta name="color-scheme" content="light dark">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="Harness Hg — your agent fleet, described in Git">
+<meta property="og:description" content="A GitOps control plane for agent harnesses. One command renders your agent and everything it needs into Git as a pull request, and Argo CD makes your cluster match it.">
+<!-- `summary`, not `summary_large_image`: the large card reserves a 2:1 image
+     slot and renders it blank without an og:image, and there is no og:image —
+     the mark is marched from noise onto a <canvas> at runtime. -->
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" href="favicon.svg?v=18" type="image/svg+xml">
+<!-- The faces are vendored in `fonts/` and declared in styles.css — nothing
+     here waits on a third-party CDN, and no visitor's IP reaches one. All
+     three are preloaded because all three paint the first screen: Figtree is
+     the lockup and the claim, JetBrains Mono is the command, Nunito Sans is
+     the paragraph. `crossorigin` because font fetches are CORS-mode requests
+     even same-origin — omit it and the preload is fetched twice. -->
+<link rel="preload" href="fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/jetbrains-mono-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="styles.css?v=18">
+
+<!-- The ONLY inline script on the page, and it does one thing: mark that
+     scripting is on, before first paint. Without it the board renders as an
+     empty dotted panel still captioned "example fleet · illustration" — a
+     disclaimer for content that is not there — and the spheres leave holes.
+     Both are drawn by `hero.js`; neither has a no-script form.
+
+     It is in `<head>` rather than at the top of `hero.js` on purpose: the
+     stylesheet hides those boxes by default, so setting the class after
+     first paint would either flash them or shift the layout when they went.
+     No external request, no third-party code. -->
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- ADR-133: the sticky header. The site grew destinations — Features, Docs,
+     Devlog, About, GitHub — and they have to be reachable from any scroll
+     position on any page. The brand mark here is the hand-drawn 16px favicon,
+     the same one the devlog masthead has always used; the LIVE mark stays on
+     the page body where it can be looked at.
+
+     The Features dropdown is a <details>, not a hover menu: it opens on click
+     and Enter, closes on Escape and outside-click (a hero.js enhancement),
+     and without script it still opens and closes — a hover menu does none of
+     that for a keyboard. -->
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href="./">
+      <img src="favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Harness</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="features/">Overview</a></li>
+          <li><a href="features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="features/communication.html">Communication</a></li>
+          <li><a href="features/backups.html">Backups</a></li>
+          <li><a href="features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="docs/">Docs</a>
+      <a href="demo/">Demo</a>
+      <a href="devlog/">Devlog</a>
+      <a href="about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<!-- THE HERO KEPT ITS DEMONSTRATION (ADR-133 records the choice). The brochure
+     rebuild moved everything else — but the rolling command and the board it
+     draws are the product's signature, not a YAML explainer, and they stay.
+     What left: the alpha status line (product status lives in the docs,
+     ADR-133). The live mark now BOOKENDS the page — it leads the hero with
+     the headline underneath it, and returns larger in the closing section.
+
+     Everything the animation says is also said in static text, so a reader
+     with no JavaScript loses the demonstration and not the page. -->
+<!-- tabindex="-1" so the skip link actually MOVES focus. Without it the link
+     scrolls, focus stays on <body>, and the next Tab returns the reader to the
+     top of the document — which is the one thing the link exists to avoid. -->
+<main id="main" tabindex="-1">
+
+<div class="hero">
+
+  <!-- The logo leads, with the wordmark's own typography beside it, and the
+       headline sits underneath. The mark is LIVE — marched from noise every
+       frame, leaning toward the pointer — and the lockup + eyebrow stack
+       stands shorter than the mark, so identity, name and positioning all
+       ride on the height the mark was already spending. -->
+  <div class="hero__ident">
+    <canvas data-sphere class="hero__mark" aria-hidden="true"></canvas>
+    <div class="hero__id">
+      <p class="lockup lockup--hero"><span class="lockup__name">Harness</span><span class="lockup__sym">Hg</span></p>
+      <p class="eyebrow">
+        <span class="eyebrow__dot" aria-hidden="true"></span>
+        GitOps for agent harnesses
+      </p>
+    </div>
+  </div>
+
+  <h1 class="claim">
+    Your agent fleet, described in Git.
+    <em>Reviewable. Reproducible. Reversible.</em>
+  </h1>
+
+  <div class="band">
+    <div class="band__work">
+
+      <!-- The command shares its rule with the cycle's pause control, which
+           hero.js appends here. The control is NOT in this markup on purpose:
+           without script nothing cycles, and a pause button over a page that
+           is standing still would be a control for a state that cannot occur. -->
+      <div class="cmdrow">
+
+      <!-- The command. aria-hidden because it rewrites itself every few
+           seconds; a live region here would read the page aloud forever. The
+           note below the canvas carries the same content, statically. -->
+      <p class="cmd" data-cmd aria-hidden="true">
+        <span class="cmd__bin">hg</span>
+        <!-- Fixed at 8ch so a verb swap never reflows the target beside it.
+             That is what keeps the roll pure transform + opacity. -->
+        <!-- Seeded with scene 1 rather than left empty. `hero.js` overwrites
+             both on its first tick, so this costs a JS reader nothing — but
+             without it a no-script reader got the bare word `hg`, an
+             8ch void where the verb belongs, and a blinking caret after it. -->
+        <span class="roll roll--verb" data-verb>deploy</span>
+        <span class="roll roll--target" data-target>support-triage</span>
+        <span class="cmd__caret"></span>
+      </p>
+
+      </div><!-- /.cmdrow -->
+
+  <!-- What that command puts on the Fleet canvas. Eight kinds of object, and
+       the three channels that make them legible without reading a label:
+       SHAPE means kind, COLOUR means ownership and never status, MATERIAL
+       means authorship. Objects pop in at their own coordinates and the
+       connectors follow, so the order reads as cause. -->
+  <!-- `aria-hidden` sits on the STAGE, not on this box, so the one honest
+       label on the illustration reaches a screen reader. -->
+  <div class="canvas" data-canvas>
+    <div class="canvas__stage" aria-hidden="true">
+      <svg class="canvas__wires" viewBox="0 0 100 100" preserveAspectRatio="none" data-wires>
+        <defs>
+          <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7"
+                  orient="auto-start-reverse" markerUnits="strokeWidth">
+          <path d="M2 1.4 6 4 2 6.6" fill="none" stroke="currentColor" stroke-width="1"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </marker>
+        </defs>
+      </svg>
+      <div class="objects" data-objects></div>
+    </div>
+    <span class="canvas__label">
+      <span aria-hidden="true">example fleet · illustration</span>
+      <span class="visually-hidden">The board above shows an example fleet. It is an illustration, not live data.</span>
+    </span>
+  </div>
+
+    </div><!-- /.band__work -->
+  </div><!-- /.band -->
+
+  <!-- The paragraph names only fields the record actually HAS (ADR-131). -->
+  <div class="hero__foot">
+    <p class="note">Your agent, the apps it runs beside, the secrets it needs and how it is exposed — rendered as <strong>one record</strong> and written into Git. <strong>Argo CD</strong> applies it and keeps it applied.</p>
+
+    <p class="links">
+      <a class="btn" href="docs/">
+        Read the docs
+        <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
+      </a>
+      <!-- GitHub already holds the header's far edge, so the hero's second
+           action is the build story rather than a repeat (spec §4.2). -->
+      <a class="link" href="devlog/">Read the devlog</a>
+    </p>
+  </div>
+
+</div><!-- /.hero -->
+
+<!-- ADR-133: below the hero the page is a brochure — three value sections in
+     an alternating 4/8 rhythm, then a centered close. What each section says
+     is one idea; what each idea NEEDS (syntax, schemas, the component list)
+     lives in the docs it links to. The golden record block and the six-row
+     stack list moved out with this rebuild; ADR-133's Cost section records
+     what leaving them cost.
+
+     The visuals are the object system, hand-placed — the same grammar the
+     hero's board draws, so the sections and the demonstration read as one
+     product. The spec's pixel-agent scene is a later asset pass. -->
+
+<!-- A. Agent bundles — visual left, copy right. -->
+<section class="feat" id="bundles" aria-labelledby="bundles-h">
+  <figure class="feat__viz" aria-hidden="true">
+    <!-- The asset pass ADR-133 reserved: the office scene, the whole team in
+         one shared isometric space - the same diorama art every agent's
+         avatar ships in the product. -->
+    <img class="feat__scene" src="assets/team-office.png" alt="" loading="lazy"
+         width="1600" height="900" />
+    <figcaption class="feat__tag">the team · one shared office</figcaption>
+  </figure>
+  <div class="feat__copy">
+    <p class="sec__eyebrow">Agent bundles</p>
+    <h2 class="sec__title" id="bundles-h">Install the whole team.</h2>
+    <p class="sec__lede">Share agents with the tools and capabilities they need — together, as a reusable bundle. One declaration brings the team, what it ships, and what it depends on.</p>
+    <p class="feat__more"><a class="link link--fwd" href="features/agent-bundles.html">How bundles work</a></p>
+  </div>
+</section>
+
+<!-- B. GitOps — copy left, visual right. -->
+<section class="feat feat--flip" id="gitops" aria-labelledby="gitops-h">
+  <figure class="feat__viz" aria-hidden="true">
+    <!-- Hub and spoke: the mercury mark at the center, the tools it
+         orchestrates in grey around it - Kubernetes, Argo CD, Grafana,
+         Pulumi. Same asset pass as the office scene. -->
+    <img class="feat__scene" src="assets/gitops-hub.png" alt="" loading="lazy"
+         width="1600" height="900" />
+    <figcaption class="feat__tag">the tools · one hub</figcaption>
+  </figure>
+  <div class="feat__copy">
+    <p class="sec__eyebrow">GitOps-native</p>
+    <h2 class="sec__title" id="gitops-h">Orchestrated by the GitOps tools you already know.</h2>
+    <p class="sec__lede">Keep the workflow close to the repositories, reviews, and automation your team already uses. Mercury writes a record into Git and opens the pull request; <strong>Argo CD</strong> applies what merges and keeps the cluster matching it. <strong>No bespoke controller</strong> — reconciliation is off-the-shelf.</p>
+    <p class="feat__more"><a class="link link--fwd" href="docs/">How the pieces fit, in the docs</a></p>
+  </div>
+</section>
+
+<!-- C. The product surface — visual left, copy right. -->
+<section class="feat" id="fleet" aria-labelledby="fleet-h">
+  <figure class="feat__viz" aria-hidden="true">
+    <!-- The asset pass: the fleet as connected islands - one per domain,
+         wired together, with Hannah and Jared reviewing the status board. -->
+    <img class="feat__scene" src="assets/fleet-canvas.png" alt="" loading="lazy"
+         width="1600" height="900" />
+    <figcaption class="feat__tag">the fleet · every island wired in</figcaption>
+  </figure>
+  <div class="feat__copy">
+    <p class="sec__eyebrow">The product surface</p>
+    <h2 class="sec__title" id="fleet-h">See the whole fleet.</h2>
+    <p class="sec__lede">Understand who is working, how they connect, and what is happening across the project.</p>
+    <ul class="feat__list">
+      <li>See the fleet on one canvas.</li>
+      <li>Coordinate how agents publish and receive events.</li>
+      <li>Preserve backups that restore has actually rehearsed.</li>
+      <li>Move reusable capabilities between repositories.</li>
+    </ul>
+    <p class="feat__more"><a class="link link--fwd" href="features/">Explore the features</a></p>
+  </div>
+</section>
+
+<!-- The close: a centered brand moment, deliberately breaking the alternating
+     rhythm above it. The live mark — marched from noise every frame, leaning
+     toward the pointer — finally gets a size worth looking at. -->
+<section class="sec--cta" aria-labelledby="cta-h">
+  <canvas class="cta__mark" data-sphere aria-hidden="true"></canvas>
+  <h2 class="sec__title" id="cta-h">Build with it. Follow the build.</h2>
+  <p class="sec__lede">Start in the docs, or follow the devlog as the project evolves.</p>
+  <p class="sec__cta">
+    <a class="btn" href="docs/">
+      Read the docs
+      <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
+    </a>
+    <a class="link" href="devlog/">Read the devlog</a>
+  </p>
+</section>
+
+</main>
+
+<footer class="siteftr">
+  <p class="siteftr__id"><span class="siteftr__name">Harness</span><span class="siteftr__sym">Hg</span></p>
+  <nav class="siteftr__nav" aria-label="Footer">
+    <a class="link" href="docs/">Docs</a>
+    <a class="link" href="devlog/">Devlog</a>
+    <a class="link" href="features/">Features</a>
+    <a class="link" href="about.html">About</a>
+    <a class="link" href="https://github.com/factory-level/harness-hg">GitHub</a>
+  </nav>
+  <p class="siteftr__note">Created by Factory-level.</p>
+</footer>
+
+<script src="contour-sphere.js?v=18"></script>
+<script src="hero.js?v=18"></script>
+</body>
+</html>

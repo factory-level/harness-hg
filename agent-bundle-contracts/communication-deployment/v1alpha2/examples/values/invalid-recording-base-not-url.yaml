@@ -1,0 +1,13 @@
+# REJECTED: recordingBase must be an http(s) URL - anything else is either
+# a typo or an attempt to smuggle a value-shaped credential into Git.
+recordingBase: not-a-url
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  chatopsConnections: {}
+  producers: []
+  externalInputs: []
+  edges: []

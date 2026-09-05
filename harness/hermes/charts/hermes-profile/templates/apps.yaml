@@ -1,0 +1,95 @@
+{{- /*
+One Argo CD Application per spec.apps[] entry (app-of-apps): the profile's
+helm apps, declared in the distribution's hermes-gitops.yaml and resolved
+into the record by the gitops-emitter (values already merged, valuesRequired
+already satisfied - see the hermes-gitops.yaml contract).
+
+Source shape per entry:
+  - remote repo (https:// or oci://): a versioned helm chart pulled straight
+    from that repo ({repoURL, chart, targetRevision: version}). The repo must
+    be allow-listed - hermes.appsGuard fails the render otherwise, and the
+    AppProject's sourceRepos (bootstrap/project.yaml in the scaffolded GitOps
+    repo) enforces the same allowlist server-side.
+  - repo `local` (reserved word): the chart ships inside the platform repo -
+    the SAME repo + revision this chart itself is rendered from
+    (platformRepo.url/revision, threaded through cluster-values; the profiles
+    ApplicationSet's chart source). `chart` is the path into that repo;
+    no version field - local charts version with the platform.
+
+The Application resource lives in the argocd namespace (Argo CD only watches
+Applications there by default; apps-in-any-namespace is not assumed), inside
+the same AppProject as the parent (appProject.name). Destination is always
+in-cluster + this profile's own namespace - v1 is single-cluster, and the
+namespace already exists (the parent Application's CreateNamespace=true made
+it). The resources-finalizer makes a prune of this Application (profile
+decommission) cascade-delete the child chart's workloads instead of
+orphaning them.
+
+Labels tie each child app to its profile: hermes.labels carries the
+persona + managed labels the ApplicationSet stamps on the parent, plus a
+per-app label so `kubectl get applications -l ...` can slice either way.
+*/ -}}
+{{- /* appsManagedExternally (#498): when the hermes-gitops-apps
+ApplicationSet owns one Application per deployments/apps/ record, this
+template must render NOTHING - the same names from two controllers is a
+prune/adopt fight. The guard include sits inside the if: suppressed mode
+renders no Application for the allowlist to protect, and the compiler's
+TOPO008 already enforces the same allowlist on the records the AppSet
+reads. */ -}}
+{{- if not .Values.appsManagedExternally }}
+{{- include "hermes.appsGuard" . -}}
+{{- range .Values.spec.apps }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ include "hermes.appName" (dict "root" $ "app" .name) }}
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" $ | nindent 4 }}
+    hermes-gitops.factorylevel.dev/app: {{ .name | quote }}
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ $.Values.appProject.name }}
+  source:
+    {{- if eq .repo "local" }}
+    repoURL: {{ $.Values.platformRepo.url }}
+    path: {{ .chart }}
+    targetRevision: {{ $.Values.platformRepo.revision }}
+    {{- else }}
+    {{- /* Argo CD reads an oci://-schemed repoURL as a NATIVE OCI source
+    and ignores `chart:` (it resolves <repoURL>:<targetRevision> directly).
+    Helm-OCI registries therefore render SCHEME-LESS - Argo's classic
+    helm-OCI contract: {repoURL: host/path, chart, targetRevision} plus a
+    repository Secret carrying enableOCI. The record (and the allowlist
+    the appsGuard checks) keeps the oci:// form as the repo's identity;
+    only this rendered source drops the scheme. (#187) */}}
+    repoURL: {{ .repo | trimPrefix "oci://" }}
+    chart: {{ .chart }}
+    targetRevision: {{ .version }}
+    {{- end }}
+    {{- with .values }}
+    helm:
+      valuesObject:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+  destination:
+    name: in-cluster
+    namespace: {{ $.Release.Namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+{{- end }}
+{{- end }}

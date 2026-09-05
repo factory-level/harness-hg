@@ -1,0 +1,13 @@
+# INVALID: kind application must bind a specific apps[] entry.
+apiVersion: dashboard.hermes-gitops/v1alpha1
+kind: NexusContribution
+metadata:
+  id: broken
+  title: Broken
+spec:
+  components:
+    - id: content-kanban
+      kind: application
+      title: Content Kanban
+      bind:
+        profile: marketing-manager

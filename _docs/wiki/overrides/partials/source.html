@@ -1,0 +1,77 @@
+{#-
+  Overrides Material's `partials/source.html` (#616).
+
+  Two additions, both deliberately subordinate to the primary navigation rather
+  than competing with it:
+
+  - a **Get Started** quick action, because getting running is what a reader
+    most often arrives wanting and it was otherwise several clicks deep. It is
+    NOT an extra nav tab — that would duplicate the section it links to.
+  - the **documentation version**, so a reader can tell which repository state
+    these docs describe, and can tell a release from a working build.
+
+  The version is computed at BUILD time by infra/scripts/mkdocs_version_hook.py
+  (applying the rule in derive-version.py). Nothing is committed: the value
+  embeds the HEAD sha for unreleased docs, so a committed file would be stale the
+  instant it was written.
+
+  Both hrefs go through the `url` filter WITHOUT a leading slash: mkdocs emits a
+  slash-prefixed value literally, which on GitHub Pages (site at /harness-hg/docs/)
+  pointed "Get started" at the origin root. A relative value is rewritten per
+  page; `../demo/` climbs one level above the wiki to the site root, where
+  `make site` puts the Nexus demo.
+
+  Everything below the marker is Material's own source link, copied verbatim
+  because a partial has no `super()` to call.
+-#}
+<div class="hg-utils">
+  <a
+    class="hg-install"
+    href="{{ 'get-started/' | url }}"
+    title="Get the platform and your first agent team running"
+  >
+    <svg class="hg-install__icon" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 3v10" />
+      <path d="m8 11 4 4 4-4" />
+      <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+    </svg>
+    <span class="hg-install__label">Get started</span>
+  </a>
+  <a
+    class="hg-install"
+    href="{{ '../demo/' | url }}"
+    title="Interactive example dashboard with mock data — no backend required"
+  >
+    <svg class="hg-install__icon" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="1.7"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m10 8.5 5 3.5-5 3.5z" />
+    </svg>
+    <span class="hg-install__label">Demo</span>
+  </a>
+  {% if config.extra.hg_version %}
+    <a
+      class="hg-version"
+      href="{{ config.repo_url }}{{ '/releases' if config.extra.hg_released else '/commits/main' }}"
+      title="{{ 'Tagged release of the Harness Hg platform' if config.extra.hg_released else 'Unreleased docs, built from this commit. Not a tagged release' }}"
+      rel="noopener"
+    >
+      <span class="hg-version__tier">beta</span>
+      <span class="hg-version__num">{{ config.extra.hg_version }}</span>
+    </a>
+  {% endif %}
+</div>
+
+{#- Material's own source link, verbatim. -#}
+<a href="{{ config.repo_url }}" title="{{ lang.t('source') }}" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    {% set icon = config.theme.icon.repo or "fontawesome/brands/git-alt" %}
+    {% include ".icons/" ~ icon ~ ".svg" %}
+  </div>
+  <div class="md-source__repository">
+    {{ config.repo_name }}
+  </div>
+</a>

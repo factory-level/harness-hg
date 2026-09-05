@@ -1,0 +1,81 @@
+# The read surface behind the runtime overlay (ADR-55): Argo Applications
+# and labelled backup CronJobs. Nothing writes, and nothing reads a Secret
+# or a ConfigMap cluster-wide - every widening here is a widening of what a
+# compromised read-only UI pod could enumerate.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nexus-argo-reader
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+  # Backup routines are labelled CronJobs and can live in any profile
+  # namespace, so this is necessarily cluster-scoped. Jobs are the
+  # routines' RUNS (the Backups view's per-run strip joins them back by
+  # ownerReferences - a Job carries no routine label to select on). No
+  # Pods, no logs.
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get", "list"]
+  # Workspace mount PRESENCE (ADR-77): /nexus/workspaces joins the
+  # declared bindings with the running pod's volumeMounts, and profile
+  # pods live one per namespace - cluster-scoped like the CronJob rule
+  # above, for the same reason. Pod SPECS only: no exec, no logs, and a
+  # spec carries env NAMES and secret REFERENCES, never values. This is
+  # still a widening - a compromised UI pod can now enumerate pod shapes
+  # fleet-wide - and it is recorded as such in ADR-77.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nexus-argo-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nexus-argo-reader
+subjects:
+  - kind: ServiceAccount
+    name: nexus
+    namespace: {{ .Release.Namespace }}
+---
+# The operator-host records (ADR-55 / M01, ADR-59 / #282): NAMED
+# ConfigMaps in this namespace, get only. A namespaced Role with
+# resourceNames, not a wider ClusterRole rule - "read ConfigMaps"
+# cluster-wide would include every mounted config in every namespace, and
+# this pod needs exactly these two. Adding a third means adding it here:
+# `_k8s_get_optional` treats only a 404 as "absent", so a missing grant
+# surfaces as a 500 rather than as an empty surface, which is the
+# behaviour we want and the reason this list has to stay in step.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nexus-reconciliation-reader
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - hermes-reconciliation-status
+      - hermes-platform-backup-status
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nexus-reconciliation-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nexus-reconciliation-reader
+subjects:
+  - kind: ServiceAccount
+    name: nexus
+    namespace: {{ .Release.Namespace }}

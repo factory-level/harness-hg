@@ -1,0 +1,16 @@
+# The two v1alpha2 environment knobs, emitted only when the operator asked
+# (topology emit --router-image / --observer-url). A factory-style host with
+# a pre-AVX2 CPU needs the baseline image; the observer URL doubles as the
+# recording base and the lifecycle-record mirror target.
+image: us-docker.pkg.dev/example/hermes/hermes-event-router:baseline-1
+recordingBase: http://192.0.2.10:8130
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  chatopsConnections: {}
+  producers: []
+  externalInputs: []
+  edges: []

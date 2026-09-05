@@ -1,0 +1,29 @@
+{{- /*
+Served on the profile's conventional hostname (same host as the site
+app) under its own path — the "separate page from the wiki" contract.
+Two Ingress objects on one host with different paths merge cleanly in
+Traefik/k8s Ingress semantics; the site owns "/", this page owns
+ingress.path.
+*/ -}}
+{{- if .Values.ingress.enabled }}
+{{- $host := .Values.ingress.host | default (printf "%s.%s" (trimPrefix "hermes-" .Release.Namespace) .Values.ingress.baseDomain) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-secret-tester
+  labels:
+    app.kubernetes.io/name: secret-tester
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-secret-tester
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

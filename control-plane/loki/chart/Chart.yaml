@@ -1,0 +1,11 @@
+apiVersion: v2
+name: loki
+description: >-
+  Control-plane log aggregation (#661, ADR 0165): single-binary Loki with
+  filesystem storage and bounded retention, a promtail DaemonSet labeling
+  every stream with its plane (control-plane/planes.yaml), a declaratively
+  provisioned Grafana datasource (fixed uid "loki" - load-bearing, panels
+  reference it), and one control-plane logs dashboard. Deliberately lean
+  (the #506 Helm-secret-cap lesson): hand-written templates, no vendored
+  upstream chart - `helm dependency update` runs nowhere here.
+version: 0.1.0

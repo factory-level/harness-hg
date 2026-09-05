@@ -1,0 +1,7 @@
+# The frozen Hermes harness ships its own gateway.
+contract: harness-declaration/v1alpha1
+spec:
+  name: hermes
+  status: frozen-legacy
+  gateway:
+    kind: native

@@ -1,0 +1,11 @@
+# A router with nothing routed yet - legal: producers may precede routes.
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  chatopsConnections: {}
+  producers: []
+  externalInputs: []
+  edges: []

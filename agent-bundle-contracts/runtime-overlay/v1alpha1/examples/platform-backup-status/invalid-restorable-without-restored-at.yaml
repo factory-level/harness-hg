@@ -1,0 +1,11 @@
+# INVALID: `restorable` with no `restoredAt`. This is the precise failure
+# ADR-52 exists to prevent - a backup claiming it has been verified while
+# naming no moment at which that happened. The two facts arrive together or
+# the state stays `available`.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: PlatformBackupStatus
+observedAt: "2026-08-01T05:02:19Z"
+backupId: hg-2026-08-01T03-11-52z
+createdAt: "2026-08-01T03:11:52Z"
+verification:
+  state: restorable

@@ -1,0 +1,52 @@
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+spec:
+  name: unset
+  profiles:
+    - name: unset
+      source: https://example.invalid/unset.git
+      sha: "0000000000000000000000000000000000000000"
+      gatewayEnabled: true
+      repositoryRefs: []
+  repositories: []
+  deployment:
+    diskSizeGb: 20
+    workspaceSizeGb: 20
+  dashboard:
+    enabled: false
+    port: 9119
+
+# Platform-owned backup configuration, layered from cluster-values.
+# `providers.backup` alone decides whether the routine renders: bundling
+# retires each member's own backup CronJob, so the members' already-
+# declared intent has nowhere else to live (see templates/backup.yaml).
+providers:
+  backup: none
+backup:
+  # Offset from the profile chart's 03:00 default so a fleet running both
+  # does not start every archive in the same minute.
+  schedule: "30 3 * * *"
+  retention: 7
+  image:
+    repository: python
+    tag: "3.12-slim"
+  pvc:
+    size: 5Gi
+    # unset -> the cluster default StorageClass.
+    storageClassName: ""
+
+# -- networkPolicy: opt-in ingress restriction for the bundle pod, the
+# same shape and the same default the profile chart uses. Off by default
+# so a cluster whose CNI does not enforce NetworkPolicy does not silently
+# look protected; on, it admits exactly the ports the members declare.
+networkPolicy:
+  enabled: false
+
+# -- observability.observerUrl: where the bundled gateways' lifecycle
+# records go (hermes-gitops #476). Rendered as HERMES_OBSERVER_URL on
+# every profile gateway container; empty = emission off.
+observability:
+  observerUrl: ""

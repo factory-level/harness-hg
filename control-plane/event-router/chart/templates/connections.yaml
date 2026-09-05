@@ -1,0 +1,40 @@
+{{- /*
+The inbound connection gateway's secrets (ADR-152): one ExternalSecret per
+spec.connections[] entry, reading ONLY the verification key (<verifyKey>:
+the Discord public key, the GitHub webhook secret) of the platform Secret
+hermes-secrets/<secretName> through the hermes-gitops ClusterSecretStore
+into this namespace, mounted at /secrets/connections/<name>/<verifyKey>.
+The router never holds a bot token or an App private key - a router
+compromise yields the power to verify, not to act.
+*/ -}}
+{{- range .Values.spec.connections | default list }}
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ include "hermes-event-router.service" $ }}-connection-{{ .name }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    hermes-gitops.factorylevel.dev/connection: {{ .name | quote }}
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: hermes-gitops
+    kind: ClusterSecretStore
+  target:
+    name: {{ include "hermes-event-router.service" $ }}-connection-{{ .name }}
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: {{ .verifyKey }}
+      remoteRef:
+        key: {{ .secretName }}
+        property: {{ .verifyKey }}
+        conversionStrategy: Default
+        decodingStrategy: None
+        metadataPolicy: None
+{{- end }}

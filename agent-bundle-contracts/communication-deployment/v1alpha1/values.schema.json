@@ -1,0 +1,511 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/communication-deployment/v1alpha1/values.schema.json",
+  "title": "Event-router configuration (deployments/communication/<id>/values.yaml)",
+  "description": "The router instance's ENTIRE routing configuration, compiler-written: producers with their generated ingest paths, external webhook bindings, delivery edges (agent and ChatOps), ChatOps connection references, and the durable provider. The hermes-event-router chart consumes this verbatim - the compiled graph, not the runtime, is the authority on routing, and a payload can never select a destination this file does not declare. Credential REFERENCES only; additionalProperties: false everywhere means a pasted secret value fails validation instead of entering Git.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec"
+  ],
+  "$defs": {
+    "credentialRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "env": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "retry",
+        "deadLetter"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "queued"
+          ]
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxAttempts",
+            "backoff"
+          ],
+          "properties": {
+            "maxAttempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "backoff": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "exponential"
+              ]
+            }
+          }
+        },
+        "deadLetter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "retention": {
+              "type": "string"
+            }
+          }
+        },
+        "ordering": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key",
+            "onFailure"
+          ],
+          "properties": {
+            "mode": {
+              "const": "fifo"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1
+            },
+            "onFailure": {
+              "type": "string",
+              "enum": [
+                "block",
+                "dead-letter-and-continue"
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "router",
+        "chatopsConnections",
+        "producers",
+        "externalInputs",
+        "edges"
+      ],
+      "properties": {
+        "router": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "scope",
+            "namespace",
+            "service"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "namespace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "service": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "durableProvider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plugin"
+          ],
+          "properties": {
+            "plugin": {
+              "type": "string",
+              "minLength": 1
+            },
+            "config": {
+              "type": "object"
+            }
+          }
+        },
+        "chatopsConnections": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1
+              },
+              "credentialRef": {
+                "$ref": "#/$defs/credentialRef"
+              }
+            }
+          }
+        },
+        "producers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "profile",
+              "app",
+              "appInstance",
+              "output",
+              "event",
+              "ingestPath",
+              "routes"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "app": {
+                "type": "string",
+                "minLength": 1
+              },
+              "appInstance": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output": {
+                "type": "string",
+                "minLength": 1
+              },
+              "event": {
+                "type": "string",
+                "minLength": 1
+              },
+              "schema": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string",
+                "description": "Payload dot-path the router extracts envelope.subject from."
+              },
+              "ingestPath": {
+                "type": "string",
+                "pattern": "^/v1/events/"
+              },
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "externalInputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "profile",
+              "name",
+              "event",
+              "verification",
+              "hookPath",
+              "routes"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "event": {
+                "type": "string",
+                "minLength": 1
+              },
+              "schema": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string"
+              },
+              "verification": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "secretRef"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secretRef": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name",
+                      "key"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "key": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              },
+              "accepts": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "hookPath": {
+                "type": "string",
+                "pattern": "^/v1/hooks/"
+              },
+              "routes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "route",
+              "profile",
+              "from",
+              "event",
+              "kind",
+              "delivery"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "route": {
+                "type": "string",
+                "minLength": 1
+              },
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "from": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "producer": {
+                    "type": "string"
+                  },
+                  "externalInput": {
+                    "type": "string"
+                  }
+                }
+              },
+              "event": {
+                "type": "string",
+                "minLength": 1
+              },
+              "filter": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "chatops"
+                ]
+              },
+              "agent": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "profile",
+                  "handler",
+                  "instance",
+                  "namespace",
+                  "service",
+                  "port",
+                  "path",
+                  "url",
+                  "signature",
+                  "secretName",
+                  "session"
+                ],
+                "properties": {
+                  "profile": {
+                    "type": "string"
+                  },
+                  "handler": {
+                    "type": "string"
+                  },
+                  "instance": {
+                    "type": "string"
+                  },
+                  "namespace": {
+                    "type": "string"
+                  },
+                  "service": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "integer"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "The in-cluster URL of the handler on the target profile's OWN Hermes gateway - the router delivers here, HMAC-signed, and never hosts the handler itself."
+                  },
+                  "signature": {
+                    "type": "string"
+                  },
+                  "secretName": {
+                    "type": "string",
+                    "description": "The instance's env Secret (WEBHOOK_SECRET lives there). A reference - the value never appears in this tree."
+                  },
+                  "session": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "mode"
+                    ],
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "per-event",
+                          "keyed",
+                          "route"
+                        ]
+                      },
+                      "key": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "chatops": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "space",
+                  "alias",
+                  "destination",
+                  "provider"
+                ],
+                "properties": {
+                  "space": {
+                    "type": "string"
+                  },
+                  "alias": {
+                    "type": "string"
+                  },
+                  "destination": {
+                    "type": "string"
+                  },
+                  "provider": {
+                    "type": "string"
+                  }
+                }
+              },
+              "delivery": {
+                "$ref": "#/$defs/delivery"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

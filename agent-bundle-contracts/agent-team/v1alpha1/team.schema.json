@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/agent-team/v1alpha1/team.schema.json",
+  "title": "Agent team (harness-hg/team.yaml)",
+  "description": "`harness-hg/team.yaml` at an agent-team repository's root - the team's identity, the harnesses it uses, and the contract version every other `harness-hg/*.yaml` in the repo is read under. Written by the team. Read first by `hg validate --dir`, `hg topology plan|emit`, `hg onboard` and the emitter: its presence is what makes a directory an agent-team repository, and `name` is the ONE operational category every agent record, backup, alarm and event route of this repo groups under on Nexus. Absent: the repository is read as the legacy layout (`hermes-gitops.yaml` beside each agent, `environment/` at the root), never as a broken team.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "name",
+    "displayName",
+    "harnesses"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/agent-team/v1alpha1",
+      "description": "Pins the agent-team contract this document is read under; the CLI refuses versions it does not implement."
+    },
+    "kind": {
+      "const": "AgentTeam",
+      "description": "Document kind - always AgentTeam."
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40,
+      "description": "The team's machine name - the distribution identity every record of this repository carries. DNS-1123 label, at most 40 characters. Supersedes `bundles.yaml` v1alpha4's `distribution.name`; a repo declaring both must agree."
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The human-facing name Nexus renders for this team. Presentation only - every join uses `name`."
+    },
+    "harnesses": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "eve",
+          "hermes"
+        ]
+      },
+      "description": "Every harness this repository has agents for. Each entry names a directory `agents/<harness>/`; a harness directory not listed here, or a listed harness with no directory, is a validation finding. The values are the platform's declared harness names (`harness/<name>/harness.yaml`)."
+    }
+  }
+}

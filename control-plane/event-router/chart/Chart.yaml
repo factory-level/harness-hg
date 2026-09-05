@@ -1,0 +1,13 @@
+apiVersion: v2
+name: hermes-event-router
+description: >-
+  The communication plane's ONE runtime component per scope (ADR-39):
+  publisher adapter, delivery worker, session router, ChatOps adapter and
+  the shared external webhook gateway, one bun process. Consumes a
+  deployments/communication/<id>/values.yaml record VERBATIM as its
+  routing configuration - the compiled graph, not the runtime, decides
+  destinations. It delivers events TO each profile's own Hermes agent
+  gateway (HMAC-signed, the relay's scheme); it is NOT a replacement for
+  the agent gateway and never hosts an agent handler.
+type: application
+version: 0.1.0

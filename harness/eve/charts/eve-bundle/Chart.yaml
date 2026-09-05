@@ -1,0 +1,23 @@
+apiVersion: v2
+name: eve-bundle
+description: >-
+  Runs a declared bundle of Eve agents in one StatefulSet, one pod and one
+  shared data volume (ADR-150, the Eve realization of ADR-28's profile
+  bundles). Each member gets its own build initContainer, its own `eve start`
+  container on its own port, its own minted route-auth credential and its
+  own state root under /app/members/<name>; the bundle owns scheduling,
+  persistent storage, the workspaces claim and the backup routine. Compiled
+  from environment/bundles.yaml by `hg bundle` into deployments/bundles/
+  <name>/values.yaml (spec.runtime: eve) and selected by the bundles
+  ApplicationSet from the record's spec.chart. appVersion is the pinned eve
+  release (versions.json runtimes.eve.version).
+type: application
+version: 0.1.0
+appVersion: "0.42.0"
+keywords:
+  - hermes-gitops
+  - eve-agent
+  - bundles
+home: https://github.com/factory-level/harness-hg
+sources:
+  - https://github.com/factory-level/harness-hg

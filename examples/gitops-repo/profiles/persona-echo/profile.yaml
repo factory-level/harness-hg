@@ -1,0 +1,35 @@
+# Value layer 3 — persona-echo's instance record (highest precedence).
+# PLAIN HELM VALUES, not a Kubernetes custom resource: there is no
+# HermesProfile CRD. Every key under `spec:` is a hermes-profile chart
+# value. The record's identity is its directory name (persona-echo), read
+# by the ApplicationSet as {{.path.basename}}.
+#
+# WRITTEN BY THE PLUGIN. This is generated data, not hand-authored config.
+# The plugin renders it from the distribution's own distribution.yaml (see
+# harness/hermes/identity/examples/persona-echo/ in the harness-hg repo) when the
+# profile is installed. Hand-edit it and the plugin pauses and reports
+# drift instead of overwriting you.
+spec:
+  persona: persona-echo
+  source: github.com/factory-level/persona-echo
+  ref: v1.0.0
+  sha: e1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0
+  distributionVersion: 1.0.0
+  deployment:
+    diskSizeGb: 10
+  # Resolved Helm apps (from the distribution's hermes-gitops.yaml, all
+  # value layers already merged). One Argo CD Application renders per entry.
+  # `repo: local` = the chart ships with the platform; no version field.
+  apps:
+    - name: test-page
+      chart: cli/test-env/charts/test-page
+      repo: local
+  envRequires:
+    - ANTHROPIC_API_KEY
+  expose:
+    services:
+      - name: tools
+        port: 8080
+        path: /
+    access:
+      policy: service-token

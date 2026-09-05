@@ -1,0 +1,6 @@
+# A binding without a url is a name with nothing to inject - the whole
+# point of the file is the resolved URL, so its absence must reject.
+version: 1
+bindings:
+  sentiment-feed:
+    implementation: external-sentiment-api

@@ -1,0 +1,16 @@
+# GENERATED from the environment spec - do not hand-edit.
+# Source of truth: the environment.yaml this file was compiled from
+# (hg env plan diffs, hg env apply rewrites; make test gates drift).
+# Secret values are pulumi-encrypted ciphertext, written only by
+# `pulumi config set --secret` and carried through regeneration
+# untouched - editing any OTHER line here is overwritten on the next
+# apply.
+secretsprovider: gcpkms://projects/example-project/locations/us/keyRings/pulumi/cryptoKeys/pulumi-root
+config:
+  gcp:project: example-project
+  hermes-gitops-state:rootKmsKeyId: projects/example-project/locations/us/keyRings/pulumi/cryptoKeys/pulumi-root
+  hermes-gitops-state:deployerGroup: deployers@example.dev
+  hermes-gitops-state:agents:
+    - example
+  hermes-gitops-state:backupEnvironments:
+    - example

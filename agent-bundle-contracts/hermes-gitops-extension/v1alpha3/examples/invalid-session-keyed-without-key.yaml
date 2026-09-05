@@ -1,0 +1,21 @@
+# session.mode: keyed requires the key that sessions group by.
+contractVersion: 3
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts
+            session:
+              mode: keyed

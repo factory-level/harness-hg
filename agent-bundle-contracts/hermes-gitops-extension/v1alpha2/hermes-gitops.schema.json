@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/hermes-gitops-extension/v1alpha2/hermes-gitops.schema.json",
+  "title": "GitOps extension v2 (hermes-gitops.yaml with contractVersion: 2)",
+  "description": "Contract version 2 of the one file a developer adds beside distribution.yaml. Additive over v1alpha1: the five v1 blocks (apps, deployment, expose, backup, gitAuthSecretRef) stay validation-compatible (every valid v1 block body remains valid here; apps entries additionally admit topology and endpoints), and four new blocks arrive - contractVersion (the required version marker; v1alpha1 admits no unknown key, so a v2 file can never validate as v1), topology (supported layouts + agent multiplicity/data boundary), endpoints (typed, per may provide capabilities), and requires (capabilities consumed by name, with locality and URL injection). apps[] entries gain optional topology and endpoints of their own. Every topology field is optional with documented defaults - absent topology means supportedLayouts [single], agent {singleton, target}, apps {per-agent, target}, which reproduces v1 behaviour exactly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion"
+  ],
+  "$defs": {
+    "capabilityName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "DNS-label capability name. Unique per provider within the compiled catalogue at a given locality."
+    },
+    "dataBoundary": {
+      "type": "string",
+      "enum": [
+        "global",
+        "region",
+        "target"
+      ],
+      "description": "The NARROWEST boundary this component's state may leave. Placement says where compute runs; dataBoundary says where the data must stay. The compiler rejects a boundary narrower than the scope the component's consumers span."
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "port",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "DNS-label endpoint name. Becomes the first hostname label of the canonical URL. Uniqueness within the owning component is enforced by the compiler, not here - uniqueItems only rejects entries identical in every field."
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63,
+          "description": "Kubernetes Service backing this endpoint. REQUIRED on app endpoints (the compiler cross-checks it against the rendered chart under doctor --deep); FORBIDDEN on agent endpoints, which are backed by the agent pod's own Service."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Optional path prefix; defaults to /."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "internal",
+            "private",
+            "authenticated",
+            "public",
+            "webhook",
+            "external"
+          ],
+          "description": "Who consumes this endpoint: internal = same component, cluster DNS only, never exposed; private = other workloads in the environment; authenticated = a person, behind the identity provider; public = anyone, and ONLY ever explicit; webhook = an external event sender (signature declaration required); external = a named machine client under a service-token policy. Authentication is per-endpoint - v1's profile-level expose.access.policy has no v2 equivalent."
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Signature-verification scheme the receiver enforces (e.g. hmac-sha256). REQUIRED when type is webhook - an unverifiable webhook endpoint is rejected at compile (TOPO013)."
+        },
+        "provides": {
+          "$ref": "#/$defs/capabilityName",
+          "description": "Capability this endpoint provides. Consumers cite the capability name in requires[] instead of a literal URL; the compiler binds and injects the resolved URL."
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "webhook"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "signature"
+        ]
+      }
+    },
+    "agentEndpoint": {
+      "$ref": "#/$defs/endpoint",
+      "not": {
+        "required": [
+          "service"
+        ]
+      }
+    },
+    "appEndpoint": {
+      "$ref": "#/$defs/endpoint",
+      "required": [
+        "service"
+      ]
+    }
+  },
+  "properties": {
+    "contractVersion": {
+      "const": 2,
+      "description": "The authored contract version. Presence of this key is the v2 marker; a file without it is a v1 file validated against v1alpha1. Emitted records stay markerless - only AUTHORED files carry a version key."
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What this profile supports, never where it runs - placement is the environment's decision (environment/topology.yaml), constrained by these declarations.",
+      "properties": {
+        "supportedLayouts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "single",
+              "replicated",
+              "hub-spoke"
+            ]
+          },
+          "description": "Layouts this profile has been designed and validated for. An environment cannot deploy the profile into a layout not listed here (TOPO001). Default when absent: [single]."
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "multiplicity": {
+              "type": "string",
+              "enum": [
+                "singleton",
+                "per-region",
+                "per-target"
+              ],
+              "description": "How many physical agent instances the compiler creates. per-agent is meaningless for the agent itself and is rejected here. Default: singleton."
+            },
+            "dataBoundary": {
+              "$ref": "#/$defs/dataBoundary",
+              "description": "Default: target."
+            }
+          }
+        }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/agentEndpoint"
+      },
+      "description": "The agent's own endpoints (backed by the agent pod - no service field). Replaces v1's expose.services with typed entries; a v1 file's expose block is projected onto this shape during adaptation."
+    },
+    "requires": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "inject"
+        ],
+        "properties": {
+          "capability": {
+            "$ref": "#/$defs/capabilityName"
+          },
+          "locality": {
+            "type": "string",
+            "enum": [
+              "same-target",
+              "same-region",
+              "global"
+            ],
+            "description": "Where the provider must be relative to this consumer. Default: global. A same-region requirement that resolves outside the region is a compile error - never a silent fallback."
+          },
+          "inject": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Exactly one destination for the resolved URL: an agent environment variable, or a dot-path into a declared app's values (resolved after placement, before values are emitted).",
+            "properties": {
+              "env": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "Agent environment variable name (convention: HERMES_CAP_<NAME>_URL). Collisions with declared envRequires or another injection are a compile error (TOPO014)."
+              },
+              "appValue": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "app",
+                  "path"
+                ],
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 40,
+                    "description": "Name of an app declared in THIS profile's apps[] (TOPO015 rejects an undeclared app)."
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$",
+                    "description": "Dot-path into the app's merged values where the resolved URL lands."
+                  }
+                }
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "env"
+                ]
+              },
+              {
+                "required": [
+                  "appValue"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "description": "Capabilities this profile consumes, by name. The compiler fails on a missing provider (TOPO004) and on an ambiguous one (TOPO005); hardcoded cross-profile URLs are the thing this block deletes."
+    },
+    "apps": {
+      "type": "array",
+      "description": "The helm apps this profile launches, in author order - v1's shape, plus optional topology and endpoints per entry. Each entry becomes one physical app instance per its multiplicity.",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "chart",
+          "repo"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 40,
+            "description": "DNS-label app name, unique within the file."
+          },
+          "chart": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Chart name in the remote helm repo, or (for `repo: local`) the chart's path inside the platform/GitOps chart tree."
+          },
+          "repo": {
+            "type": "string",
+            "pattern": "^(local|https://\\S+|oci://\\S+)$",
+            "description": "Helm repo URL (https:// or oci://), or the RESERVED WORD `local`."
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Chart version. REQUIRED for remote repos; FORBIDDEN for `repo: local`."
+          },
+          "values": {
+            "type": "object",
+            "description": "Inline chart values - the author's defaults. Fleet defaults and per-instance overrides deep-merge on top; capability injections land last."
+          },
+          "valuesRequired": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$"
+            },
+            "description": "Dot-paths into the merged values the OPERATOR must supply. Validated pre-render."
+          },
+          "topology": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "multiplicity": {
+                "type": "string",
+                "enum": [
+                  "singleton",
+                  "per-region",
+                  "per-target",
+                  "per-agent"
+                ],
+                "description": "Default: per-agent (one instance paired with every physical agent instance - v1's implicit behaviour)."
+              },
+              "dataBoundary": {
+                "$ref": "#/$defs/dataBoundary",
+                "description": "Default: target."
+              }
+            }
+          },
+          "endpoints": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/appEndpoint"
+            },
+            "description": "Endpoints this app provides, each backed by a named Kubernetes Service the chart renders."
+          }
+        },
+        "if": {
+          "properties": {
+            "repo": {
+              "const": "local"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "version"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "version"
+          ]
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Agent pod knobs - pod-compute only (unchanged from v1).",
+      "properties": {
+        "baseImageTag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "diskSizeGb": {
+          "type": "integer",
+          "minimum": 10
+        }
+      }
+    },
+    "expose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "services"
+      ],
+      "description": "v1's exposure block, kept verbatim for the additive window: a v2 file MAY still carry it (the emitter renders it into the record unchanged), but endpoints[] is the v2 surface and the compiler treats expose as the legacy projection. Declaring the same port in both is a doctor finding.",
+      "properties": {
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "port"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^/"
+              }
+            }
+          }
+        },
+        "access": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "policy": {
+              "type": "string",
+              "enum": [
+                "service-token",
+                "idp",
+                "mixed"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schedule"
+      ],
+      "description": "Backup intent (unchanged from v1 - schedule + retention only; the destination is a platform concern).",
+      "properties": {
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retention": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "gitAuthSecretRef": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of a Kubernetes Secret in the instance's own namespace holding the credential to clone a PRIVATE spec.source (unchanged from v1)."
+    }
+  }
+}

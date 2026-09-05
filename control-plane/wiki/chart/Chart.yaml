@@ -1,0 +1,9 @@
+apiVersion: v2
+name: wiki
+description: >-
+  The product manual, in-cluster (#664, ADR 0167): nginx serving the
+  make wiki-build output baked into the wiki image at the platform
+  revision it documents. /version answers the served platform version -
+  the version-correspondence acceptance probe. Deep-linkable: the site's
+  URL scheme is the mkdocs tree (stable /platform/..., /reference/...).
+version: 0.1.0

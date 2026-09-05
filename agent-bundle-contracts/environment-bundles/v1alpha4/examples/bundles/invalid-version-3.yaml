@@ -1,0 +1,4 @@
+# INVALID: version 3 documents belong to the v1alpha3 directory.
+version: 3
+distribution:
+  displayName: Marketing Team

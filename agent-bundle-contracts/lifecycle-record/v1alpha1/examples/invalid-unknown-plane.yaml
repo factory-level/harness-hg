@@ -1,0 +1,9 @@
+# The plane enum is closed. A new plane is a deliberate contract change,
+# never something an emitter introduces by writing an unfamiliar string -
+# a trace that spans a plane nothing can name is unfollowable.
+version: 1
+recordId: 4f8c1a2e-3b7d-4c9e-8a1f-0b2c3d4e5f60
+traceId: 9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d
+plane: billing
+type: billing.charged
+occurredAt: "2026-08-12T02:00:00Z"

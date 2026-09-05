@@ -1,0 +1,13 @@
+# The local environment: the real connection alias rebound to the
+# recording plugin (messages are captured, never sent) and Redis Streams
+# as the durable transport. Routes keep referencing
+# company_discord#<channel> unchanged - same authored IaC locally and in
+# production.
+version: 1
+
+chatopsConnections:
+  company_discord:
+    provider: recording
+
+durableProvider:
+  plugin: redis-streams

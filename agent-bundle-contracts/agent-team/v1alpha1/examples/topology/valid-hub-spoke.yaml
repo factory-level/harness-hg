@@ -1,0 +1,10 @@
+# The layout the team is built for. No cluster names: the bootstrap grants
+# each region its targets.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Topology
+layout: hub-spoke
+sovereignty: {mode: permissive}
+hubRegion: ca-west
+regions:
+  - {name: ca-west, jurisdiction: CA}
+  - {name: eu-west, jurisdiction: EU}

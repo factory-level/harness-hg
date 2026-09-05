@@ -1,0 +1,9 @@
+# Invalid: unknown top-level keys are rejected (additionalProperties:
+# false) - a typo like "aps" must fail packaging loudly, never be
+# silently dropped from the rendered record. (The removed legacy keys -
+# workloads, reach, targetCluster - fail the same way.)
+aps:
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm
+    version: 1.9.1

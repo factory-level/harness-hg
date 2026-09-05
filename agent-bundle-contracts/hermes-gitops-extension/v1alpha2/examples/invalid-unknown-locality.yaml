@@ -1,0 +1,7 @@
+# locality is a closed enum: same-target | same-region | global.
+contractVersion: 2
+requires:
+  - capability: content-board
+    locality: same-cluster
+    inject:
+      env: HERMES_CAP_CONTENT_BOARD_URL

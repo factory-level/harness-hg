@@ -1,0 +1,4 @@
+# Chart sources are https:// or oci:// only; `local` is implicit and never
+# listed.
+allowedChartSources:
+  - local

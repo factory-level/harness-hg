@@ -1,0 +1,16 @@
+# Local test config. LOCAL DEV constants - note the secret is DISTINCT
+# from platform-sre's: a delivery signed for one profile can never verify
+# at the other.
+version: 1
+profile: .
+
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+  WEBHOOK_ENABLED: "1"
+  WEBHOOK_SECRET: local-dev-unrelated-sre-hmac-fedcba9876543210
+
+smoke:
+  - service: hermes-unrelated-sre
+    port: 8642
+    path: /health
+    expect_contains: '"status": "ok"'

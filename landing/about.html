@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About — Harness Hg</title>
+<meta name="description" content="Why Harness Hg exists, how it is built in the open, and who builds it.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="About — Harness Hg">
+<meta property="og:description" content="Why Harness Hg exists, how it is built in the open, and who builds it.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. The two text faces paint the
+     first screen here; JetBrains Mono loads on demand for inline literals. -->
+<link rel="preload" href="fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="styles.css?v=18">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href="./">
+      <img src="favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Harness</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="features/">Overview</a></li>
+          <li><a href="features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="features/communication.html">Communication</a></li>
+          <li><a href="features/backups.html">Backups</a></li>
+          <li><a href="features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="docs/">Docs</a>
+      <a href="demo/">Demo</a>
+      <a href="devlog/">Devlog</a>
+      <a href="about.html" aria-current="page">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<div class="pagehead pagehead--split">
+  <div>
+    <p class="sec__eyebrow">About</p>
+    <h1 class="sec__title">Why Mercury exists.</h1>
+    <p class="sec__lede">Harness Hg is a GitOps control plane for agent harnesses. It turns an agent declaration into a GitOps record. One command renders the agent and everything around it into Git as a pull request; <strong>Argo CD</strong> applies that record and keeps it applied.</p>
+  </div>
+  <figure class="feat__viz pagehead__viz pagehead__viz--mark" aria-hidden="true">
+    <canvas data-sphere class="about__mark"></canvas>
+  </figure>
+</div>
+
+<section class="sec" aria-labelledby="about-belief">
+  <div class="why">
+    <div class="why__main">
+      <p class="sec__eyebrow">The idea</p>
+      <h2 class="sec__title" id="about-belief">The record is the product.</h2>
+      <p class="sec__lede">A fleet of agents should be fully described in Git — reviewable, reproducible, and reversible by revert. And nothing in Mercury runs a control loop to make that true: reconciliation belongs to <strong>Argo CD</strong> and the <strong>External Secrets Operator</strong>, machinery operators already know. Anything that would need a controller of its own is the wrong answer.</p>
+      <p class="sec__lede">The whole agent, not just the pod: the agent, the apps beside it, the secrets it needs, the events it exchanges and how it is exposed are rendered as <strong>one record</strong>.</p>
+    </div>
+    <aside class="why__aside">
+      <p class="pull">A capability that cannot be declared does not exist.</p>
+    </aside>
+  </div>
+</section>
+
+<section class="sec" aria-labelledby="about-open">
+  <div class="sec__head">
+    <p class="sec__eyebrow">In the open</p>
+    <h2 class="sec__title" id="about-open">Built in public, by Factory-level.</h2>
+    <p class="sec__lede">The project is developed in the open on <a href="https://github.com/factory-level/harness-hg">GitHub</a>. Every decision is written down with its cost, the documentation records what actually exists — including every place the system falls short of its own design — and the <a href="devlog/">devlog</a> tells the build story as it happens, wrong turns included.</p>
+    <p class="sec__lede">Mercury is built by <strong>Factory-level</strong>. Questions, issues and contributions are welcome on GitHub.</p>
+  </div>
+  <p class="sec__cta" style="margin-top: clamp(32px, 5vh, 52px)">
+    <a class="btn" href="docs/">
+      Read the docs
+      <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
+    </a>
+    <a class="link" href="https://github.com/factory-level/harness-hg">View on GitHub</a>
+  </p>
+</section>
+
+</main>
+
+<footer class="siteftr">
+  <p class="siteftr__id"><span class="siteftr__name">Harness</span><span class="siteftr__sym">Hg</span></p>
+  <nav class="siteftr__nav" aria-label="Footer">
+    <a class="link" href="docs/">Docs</a>
+    <a class="link" href="devlog/">Devlog</a>
+    <a class="link" href="features/">Features</a>
+    <a class="link" href="about.html">About</a>
+    <a class="link" href="https://github.com/factory-level/harness-hg">GitHub</a>
+  </nav>
+  <p class="siteftr__note">Created by Factory-level.</p>
+</footer>
+
+<script src="contour-sphere.js?v=18"></script>
+<script src="hero.js?v=18"></script>
+</body>
+</html>

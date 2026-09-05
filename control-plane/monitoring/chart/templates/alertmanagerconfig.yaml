@@ -1,0 +1,92 @@
+{{- /*
+The profile's Alertmanager receiver (ADR-53), closing the receiver half of
+ADR-45.
+
+Why this exists alongside the Grafana rules in configmap-alerts.yaml: they
+are two different alert paths, and only one of them worked. The rules in
+this chart are Grafana-managed and notify through a Grafana contact point.
+The kube-prometheus-stack ALSO ships Prometheus rules (defaultRules) whose
+alerts go to Alertmanager - and the platform's routing tree
+(bootstrap/monitoring-stack.yaml) sends every one of them to the "null"
+receiver by design, waiting for an AlertmanagerConfig to bind a real one.
+Nothing ever did, so those alerts were evaluated, matched, routed, and
+dropped.
+
+Per-agent, not fleet-wide: the Prometheus operator scopes an
+AlertmanagerConfig to the namespace it lives in (the default
+alertmanagerConfigMatcherStrategy, OnNamespace), so one object per profile
+namespace routes exactly that profile's alerts with no matcher to author
+or keep in sync. That is what makes the wiring explicit per agent.
+
+Know exactly what this does and does not catch. OnNamespace injects
+`namespace="<this namespace>"` into the top route, so it receives alerts
+CARRYING THAT LABEL - the namespaced ones that concern an agent
+(KubePodCrashLooping, KubeDeploymentReplicasMismatch, and anything a
+future per-profile PrometheusRule emits). Cluster-scoped alerts (node,
+etcd, apiserver) carry no profile namespace and still reach the tree's
+"null" receiver: routing those is a fleet-level receiver this does not
+add. The per-profile RULES in this chart also remain Grafana-managed, so
+they never enter Alertmanager at all - ADR-45's recorded Cost.
+
+The URL rides a Secret rather than the AlertmanagerConfig body because
+monitoring-stack.yaml states the rule for this path: receivers bind
+"through AlertmanagerConfig objects so their credentials come from
+Secrets, never from this file". A webhook URL with a token in its path is
+a credential.
+*/ -}}
+{{- if .Values.alert.alertmanager.enabled }}
+{{- $url := .Values.alert.alertmanager.webhookUrl | default .Values.alert.webhookUrl }}
+{{- /*
+An operator who set alertmanager.enabled has asked for this path. Rendering
+nothing when no URL resolves told them nothing, and their namespaced stack
+alerts went on reaching the tree's "null" receiver - indistinguishable from
+"nothing is wrong" (#620). Fail instead.
+
+alert.discordUrl deliberately does NOT satisfy this. It is a Grafana contact
+point, and Alertmanager has no Discord receiver configured here; accepting it
+would move the silence one layer down rather than removing it.
+*/ -}}
+{{- if not $url }}
+{{- fail "charts/monitoring: alert.alertmanager.enabled is true but no Alertmanager receiver URL resolves - set alert.alertmanager.webhookUrl (or alert.webhookUrl, which it falls back to). Note alert.discordUrl is the GRAFANA contact-point path and does not feed Alertmanager; set alert.alertmanager.enabled=false if you only want the Grafana path" -}}
+{{- end }}
+{{- if $url }}
+{{- $name := printf "%s-alerts" .Release.Namespace }}
+{{- $secretName := printf "%s-alertmanager-webhook" .Release.Namespace }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  labels: {hermes-gitops.factorylevel.dev/plane: workload, hermes-gitops.factorylevel.dev/component: monitoring, app.kubernetes.io/name: monitoring}
+type: Opaque
+stringData:
+  url: {{ $url | quote }}
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: {{ $name }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    app.kubernetes.io/name: monitoring
+    # The selector bootstrap/monitoring-stack.yaml matches on. Without
+    # this label the object is inert and the alerts keep hitting "null".
+    hermes_alertmanager_config: "1"
+spec:
+  route:
+    receiver: profile
+    # hermes_component is one of the platform's identity labels, so an
+    # agent's alerts group together rather than by alertname alone.
+    groupBy: ["alertname", "hermes_component"]
+    groupWait: {{ .Values.alert.alertmanager.groupWait | quote }}
+    groupInterval: {{ .Values.alert.alertmanager.groupInterval | quote }}
+    repeatInterval: {{ .Values.alert.alertmanager.repeatInterval | quote }}
+  receivers:
+    - name: profile
+      webhookConfigs:
+        - urlSecret:
+            name: {{ $secretName }}
+            key: url
+          sendResolved: true
+{{- end }}
+{{- end }}

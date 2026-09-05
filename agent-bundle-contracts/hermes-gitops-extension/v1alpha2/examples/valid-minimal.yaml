@@ -1,0 +1,3 @@
+# The smallest valid v2 file: the version marker alone. Everything else is
+# optional, exactly as an empty mapping is a valid v1 extension.
+contractVersion: 2

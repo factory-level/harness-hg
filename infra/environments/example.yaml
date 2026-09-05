@@ -1,0 +1,31 @@
+# A starting environment spec. Copy it to infra/environments/<name>.yaml,
+# replace every example value, then `hg env new <name> --dry-run`.
+# Secret values never live here: {secret: true} marks a value you set with
+# `pulumi config set --secret` once the stacks exist.
+apiVersion: hermes-gitops.factorylevel.dev/environment/v1alpha2
+name: example
+project: example-project
+rootKms: {location: us, keyring: pulumi, key: pulumi-root}
+state:
+  deployerGroup: deployers@example.dev
+  agents: [example]
+  backupEnvironments: [example]
+infra:
+  clusterProvider: none
+  kubeconfigPath: /home/operator/.kube/config
+  gitopsRepoUrl: https://github.com/example/example.gitops.git
+  gitopsBranch: main
+  gitopsGitToken: {secret: true}
+  hermesGitopsRepoUrl: https://github.com/factory-level/harness-hg.git
+  chartRevision: main
+  providers: {compute: pod, secret: k8s, ingress: ingress}
+  stages: {hermes: false, agents: true, cluster: true}
+  agents:
+    - runtime: eve
+      source: github.com/example/my-team
+      ref: main
+      subdir: agents/eve/my-team/src
+      name: my-team
+  reconcile:
+    repoUrl: https://github.com/example/my-team.git
+    branch: main

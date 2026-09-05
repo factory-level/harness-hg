@@ -1,0 +1,67 @@
+/* System mandala - tokens only; arcs brighten via color-mix over the
+   --cap-* hues; spotlight/hover dim siblings. Label buttons are HTML
+   positioned by the same polar math as the arcs. */
+.nx-system { max-inline-size: var(--nx-measure-wide); margin-inline: auto; display: flex; flex-direction: column; align-items: center; }
+.nx-system-head { text-align: center; align-items: center; }
+.nx-system-attention {
+  border: 1px solid var(--line);
+  background: var(--warnsf);
+  color: var(--warn);
+  border-radius: var(--radius-pill);
+  padding: 4px 14px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+.nx-mandala { inline-size: min(72vh, 680px); aspect-ratio: 1; } /* anchor layer via .nx-anchor-layer */
+.nx-mandala-svg { inline-size: 100%; block-size: 100%; }
+.nx-orbit-guide { fill: none; stroke: var(--line); stroke-width: 0.2; }
+.nx-arc {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+  cursor: pointer;
+  transition: opacity var(--ease-standard);
+}
+.nx-arc[data-cap="synchronization"] { stroke: color-mix(in srgb, var(--cap-synchronization) 42%, var(--paper)); }
+.nx-arc[data-cap="synchronization"]:hover, .nx-arc-open[data-cap="synchronization"], .nx-mandala-spot .nx-arc-flagged[data-cap="synchronization"] { stroke: var(--cap-synchronization); }
+.nx-arc[data-cap="routing"] { stroke: color-mix(in srgb, var(--cap-routing) 42%, var(--paper)); }
+.nx-arc[data-cap="routing"]:hover, .nx-arc-open[data-cap="routing"], .nx-mandala-spot .nx-arc-flagged[data-cap="routing"] { stroke: var(--cap-routing); }
+.nx-arc[data-cap="queueing"] { stroke: color-mix(in srgb, var(--cap-queueing) 42%, var(--paper)); }
+.nx-arc[data-cap="queueing"]:hover, .nx-arc-open[data-cap="queueing"], .nx-mandala-spot .nx-arc-flagged[data-cap="queueing"] { stroke: var(--cap-queueing); }
+.nx-arc[data-cap="monitoring"] { stroke: color-mix(in srgb, var(--cap-monitoring) 42%, var(--paper)); }
+.nx-arc[data-cap="monitoring"]:hover, .nx-arc-open[data-cap="monitoring"], .nx-mandala-spot .nx-arc-flagged[data-cap="monitoring"] { stroke: var(--cap-monitoring); }
+.nx-arc[data-cap="connectivity"] { stroke: color-mix(in srgb, var(--cap-connectivity) 42%, var(--paper)); }
+.nx-arc[data-cap="connectivity"]:hover, .nx-arc-open[data-cap="connectivity"], .nx-mandala-spot .nx-arc-flagged[data-cap="connectivity"] { stroke: var(--cap-connectivity); }
+.nx-arc[data-cap="ingress"] { stroke: color-mix(in srgb, var(--cap-ingress) 42%, var(--paper)); }
+.nx-arc[data-cap="ingress"]:hover, .nx-arc-open[data-cap="ingress"], .nx-mandala-spot .nx-arc-flagged[data-cap="ingress"] { stroke: var(--cap-ingress); }
+.nx-arc[data-cap="agent-runtime"] { stroke: color-mix(in srgb, var(--cap-agent-runtime) 42%, var(--paper)); }
+.nx-arc[data-cap="agent-runtime"]:hover, .nx-arc-open[data-cap="agent-runtime"], .nx-mandala-spot .nx-arc-flagged[data-cap="agent-runtime"] { stroke: var(--cap-agent-runtime); }
+.nx-arc[data-cap="backups"] { stroke: color-mix(in srgb, var(--cap-backups) 42%, var(--paper)); }
+.nx-arc[data-cap="backups"]:hover, .nx-arc-open[data-cap="backups"], .nx-mandala-spot .nx-arc-flagged[data-cap="backups"] { stroke: var(--cap-backups); }
+.nx-arc[data-cap="people"] { stroke: color-mix(in srgb, var(--cap-people) 42%, var(--paper)); }
+.nx-arc[data-cap="people"]:hover, .nx-arc-open[data-cap="people"], .nx-mandala-spot .nx-arc-flagged[data-cap="people"] { stroke: var(--cap-people); }
+.nx-arc[data-cap="nexus"] { stroke: color-mix(in srgb, var(--cap-nexus) 42%, var(--paper)); }
+.nx-arc[data-cap="nexus"]:hover, .nx-arc-open[data-cap="nexus"], .nx-mandala-spot .nx-arc-flagged[data-cap="nexus"] { stroke: var(--cap-nexus); }
+.nx-mandala-spot .nx-arc:not(.nx-arc-flagged) { opacity: 0.25; }
+.nx-mandala:has(.nx-arc:hover) .nx-arc:not(:hover):not(.nx-arc-open) { opacity: 0.45; }
+.nx-mandala-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--nx-display);
+  font-weight: 650;
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  cursor: pointer;
+  box-shadow: var(--shl);
+}
+.nx-mandala-nucleus { inset: 50% auto auto 50%; pointer-events: none; }
+.nx-system-stray { max-inline-size: var(--nx-measure-narrow); inline-size: 100%; margin-block: var(--sp-3); }
+.nx-system-mut { color: var(--mut); }
+.nx-system-member { display: flex; align-items: center; gap: var(--sp-2); border-block-start: 1px solid var(--line2); padding: var(--sp-2) 2px; }
+.nx-system-membername { font-weight: 650; }

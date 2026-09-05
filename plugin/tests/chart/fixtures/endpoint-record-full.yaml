@@ -1,0 +1,65 @@
+# hermes-endpoint chart-test fixture: one component instance's endpoint
+# record, the shape `hg topology emit` writes to
+# deployments/endpoints/<id>/deployment.yaml (chart-test-owned so goldens
+# never churn with the canonical schema examples).
+spec:
+  id: marketing-manager/content-kanban@global
+  profile: marketing-manager
+  component: content-kanban
+  scope: global
+  target: ca-west-a
+  argoDestination: ca-west-a
+  endpoints:
+    - name: site
+      type: public
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 80
+        path: /
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:80
+      url: https://site.content-kanban-marketing-manager-global.hermes.example.dev
+    - name: hooks
+      type: webhook
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 80
+        path: /hooks
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:80/hooks
+      url: https://hooks.content-kanban-marketing-manager-global.hermes.example.dev
+    - name: ui
+      type: authenticated
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 80
+        path: /
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:80
+      url: https://ui.content-kanban-marketing-manager-global.hermes.example.dev
+    - name: api
+      type: private
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 80
+        path: /api
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:80/api
+      provides: content-board
+    - name: metrics
+      type: internal
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 9090
+        path: /metrics
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:9090/metrics
+    - name: partner-api
+      type: external
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 80
+        path: /partner
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:80/partner
+      url: https://partner-api.content-kanban-marketing-manager-global.hermes.example.dev

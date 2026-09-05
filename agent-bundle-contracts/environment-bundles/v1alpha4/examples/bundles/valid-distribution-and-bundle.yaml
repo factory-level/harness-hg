@@ -1,0 +1,13 @@
+# Distribution identity beside a runtime pod bundle: the two are
+# different concepts - the distribution is the installed unit's identity,
+# the bundle a compute decision inside it.
+version: 4
+distribution:
+  displayName: Marketing Team
+bundles:
+  - name: marketing-core
+    displayName: Marketing Core
+    profiles:
+      - name: manager
+        envSecretRef: hermes-marketing-manager-env
+        apiServerPort: 8642

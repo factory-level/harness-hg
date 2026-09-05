@@ -1,0 +1,7 @@
+# INVALID: a contribution must contribute something.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: empty
+  title: Empty
+spec: {}

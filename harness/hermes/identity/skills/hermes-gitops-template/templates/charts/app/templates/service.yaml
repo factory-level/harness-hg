@@ -1,0 +1,22 @@
+{{- /*
+One Kubernetes Service per entry in .Values.services. Each is named
+<fullname>-<service>, so the local testing CLI's smoke check and the tunnel
+can address a specific service deterministically.
+*/ -}}
+{{- range $svc := .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "app.fullname" $ }}-{{ $svc.name }}
+  labels:
+    {{- include "app.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $svc.name }}
+spec:
+  selector:
+    {{- include "app.labels" $ | nindent 4 }}
+  ports:
+    - name: {{ $svc.name }}
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.targetPort }}
+{{- end }}

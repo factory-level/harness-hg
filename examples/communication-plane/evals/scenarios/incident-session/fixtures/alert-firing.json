@@ -1,0 +1,25 @@
+{
+  "receiver": "hermes-event-router",
+  "status": "firing",
+  "groupKey": "incident/postiz-down",
+  "title": "[FIRING:1] PostizDown",
+  "state": "alerting",
+  "message": "The Postiz deployment has no available replicas.",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "PostizDown",
+        "team": "platform",
+        "severity": "critical"
+      },
+      "annotations": {
+        "summary": "Postiz is unavailable",
+        "description": "The Postiz deployment has had 0 available replicas for 5 minutes."
+      },
+      "startsAt": "2026-07-28T21:10:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "fingerprint": "b7d1c1e2f3a4b5c6"
+    }
+  ]
+}

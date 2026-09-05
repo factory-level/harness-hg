@@ -1,0 +1,36 @@
+# The normal state after a nightly platform backup: everything uploaded and
+# checksummed, and NOTHING restored from it yet. This is the record that reads
+# alarming on purpose - `available` is not `restorable`, and a fleet that has
+# never replayed a backup has never proved one (ADR-52).
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: PlatformBackupStatus
+observedAt: "2026-08-01T03:14:07Z"
+backupId: hg-2026-08-01T03-11-52z
+createdAt: "2026-08-01T03:11:52Z"
+environment: marketing-manager,marketing-research,marketing-sre,nexus
+destinationClass: local-directory
+verification:
+  state: available
+components:
+  - name: volume/nexus/nexus-state-backup
+    kind: volume-archive
+    profile: nexus
+    routine: nexus-state-backup
+    sizeKB: 412
+    checksum: 9f3a1c7e2b45
+    consistency: fresh routine invocation, exported and checksummed
+  - name: host/nexus-state
+    kind: host-archive
+    sizeKB: 88
+    checksum: 4c81de09aa62
+    consistency: tar of the operator-host overlay directory
+  - name: argocd-application/hermes-marketing-sre
+    kind: declarative
+    profile: marketing-sre
+    detail: rebuilt by `hg up` from the onboarded repo; Argo CD syncs it Healthy
+  - name: prometheus-metric-history
+    kind: declarative
+    detail: >-
+      TSDB not archived: no MVP panel promises continuity across recovery yet
+summary: 4 components archived, 0 failures
+version: v0.4.1

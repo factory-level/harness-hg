@@ -1,0 +1,65 @@
+# Every v2 surface at once: topology, typed agent endpoints (including a
+# webhook with its required signature declaration), apps with per-app
+# topology + provided endpoints, and both inject forms of requires.
+contractVersion: 2
+
+topology:
+  supportedLayouts: [single, hub-spoke]
+  agent:
+    multiplicity: per-region
+    dataBoundary: region
+
+endpoints:
+  - name: dashboard
+    port: 9119
+    path: /
+    type: authenticated
+  - name: hooks
+    port: 8644
+    path: /webhooks/alerts
+    type: webhook
+    signature: hmac-sha256
+    provides: alert-webhook
+
+apps:
+  - name: content-kanban
+    chart: content-kanban
+    repo: oci://ghcr.io/factory-level/charts
+    version: 0.3.0
+    topology:
+      multiplicity: singleton
+      dataBoundary: global
+    endpoints:
+      - name: api
+        service: content-kanban
+        port: 80
+        path: /api
+        type: private
+        provides: content-board
+      - name: ui
+        service: content-kanban
+        port: 80
+        path: /
+        type: authenticated
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    values:
+      alert:
+        threshold: 100
+
+requires:
+  - capability: alert-receiver
+    locality: same-region
+    inject:
+      appValue: {app: monitoring, path: alert.webhookUrl}
+  - capability: content-board
+    locality: global
+    inject:
+      env: HERMES_CAP_CONTENT_BOARD_URL
+
+backup:
+  schedule: "0 3 * * *"
+  retention: 14
+
+gitAuthSecretRef: hermes-example-git-auth

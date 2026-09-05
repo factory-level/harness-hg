@@ -1,0 +1,15 @@
+# INVALID: a non-numeric generation. It is the value a restore SELECTS
+# by, so anything that is not the number the storage layer issued would
+# select nothing, at the moment it matters most.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: PlatformBackupStatus
+observedAt: "2026-08-02T03:14:07Z"
+backupId: hg-x
+createdAt: "2026-08-02T03:11:52Z"
+destinationClass: gcs
+verification:
+  state: available
+components:
+  - name: host/nexus-state
+    kind: host-archive
+    generation: latest

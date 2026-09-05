@@ -1,0 +1,15 @@
+# Which agents share one pod (environment-bundles v1alpha4, under the
+# team's harness-hg/). A bundle is a compute decision: each member keeps
+# its own port, route-auth credential and env Secret; what it gives up is
+# a pod, a namespace and a Service of its own. Onboarding this repository
+# deploys the bundle; onboarding agents/eve/manager alone deploys it
+# standalone. Both are proven loops.
+version: 4
+bundles:
+  - name: team
+    displayName: Demo team
+    profiles:
+      - name: manager
+        envSecretRef: ag-eve-team-manager-env
+      - name: research
+        envSecretRef: ag-eve-team-research-env

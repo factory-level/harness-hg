@@ -1,0 +1,21 @@
+# A router with nothing routed yet - legal: producers may precede routes.
+# Every valid v1alpha1 file is a valid v1alpha2 file (the knobs are optional).
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  chatopsConnections: {}
+  producers: []
+  externalInputs: []
+  edges: []
+  connections:
+    - name: company-discord
+      provider: discord
+      secretName: connection-company-discord
+      verifyKey: DISCORD_PUBLIC_KEY
+      routes:
+        - profile: echo
+          url: https://example.invalid/eve/v1/discord
+          match: {}

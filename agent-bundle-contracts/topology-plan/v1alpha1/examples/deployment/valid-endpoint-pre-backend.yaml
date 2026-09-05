@@ -1,0 +1,13 @@
+# A record emitted before backend routing existed - schema-valid during
+# the transition; the CHART refuses it at render, naming the fix.
+spec:
+  id: x/a@y
+  profile: x
+  component: a
+  scope: y
+  target: y-a
+  argoDestination: y-a
+  endpoints:
+    - name: api
+      type: private
+      internalUrl: http://a.ns.svc.cluster.local:80/

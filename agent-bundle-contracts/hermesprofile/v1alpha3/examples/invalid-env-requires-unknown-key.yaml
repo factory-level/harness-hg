@@ -1,0 +1,13 @@
+# v1alpha3 widened spec.envRequires from bare names to entries carrying
+# {name, description, required, secret} (#141). The object form is
+# additionalProperties: false, so a fifth key is refused rather than
+# silently ignored - a typo'd `require:` that validated would discard the
+# optionality it was trying to declare, which is the exact information
+# loss this version exists to stop.
+spec:
+  source: https://github.com/example/social-media
+  sha: "0000000000000000000000000000000000000000"
+  envRequires:
+    - name: OPENAI_API_KEY
+      description: model access
+      require: false

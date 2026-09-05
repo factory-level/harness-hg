@@ -1,0 +1,13 @@
+# INVALID: people are declared under spec.people, not as components.
+apiVersion: dashboard.hermes-gitops/v1alpha1
+kind: NexusContribution
+metadata:
+  id: broken
+  title: Broken
+spec:
+  components:
+    - id: calvin
+      kind: human
+      title: Calvin
+      bind:
+        profile: marketing-manager

@@ -1,0 +1,20 @@
+# The declaration must self-identify: apiVersion and kind are required,
+# and kind must be WorkspaceBindings.
+apiVersion: hermes.gitops/v1alpha1
+
+repositories:
+  - name: strategy-context
+    source:
+      url: git@github.com:organization/strategy-context.git
+      revision:
+        mode: pinned
+        sha: 0123456789abcdef0123456789abcdef01234567
+      authSecretRef: hermes-strategy-context-git
+    mount:
+      path: /workspaces/strategy-context
+      access: read-only
+
+bindings:
+  - repository: strategy-context
+    profiles: [marketing-manager]
+    purpose: strategy-context

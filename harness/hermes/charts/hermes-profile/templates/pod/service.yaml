@@ -1,0 +1,35 @@
+{{- include "hermes.computeGuard" . -}}
+{{- if eq .Values.providers.compute "pod" -}}
+{{- include "hermes.exposeServiceNamesGuard" . -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hermes.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "hermes.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8642
+      targetPort: 8642
+      protocol: TCP
+    {{- if .Values.spec.expose }}
+    {{- range $svc := .Values.spec.expose.services }}
+    {{- /* the built-in http port above already serves 8642 (the gateway);
+         re-declaring it would make ServerSideApply reject the Service as
+         a duplicate ports[] key, wedging the whole sync */}}
+    {{- if ne (int $svc.port) 8642 }}
+    - name: {{ $svc.name }}
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+      protocol: TCP
+    {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end -}}

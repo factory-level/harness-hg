@@ -1,0 +1,37 @@
+# Test config for the hermes-gitops local testing CLI (spec §27) — read by
+# `hermes-gitops test` and friends, versioned with the profile alongside
+# distribution.yaml. See _docs/wiki/reference/cli/index.md.
+version: 1
+profile: .
+
+# Values the CLI merges into the rendered record (the platform's normal
+# appValues channel). The CLI auto-fills monitoring.alert.webhookUrl with
+# its own local alert sink; this override just tightens the visit threshold
+# so local traffic can trip the alert while testing.
+appValues:
+  monitoring:
+    alert:
+      siteVisits5m:
+        threshold: 5
+
+# env_requires declared by distribution.yaml, satisfied with LOCAL DEV
+# values (never production credentials).
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+
+# Deterministic smoke checks: fetched through a port-forward to the named
+# Service; the response must contain the marker. Each app-chart service is a
+# Service named hermes-<PERSONA>-app-<service> (here, the "web" service). Add
+# one check per exposed service you want smoke-tested.
+smoke:
+  - service: hermes-<PERSONA>-app-web
+    port: <SERVICE_PORT>
+    path: /
+    expect_contains: "<PERSONA> — site reliability agent"
+
+# Profile-owned reset: nothing stateful beyond the generic prune for this
+# seed — the block is here (empty) as the discoverable convention.
+reset:
+  delete_pvcs: []
+  wipe_namespaces: []
+  preserve: []

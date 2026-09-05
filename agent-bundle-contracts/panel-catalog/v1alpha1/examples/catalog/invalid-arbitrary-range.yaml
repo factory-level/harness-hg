@@ -1,0 +1,14 @@
+# INVALID: a free-text time range. Ranges are an allowlist because the
+# range is a URL parameter - "now-5m" today is "&orgId=1&kiosk" tomorrow,
+# and the whole point of the catalog is that the browser cannot name a
+# query parameter Grafana will honour.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha1
+kind: PanelCatalog
+panels:
+  - id: x
+    surface: system
+    title: Something
+    dashboard: hg-control-plane-overview
+    panelId: 1
+    size: compact
+    range: now-5m

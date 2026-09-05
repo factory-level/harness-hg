@@ -1,0 +1,29 @@
+# INVALID: six reasons on one source. Reasons are capped at five so a verbose
+# or hostile upstream message cannot blow a status popover open; the producer
+# truncates and appends a `+N more` reason instead of letting the list grow.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: RuntimeOverlay
+observedAt: "2026-07-31T09:14:00Z"
+stale: false
+sources:
+  argocd:
+    kind: argocd
+    status: configured
+    level: unhealthy
+    summary: 6 applications degraded
+    reasons:
+      - message: one
+      - message: two
+      - message: three
+      - message: four
+      - message: five
+      - message: six
+  grafana: { kind: grafana, status: not configured, level: unknown, summary: not configured }
+  uptime: { kind: uptime, status: not configured, level: unknown, summary: not configured }
+  eval: { kind: eval, status: not configured, level: unknown, summary: not configured }
+  backup: { kind: backup, status: not configured, level: unknown, summary: not configured }
+  communication: { kind: communication, status: not configured, level: unknown, summary: not configured }
+  reconciliation: { kind: reconciliation, status: not configured, level: unknown, summary: not configured }
+components: {}
+instances: {}
+rollups: {}

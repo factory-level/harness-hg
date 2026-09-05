@@ -1,0 +1,22 @@
+# Two workspace repositories with the REQUIRED explicit terminalCwd (the
+# chart refuses to render two repositories without one - the negative
+# assertion in render-test.sh drops this key to prove it).
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  workspace:
+    sizeGb: 5
+    terminalCwd: /workspaces/strategy-context
+    repositories:
+      - name: strategy-context
+        source: git@github.com:factorylevel/strategy-context.git
+        sha: 0123456789abcdef0123456789abcdef01234567
+        mountPath: /workspaces/strategy-context
+        access: read-only
+        gitAuthSecretRef: hermes-strategy-context-git
+      - name: playbooks
+        source: https://github.com/factorylevel/playbooks
+        sha: fedcba9876543210fedcba9876543210fedcba98
+        mountPath: /workspaces/playbooks
+        access: read-write

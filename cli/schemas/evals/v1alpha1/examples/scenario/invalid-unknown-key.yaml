@@ -1,0 +1,6 @@
+# Invalid: unknown fields fail loudly — assertions belong in the evaluator, not new YAML.
+name: heartbeat-recorded
+profile: persona-echo
+evaluate: evaluate.sh
+assertions:
+  - response contains ok

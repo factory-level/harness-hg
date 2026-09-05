@@ -1,0 +1,12 @@
+# The one behaviour the manager's instructions promise: the reply is the
+# prompt prefixed "echo: ". `hg eval --dir examples/agent-team` sends
+# prompt.txt over the Eve session API, exactly as `hg prompt` does, and the
+# evaluator asserts on $HG_EVAL_RESPONSE.
+name: echoes-verbatim
+profile: manager
+description: >
+  The agent's instructions say to reply with exactly the user's text prefixed
+  by "echo: ".
+prompt: prompt.txt
+evaluate: evaluate.sh
+timeout: 120

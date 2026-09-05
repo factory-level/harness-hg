@@ -1,0 +1,11 @@
+# Compiled per-instance overlay fixture (ADR-97): the shape
+# `hg topology emit` writes to deployments/agents/<id>/values.yaml -
+# spec.env, the topology compiler's resolved capability injections
+# (cli/src/topology/emit.ts, envInjections). Layered LAST by the
+# hermes-gitops-agents ApplicationSet, after the profile record.
+#
+# Chart-test-owned fixture (same rule as profile-minimal.yaml): the golden
+# renders are this chart's own regression net.
+spec:
+  env:
+    HERMES_CAP_SRE_RELAY_URL: "http://relay-marketing-sre-global.hermes-marketing-sre.svc.cluster.local:8080/"

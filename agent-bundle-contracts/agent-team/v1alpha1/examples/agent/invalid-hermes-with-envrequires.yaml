@@ -1,0 +1,4 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Agent
+harness: hermes
+envRequires: [ANTHROPIC_API_KEY]

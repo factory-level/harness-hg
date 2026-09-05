@@ -1,0 +1,14 @@
+# A quiet installation: the desired commit is the applied commit, Argo CD has
+# converged, and the reconciler is idle.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: ReconciliationStatus
+observedAt: "2026-07-31T09:13:00Z"
+phase: synced
+desiredSha: 4f2c1ab9d7e3c5b1a0f8e6d4c2b0a9f8e7d6c5b4
+appliedSha: 4f2c1ab9d7e3c5b1a0f8e6d4c2b0a9f8e7d6c5b4
+appliedAt: "2026-07-31T09:12:41Z"
+startedAt: "2026-07-31T09:11:02Z"
+finishedAt: "2026-07-31T09:13:00Z"
+retryable: false
+summary: applied 4f2c1ab and converged
+version: v0.4.1

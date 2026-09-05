@@ -1,0 +1,380 @@
+---
+# Source: fleet-dashboard/templates/configmap-alerts.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-dashboard-alerts
+  namespace: hermes-monitoring
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: fleet-dashboard
+    grafana_alert: "1"
+    app.kubernetes.io/name: fleet-dashboard
+    app.kubernetes.io/instance: fleet-dashboard
+data:
+  fleet-dashboard-alerts.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: "hermes-fleet-alerts"
+        receivers:
+          - uid: "hermes-fleet-wh"
+            type: webhook
+            settings:
+              url: "https://sink.invalid/alerts"
+              httpMethod: POST
+    groups:
+      - orgId: 1
+        name: hermes-fleet-budget
+        folder: Hermes GitOps
+        interval: 5m
+        rules:
+          - uid: "flt-bgt-event-manager"
+            title: "BudgetExceeded (event-manager)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "max(hermes_cost_usd_mtd{profile=\"event-manager\"}) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: valuesObject edits and Pulumi-style
+                          # override channels can deliver the budget as a
+                          # STRING, and Grafana's threshold evaluator
+                          # silently errors on string params (masked by
+                          # execErrState: OK) - the rule imports fine and
+                          # then never, ever fires.
+                          - 100
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              persona: "event-manager"
+              severity: warning
+            annotations:
+              summary: "Profile event-manager MTD estimated spend exceeded its $100 monthly budget (observer pricing estimate, not provider billing)"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-fleet-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          - uid: "flt-bgt-social-media"
+            title: "BudgetExceeded (social-media)"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "max(hermes_cost_usd_mtd{profile=\"social-media\"}) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: valuesObject edits and Pulumi-style
+                          # override channels can deliver the budget as a
+                          # STRING, and Grafana's threshold evaluator
+                          # silently errors on string params (masked by
+                          # execErrState: OK) - the rule imports fine and
+                          # then never, ever fires.
+                          - 25
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              persona: "social-media"
+              severity: warning
+            annotations:
+              summary: "Profile social-media MTD estimated spend exceeded its $25 monthly budget (observer pricing estimate, not provider billing)"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-fleet-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+          - uid: hermes-fleet-bgt-total
+            title: "FleetBudgetExceeded"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "prometheus"
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(hermes_cost_usd_mtd) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: same string-param trap as above.
+                          - 200
+            noDataState: OK
+            execErrState: OK
+            for: 0s
+            labels:
+              severity: warning
+            annotations:
+              summary: "Fleet-wide MTD estimated spend exceeded the $200 monthly budget (observer pricing estimate, not provider billing)"
+            isPaused: false
+            notification_settings:
+              receiver: "hermes-fleet-alerts"
+              # Send the first firing notification quickly: the default
+              # 30s group_wait swallowed short-lived firings entirely
+              # (fired AND resolved inside the wait -> nothing delivered).
+              group_wait: 10s
+              # And re-notify promptly after a state change: the default
+              # 5m group_interval delays a NEW firing that follows a
+              # recent resolve in the same group by up to 5 minutes.
+              group_interval: 1m
+---
+# Source: fleet-dashboard/templates/configmap-dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fleet-dashboard-dashboard
+  namespace: hermes-monitoring
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: fleet-dashboard
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: fleet-dashboard
+    app.kubernetes.io/instance: fleet-dashboard
+  annotations:
+    grafana_folder: Control Plane
+data:
+  fleet-dashboard-dashboard.json: |
+    {
+      "uid": "hermes-fleet-tco",
+      "title": "Hermes — Fleet budget & TCO",
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "1m",
+      "time": { "from": "now-24h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "bargauge",
+          "title": "Budget used (%, month to date)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "max": 120,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 80 },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "event-manager",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "instant": true,
+              "expr": "100 * (max(hermes_cost_usd_mtd{profile=\"event-manager\"}) or vector(0)) / 100",
+              "legendFormat": "event-manager"
+            }
+            ,{
+              "refId": "social-media",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "instant": true,
+              "expr": "100 * (max(hermes_cost_usd_mtd{profile=\"social-media\"}) or vector(0)) / 25",
+              "legendFormat": "social-media"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "bargauge",
+          "title": "MTD estimated spend (USD)",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [ { "color": "green", "value": null } ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "instant": true,
+              "expr": "sum by (profile) (hermes_cost_usd_mtd)",
+              "legendFormat": "{{profile}}"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "MTD spend over time (USD)",
+          "gridPos": { "x": 0, "y": 9, "w": 12, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": { "unit": "currencyUSD" },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (profile) (hermes_cost_usd_mtd)",
+              "legendFormat": "{{profile}}"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "timeseries",
+          "title": "Burn rate (USD/h)",
+          "gridPos": { "x": 12, "y": 9, "w": 12, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": { "unit": "currencyUSD" },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (profile) (rate(hermes_estimated_cost_usd_total[1h])) * 3600",
+              "legendFormat": "{{profile}}"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Token usage by type (tokens/h)",
+          "gridPos": { "x": 0, "y": 18, "w": 12, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "stacking": { "mode": "normal" } }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "expr": "sum by (type) (rate(hermes_usage_tokens_total[1h])) * 3600",
+              "legendFormat": "{{type}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Observer health: seconds since last event",
+          "gridPos": { "x": 12, "y": 18, "w": 12, "h": 9 },
+          "datasource": {"type":"prometheus","uid":"prometheus"},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 3600 },
+                  { "color": "red", "value": 86400 }
+                ]
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": { "-1": { "text": "no data ever", "color": "red" } }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "event-manager",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "instant": true,
+              "expr": "(time() - max(hermes_observer_last_event_timestamp_seconds{profile=\"event-manager\"})) or vector(-1)",
+              "legendFormat": "event-manager"
+            }
+            ,{
+              "refId": "social-media",
+              "datasource": {"type":"prometheus","uid":"prometheus"},
+              "instant": true,
+              "expr": "(time() - max(hermes_observer_last_event_timestamp_seconds{profile=\"social-media\"})) or vector(-1)",
+              "legendFormat": "social-media"
+            }
+          ]
+        }
+      ]
+    }

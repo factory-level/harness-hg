@@ -1,0 +1,17 @@
+# Chart-side defaults. There is deliberately almost nothing here: the
+# dashboards are static (no per-persona iteration - that is
+# charts/monitoring and charts/fleet-dashboard territory), and the uids
+# are constants the platform promises (design 15), never values.
+
+# Grafana datasource uid the panels query. Must match the FIXED uid
+# provisioned by bootstrap/monitoring-stack.yaml.
+datasourceUid: prometheus
+
+overview:
+  enabled: true
+
+reconciliation:
+  enabled: true
+
+backupHistory:
+  enabled: true

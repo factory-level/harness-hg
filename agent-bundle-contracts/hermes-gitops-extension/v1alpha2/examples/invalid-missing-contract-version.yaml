@@ -1,0 +1,5 @@
+# A v2-shaped file without the version marker. It must fail HERE (the marker
+# is required) - and it would fail against v1alpha1 too (unknown key
+# `topology`), so no file is ever valid under both versions.
+topology:
+  supportedLayouts: [single]

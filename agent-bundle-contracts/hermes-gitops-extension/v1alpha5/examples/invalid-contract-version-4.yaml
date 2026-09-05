@@ -1,0 +1,4 @@
+# A contractVersion: 4 file must NOT validate against v1alpha5 - readers
+# dispatch on the marker's value, and no file may be valid under two
+# versions.
+contractVersion: 4

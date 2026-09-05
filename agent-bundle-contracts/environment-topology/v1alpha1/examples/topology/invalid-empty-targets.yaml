@@ -1,0 +1,7 @@
+# A region with no targets is undeployable - minItems 1.
+version: 1
+layout: single
+regions:
+  - name: eu-west
+    jurisdiction: EU
+    targets: []

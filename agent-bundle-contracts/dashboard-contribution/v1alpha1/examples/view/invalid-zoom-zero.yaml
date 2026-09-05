@@ -1,0 +1,13 @@
+# INVALID: zoom must be positive.
+apiVersion: dashboard.hermes-gitops/v1alpha1
+kind: NexusView
+metadata:
+  id: default
+spec:
+  nodes:
+    - ref: marketing-manager
+      position: {x: 0, y: 0}
+  viewport:
+    x: 0
+    y: 0
+    zoom: 0

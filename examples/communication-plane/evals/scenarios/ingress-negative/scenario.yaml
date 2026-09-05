@@ -1,0 +1,12 @@
+# The security-sensitive route's negative path: a bad signature is
+# rejected with the exact classification and nothing is delivered.
+name: ingress-negative
+profile: platform-sre
+invoke:
+  externalWebhook:
+    binding: demo-alert-source
+    payload: fixtures/external-alert.json
+    signature: invalid
+expect:
+  rejected:
+    reason: invalid-signature

@@ -1,0 +1,11 @@
+# INVALID: four empty arrays contribute exactly as much as an empty spec.
+apiVersion: dashboard.hermes-gitops/v1alpha1
+kind: NexusContribution
+metadata:
+  id: empty
+  title: Empty
+spec:
+  components: []
+  people: []
+  groups: []
+  relationships: []

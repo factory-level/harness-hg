@@ -1,0 +1,65 @@
+/* Backups view - tokens only; fixed shell (head static, list scrolls).
+   Header, chip, field, shell and state are the shared primitives. */
+.nx-backups {
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  max-inline-size: var(--nx-measure-wide);
+  margin-inline: auto;
+}
+.nx-bk-verdict { margin: 0; font-weight: 650; }
+.nx-bk-verdict-healthy { color: var(--ok); }
+.nx-bk-verdict-degraded { color: var(--warn); }
+.nx-bk-verdict-unhealthy { color: var(--crit); }
+.nx-bk-controls { display: flex; align-items: center; gap: var(--sp-2); }
+.nx-bk-count { color: var(--mut); font-size: var(--fs-xs); }
+.nx-bk-scroll { flex: 1; min-block-size: 0; overflow: auto; }
+.nx-bk-shelf { margin-block-end: var(--sp-3); }
+.nx-bk-shelfhead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  inline-size: 100%;
+  background: none;
+  border: none;
+  color: var(--ink);
+  padding: var(--sp-3) var(--sp-4);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--nx-display);
+}
+.nx-bk-shelfhead:hover { background: var(--pophov); }
+.nx-bk-shelfname { font-weight: 650; font-size: var(--fs-md); }
+.nx-bk-shelfmeta { color: var(--mut); font-family: var(--nx-body); }
+.nx-bk-chevron { margin-inline-start: auto; color: var(--mut); display: inline-flex; transition: rotate var(--ease-quick); }
+.nx-bk-chevron-open { rotate: 90deg; }
+/* The six-cell row grid - the row IS the control; cells match tracks
+   (the seven-in-six wrap defect class must not recur). */
+.nx-bk-row {
+  display: grid;
+  grid-template-columns: 16px minmax(180px, 1fr) 190px minmax(240px, 1.4fr) 150px 16px;
+  align-items: center;
+  gap: var(--sp-3);
+  inline-size: 100%;
+  background: none;
+  border: none;
+  border-block-start: 1px solid var(--line2);
+  color: var(--ink);
+  padding: var(--sp-2) var(--sp-4);
+  text-align: start;
+  cursor: pointer;
+  font: inherit;
+}
+.nx-bk-row:hover { background: var(--pophov); }
+.nx-bk-row-uncovered { cursor: default; }
+.nx-bk-name { font-weight: 650; display: flex; align-items: baseline; gap: var(--sp-2); }
+.nx-bk-code {
+  font-family: var(--nx-body);
+  color: var(--mut);
+  background: var(--sf2);
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+}
+.nx-bk-cron { color: var(--ink2); }
+.nx-bk-last { color: var(--mut); }
+.nx-bk-status { justify-self: end; font-weight: 650; }

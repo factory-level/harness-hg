@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/evals/v1alpha1/scenario.schema.json",
+  "title": "Eval scenario",
+  "description": "One deterministic scenario inside an eval suite: which deployed profile it targets, how the agent is invoked, and the repository-owned evaluator that asserts on observable outcomes. The evaluator's exit code is the whole assertion protocol — 0 pass, 1 assertion failure, anything else evaluator/harness error — so a broken evaluator is never reported as a misbehaving agent. Complex polling and evidence checks belong in the evaluator script, not in new YAML fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "profile",
+    "evaluate"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "Unique within the suite (the runner enforces uniqueness across scenarios; the schema cannot see siblings)."
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "The deployed profile this scenario addresses — resolved against the onboarded catalogue, never an implicit global agent."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$",
+      "description": "Path (relative to the scenario directory, contained within it) to a prompt file the runner sends to the profile before the evaluator runs; the response lands at $HG_EVAL_RESPONSE. Omit when the evaluator owns the invocation itself (webhook, relay, cron)."
+    },
+    "evaluate": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$",
+      "description": "Path (relative to the scenario directory, contained within it) to the deterministic evaluator executable. Repository-owned code: untrusted (cloned) sources require --allow-repo-scripts."
+    },
+    "timeout": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "description": "Hard wall-clock budget in seconds for one run, prompt included. Defaults to the suite's, then 300."
+    },
+    "repeat": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "Runs per invocation, each recorded independently — for surfacing nondeterminism by hand, not for retry-until-green."
+    },
+    "required": {
+      "type": "boolean",
+      "description": "Defaults to true. false makes the scenario informational: it runs and reports but never fails the suite."
+    },
+    "setup": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Shell commands run in order from the scenario directory before each run. Repository-owned code, trust-gated like `evaluate`."
+    },
+    "cleanup": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Shell commands run from the scenario directory after each run — ALWAYS, including on timeout and evaluator crash."
+    }
+  }
+}

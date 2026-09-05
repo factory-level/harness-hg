@@ -1,0 +1,8 @@
+# INVALID: a default view exists to place things; a node without a position places nothing.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusView
+metadata:
+  id: default
+spec:
+  nodes:
+    - ref: marketing-manager

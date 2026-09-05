@@ -1,0 +1,36 @@
+# Platform monitoring, part 5: control-plane log aggregation (#661,
+# ADR 0165) - single-binary Loki + the promtail collector, rendered by
+# the LOCAL chart control-plane/loki/chart. Streams from BOTH planes,
+# labeled plane=control-plane|workload (ADR 0164), one query dimension
+# apart. The Grafana datasource (fixed uid "loki") and the
+# hg-control-plane-logs dashboard arrive via the sidecars, like every
+# other provisioned dashboard.
+#
+# Like control-plane-observability.yaml this carries scaffold tokens: it
+# sources a chart from the platform repo itself.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/component: loki
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # "default", same reasoning as the other bootstrap-level Applications.
+  project: default
+  source:
+    repoURL: __HERMES_GITOPS_REPO_URL__
+    targetRevision: __CHART_REVISION__
+    path: control-plane/loki/chart
+  destination:
+    name: in-cluster
+    namespace: hermes-monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

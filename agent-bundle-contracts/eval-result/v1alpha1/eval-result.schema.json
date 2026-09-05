@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/eval-result/v1alpha1/eval-result.schema.json",
+  "title": "EvalResultBatch",
+  "description": "One publish of agent eval results. This is the contract an EXTERNAL harness targets, which is why it is frozen here rather than being an internal shape: the CLI validates against this file with ajv and the control plane validates against a hand-written mirror of it, and a test asserts the two agree. Nothing here may carry a filesystem path or secret-bearing evidence - a published result is browser-visible by design.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "records"],
+  "properties": {
+    "apiVersion": {
+      "description": "Frozen. An unknown version is refused loudly rather than guessed at - the house posture in place of a migration framework.",
+      "const": "hermes.dev/eval-result/v1alpha1"
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/record" }
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "componentId", "suite", "scenario", "status", "harness", "ranAt"],
+      "properties": {
+        "runId": {
+          "description": "The idempotency key. A re-publish of the same (componentId, runId) is a no-op, so a retried publish cannot duplicate a result.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "componentId": {
+          "description": "The Nexus component this result belongs to. A token may only publish for components inside its scope.",
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 64
+        },
+        "instanceId": { "type": "string", "maxLength": 128 },
+        "suite": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "scenario": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": {
+          "description": "The runner's own RunStatus vocabulary, verbatim (cli/src/eval.ts). `pass` is the only one that reads healthy; the two error states are harness failures, not agent behaviour, and stay distinguishable.",
+          "enum": ["pass", "fail", "timeout", "agent-error", "evaluator-error"]
+        },
+        "score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "harness": {
+          "description": "What produced this result (`hg eval`, a local harness name). Recorded so a surprising result can be traced to its producer.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "ranAt": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "commitSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "metadata": {
+          "description": "Bounded, flat, and string-valued: an unbounded map is an exfiltration path, not a feature.",
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": { "type": "string", "maxLength": 256 }
+        },
+        "artifacts": {
+          "description": "REFERENCES only, and https only. A filesystem path is structurally impossible here, which is the point.",
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "url"],
+            "properties": {
+              "label": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "url": { "type": "string", "pattern": "^https://", "maxLength": 512 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

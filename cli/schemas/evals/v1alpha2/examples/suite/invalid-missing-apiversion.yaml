@@ -1,0 +1,2 @@
+# Invalid: apiVersion is required — the runner refuses to guess the contract version.
+name: social-media-evals

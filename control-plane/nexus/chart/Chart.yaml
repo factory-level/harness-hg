@@ -1,0 +1,11 @@
+apiVersion: v2
+name: nexus
+description: >-
+  The Nexus control-plane UI and API, in-cluster (ADR-48): the same plugin
+  router the Hermes dashboard mounts, served standalone with its overlay
+  state on a PVC protected by a labelled backup routine. files/ is synced
+  from control-plane/nexus by infra/scripts/sync-nexus-chart.sh - edit there,
+  never here.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

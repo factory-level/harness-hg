@@ -1,0 +1,29 @@
+# Valid: a providers.ingress=cloudflare fleet's cluster-values with the
+# full cloudflare block - schema-legal in the canonical contract since
+# issue #20 [G2]. Required-key enforcement for the selected ingress
+# provider lives in the chart's hermes.cloudflareConfigGuard, not here.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: cloudflare
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: latest
+cloudflare:
+  accountId: 0123456789abcdef0123456789abcdef
+  zoneId: fedcba9876543210fedcba9876543210
+  zoneName: example.com
+  access:
+    idpId: 11111111-2222-3333-4444-555555555555
+  apiToken:
+    remoteSecretKey: hermes-gitops-cloudflare-api-token
+  tunnel:
+    projectRepo: https://github.com/factory-level/hermes-gitops-plugin.git
+    branch: main
+    commit: ""
+    workspaceServiceAccountName: ""
+  pulumiBackend:
+    mode: self-managed
+    selfManaged:
+      backendUrl: gs://example-bucket/hermes-gitops
+      remotePassphraseKey: hermes-gitops-pulumi-backend-passphrase

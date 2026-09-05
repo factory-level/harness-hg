@@ -1,0 +1,61 @@
+{{- include "hermesEndpoint.guard" . -}}
+{{- if eq .Values.providers.ingress "ingress" -}}
+{{- $root := . -}}
+{{- range (include "hermesEndpoint.exposed" . | fromJsonArray) }}
+{{- $host := include "hermesEndpoint.host" .url }}
+{{- $name := include "hermesEndpoint.objectName" (list $root.Values.spec.id .name) }}
+{{- $crossNs := ne .backend.namespace $root.Release.Namespace }}
+---
+{{- if $crossNs }}
+{{/* Ingress backends are namespace-local: bridge to a backend in another
+     namespace with an ExternalName Service pointing at its cluster DNS
+     name. NOTE the controller must allow ExternalName backends - Traefik
+     defaults providers.kubernetesIngress.allowExternalNameServices to
+     FALSE, ingress-nginx allows unless --disable-svc-external-name; see
+     the endpoint-chart owner page. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-endpoint
+    app.kubernetes.io/managed-by: hermes-endpoint
+    hermes.dev/endpoint-owner: {{ $root.Values.spec.id | replace "/" "-" | replace "@" "-" | trunc 63 | quote }}
+spec:
+  type: ExternalName
+  externalName: {{ printf "%s.%s.svc.cluster.local" .backend.service .backend.namespace }}
+  ports:
+    - port: {{ .backend.port }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-endpoint
+    app.kubernetes.io/managed-by: hermes-endpoint
+    hermes.dev/endpoint-owner: {{ $root.Values.spec.id | replace "/" "-" | replace "@" "-" | trunc 63 | quote }}
+  annotations:
+    hermes.dev/endpoint-type: {{ .type | quote }}
+spec:
+  {{- with $root.Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: {{ .backend.path | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ if $crossNs }}{{ $name }}{{ else }}{{ .backend.service }}{{ end }}
+                port:
+                  number: {{ .backend.port }}
+{{- end }}
+{{- end -}}

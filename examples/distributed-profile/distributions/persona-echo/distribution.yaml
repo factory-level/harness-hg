@@ -1,0 +1,29 @@
+# The manifest — the ONE required file of a distribution.
+#
+# It is self-describing: it names the agent, its version, the versions of
+# Hermes it supports, and every secret or setting it needs. The plugin reads
+# this file at install time and validates it BEFORE any manifest is
+# generated. Only values declared here can ever be overridden by an
+# operator (see _docs/wiki/platform/reconciliation.md).
+#
+# Deployment intent (Helm apps, exposed services, disk size) lives in the
+# hermes-gitops.yaml file BESIDE this one — never here. This file stays pure
+# Hermes: the plugin does not read embedded extension blocks. Plain Hermes
+# reads only this file; the Hermes GitOps platform reads both.
+name: persona-echo
+version: 1.0.0
+description: "Echoes back whatever it's told — a minimal but realistic example persona."
+author: "Hermes GitOps examples"
+license: "MIT"
+
+# Supported versions: the range of Hermes runtimes this agent works with.
+hermes_requires: ">=0.9"
+
+# Required secrets and configurable inputs. The platform provisions the
+# values (pulumi config set --secret --path 'agentSecrets.persona-echo.ANTHROPIC_API_KEY' ...);
+# the distribution only NAMES them. If a required entry here has no value
+# configured on the platform, validation fails before anything is rendered.
+env_requires:
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic API key — persona-echo's model provider"
+    required: true

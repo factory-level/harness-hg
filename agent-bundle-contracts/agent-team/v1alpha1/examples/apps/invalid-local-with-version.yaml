@@ -1,0 +1,8 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Apps
+apps:
+  - name: test-page
+    agent: marketing-manager
+    chart: cli/test-env/charts/test-page
+    repo: local
+    version: 1.0.0

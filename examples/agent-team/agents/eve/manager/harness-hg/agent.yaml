@@ -1,0 +1,15 @@
+# What this agent IS to the platform (agent-team/v1alpha1 Agent). The
+# directory name is its identity and must equal src/package.json name.
+# Read by the emitter (env contract) and the topology compiler.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Agent
+harness: eve
+# Every environment variable the agent needs, by NAME - values are delivered
+# by the platform's env Secret, never written here.
+envRequires:
+  - name: ANTHROPIC_API_KEY
+    description: Anthropic API key; agent.ts calls the provider directly.
+# What this agent supports, never where it runs (placement is the team's
+# topology.yaml + the bootstrap's grants).
+topology:
+  supportedLayouts: [single]

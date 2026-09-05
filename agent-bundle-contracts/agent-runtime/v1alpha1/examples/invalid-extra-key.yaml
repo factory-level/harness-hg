@@ -1,0 +1,18 @@
+# An unknown key. The manifest is a JOIN of facts stated elsewhere; a field
+# invented here is the first step towards a second configuration language,
+# which is exactly what this contract refuses to become.
+contract: agent-runtime/v1alpha1
+spec:
+  name: echo
+  engine: eve
+  instance: ag-eve-echo
+  namespace: ag-eve-echo
+  runtimeImage: ghcr.io/example/eve-runtime:0.42.0
+  replicas: 2
+  source:
+    repository: https://github.com/factorylevel/eve-agents.git
+    revision: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  workspaces: []
+  requiredSecrets: []
+  connections: []
+  apps: []

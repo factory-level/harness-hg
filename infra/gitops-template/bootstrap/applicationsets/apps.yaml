@@ -1,0 +1,110 @@
+# hermes-gitops-apps ApplicationSet (ADR-36) - one Application per
+# PHYSICAL APP INSTANCE record under deployments/apps/. A global app is a
+# first-class Application here, never a child of whichever agent installed
+# it. Source coordinates come from the record (the compiler already
+# resolved local-vs-OCI); the structural source variant is expressed via
+# templatePatch (goTemplate conditionals cannot add/remove mapping keys in
+# the plain template).
+#
+# Chart values live in the adjacent values.yaml (authored values +
+# capability injections, merged by the compiler) - referenced through the
+# ref:gitops second source, the same multi-source pattern the legacy
+# ApplicationSet validated against Argo CD v3.4.5.
+#
+# SAME-COMMIT CONTRACT (#498): promoting this generator MUST land in the
+# same commit that sets `valuesObject: {appsManagedExternally: true}` on
+# the agents ApplicationSet's hermes-profile chart source. Without it the
+# chart renders its own child Applications under the SAME names this
+# generator creates - a two-controller prune/adopt fight. Never hardcode
+# the flag into the staged agents template instead: a repo promoting
+# agents without apps would then render agents with no children at all,
+# cascade-deleting every child app.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-apps
+  namespace: argocd
+spec:
+  # STAGED, NOT PROMOTED: the root Application excludes this file from its
+  # recursive bootstrap sync (see infra/src/components/root-app). If a live
+  # copy is ever deleted or pruned anyway, leave the generated Applications
+  # standing (no owner-reference cascade): the 2026-08-28 accidental
+  # promotion showed a pruned AppSet cascade-deletes its Applications AND
+  # their workloads/PVCs. (This is the AppSet-level syncPolicy - distinct
+  # from the generated Applications' template.spec.syncPolicy.)
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  # An operator (or `hg backup restore`'s quiesce) may pause a generated
+  # Application's sync policy; without this the controller reverts the
+  # patch within seconds and selfHeal resurrects the workload MID-RESTORE
+  # (found live: a scale-to-0 quiesce lost to the AppSet on the first
+  # real-cluster verify-restore). Ownership of syncPolicy is ceded to
+  # whoever holds the pause; everything else stays controller-enforced.
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "deployments/apps/*/deployment.yaml"
+  template:
+    metadata:
+      name: "{{.spec.application}}"
+      labels:
+        hermes-gitops.factorylevel.dev/profile: "{{.spec.profile}}"
+        hermes-gitops.factorylevel.dev/app: "{{.spec.app}}"
+        hermes-gitops.factorylevel.dev/scope: "{{.spec.scope}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        name: "{{.spec.argoDestination}}"
+        namespace: "{{.spec.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m
+  templatePatch: |
+    spec:
+      sources:
+        {{- /* remote records carry no `repo` key - dig, never dot, under missingkey=error */ -}}
+        {{- if eq (dig "repo" "" .spec.source) "local" }}
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          path: "{{ .spec.source.path }}"
+          helm:
+            releaseName: "{{ .spec.application }}"
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $gitops/deployments/apps/{{ .path.basename }}/values.yaml
+        {{- else }}
+        - repoURL: "{{ .spec.source.repoURL }}"
+          chart: "{{ .spec.source.chart }}"
+          targetRevision: "{{ .spec.source.targetRevision }}"
+          helm:
+            releaseName: "{{ .spec.application }}"
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $gitops/deployments/apps/{{ .path.basename }}/values.yaml
+        {{- end }}
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops

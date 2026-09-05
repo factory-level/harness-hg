@@ -1,0 +1,20 @@
+{
+  "name": "greeter",
+  "private": true,
+  "type": "module",
+  "description": "The second example Eve agent: greets by name. Exists so examples/eve-agent can show a BUNDLE (environment/bundles.yaml puts echo and greeter in one pod) and so the default route-auth channel path is exercised - this project authors no agent/channels/eve.ts.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "eve dev",
+    "build": "eve build",
+    "start": "eve start --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.40",
+    "ai": "^7.0.58",
+    "eve": "0.42.0",
+    "zod": "^4.0.0"
+  }
+}

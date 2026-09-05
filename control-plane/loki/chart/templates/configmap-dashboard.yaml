@@ -1,0 +1,52 @@
+# The control-plane logs dashboard (#661 acceptance): plane-split queries
+# against the fixed "loki" datasource uid. uid is a promised constant, the
+# control-plane singleton convention (hg-control-plane-* family).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: loki
+    app.kubernetes.io/name: loki
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: Control Plane
+data:
+  control-plane-logs.json: |
+    {
+      "uid": "hg-control-plane-logs",
+      "title": "Control Plane / Logs",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": {"from": "now-1h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "type": "logs",
+          "title": "Control-plane logs (plane=\"control-plane\")",
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{plane=\"control-plane\"}"}],
+          "options": {"showLabels": true, "sortOrder": "Descending"}
+        },
+        {
+          "id": 2,
+          "type": "logs",
+          "title": "Workload errors (plane=\"workload\" |~ (?i)error)",
+          "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "{plane=\"workload\"} |~ `(?i)error`"}],
+          "options": {"showLabels": true, "sortOrder": "Descending"}
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Log volume by plane",
+          "gridPos": {"h": 7, "w": 24, "x": 0, "y": 20},
+          "datasource": {"type": "loki", "uid": "loki"},
+          "targets": [{"refId": "A", "expr": "sum by (plane) (rate({plane=~\".+\"}[5m]))"}]
+        }
+      ]
+    }

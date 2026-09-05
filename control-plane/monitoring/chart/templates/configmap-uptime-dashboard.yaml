@@ -1,0 +1,100 @@
+{{- /*
+Application uptime for this profile, as its OWN dashboard with its own uid
+(ADR-53).
+
+Why separate rather than a row on the main dashboard: this is a link
+target. A reserved agent profile's member tile resolves to one of three
+behaviours the registering agent chooses - open the service, run its
+check, or jump to its dashboard - and the third needs a stable uid to deep
+link at (<grafanaBaseUrl>/d/<uid>). A row inside another dashboard has no
+such address.
+
+What it shows is deliberately what the platform can actually prove.
+kube-state-metrics is on, so Deployment availability per application is
+real data. There is no blackbox exporter and no Probe CRs, and Gatus runs
+outside the cluster feeding neither Prometheus nor Grafana - so this is
+uptime as Kubernetes sees it (are the replicas up), NOT synthetic
+end-to-end probing. The uptime row in gaps.md stays Absent for that
+reason; a panel that quietly implied external probing would be the
+withdrawn-embed mistake again.
+*/ -}}
+{{- if .Values.dashboard.enabled }}
+{{- $uid := include "monitoring.uidbase" . -}}
+{{- $persona := include "monitoring.persona" . -}}
+{{- $ds := printf "{\"type\":\"prometheus\",\"uid\":%s}" (.Values.datasourceUid | toJson) -}}
+{{- $availExpr := printf "sum by (deployment) (kube_deployment_status_replicas_available{namespace=%q})" .Release.Namespace | toJson -}}
+{{- $unavailExpr := printf "sum by (deployment) (kube_deployment_status_replicas_unavailable{namespace=%q})" .Release.Namespace | toJson -}}
+{{- $agentExpr := printf "sum(kube_statefulset_status_replicas_ready{namespace=%q,statefulset=%q}) or vector(0)" .Release.Namespace (include "monitoring.agentStatefulSet" .) | toJson -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-uptime-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    grafana_folder: Workloads
+data:
+  {{ .Release.Name }}-uptime-dashboard.json: |
+    {
+      "uid": {{ printf "%s-uptime" $uid | toJson }},
+      "title": {{ printf "Hermes — %s application uptime" $persona | toJson }},
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Available replicas by application",
+          "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0 }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $availExpr }}, "legendFormat": "{{ "{{deployment}}" }}" }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Unavailable replicas (now)",
+          "description": "Non-zero means an application in this profile is not fully up.",
+          "gridPos": { "h": 6, "w": 12, "x": 0, "y": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $unavailExpr }}, "legendFormat": "{{ "{{deployment}}" }}" }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Agent ready pods",
+          "gridPos": { "h": 6, "w": 12, "x": 12, "y": 9 },
+          "datasource": {{ $ds }},
+          "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $agentExpr }}, "legendFormat": "ready" }
+          ]
+        }
+      ]
+    }
+{{- end }}

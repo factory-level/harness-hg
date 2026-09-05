@@ -1,0 +1,14 @@
+# A bundle whose manager profile is the TARGET of a communication route.
+# `webhookPort` is what makes that possible: bundling retires the
+# per-profile namespace and Service the router would otherwise address,
+# so a bundled profile has to say where its gateway listens.
+version: 2
+bundles:
+  - name: marketing-core
+    profiles:
+      - name: manager
+        envSecretRef: hermes-marketing-manager-env
+        webhookPort: 8644
+        apiServerPort: 8642
+      - name: research
+        envSecretRef: hermes-marketing-research-env

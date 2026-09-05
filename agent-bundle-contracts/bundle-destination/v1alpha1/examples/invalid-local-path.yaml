@@ -1,0 +1,5 @@
+# INVALID: a local path as the destination - the destination is shared
+# truth, not a working copy.
+apiVersion: hermes-gitops.factorylevel.dev/bundle-destination/v1alpha1
+gitops:
+  repoUrl: ../my-gitops-checkout

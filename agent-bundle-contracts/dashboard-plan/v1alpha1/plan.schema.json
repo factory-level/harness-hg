@@ -1,0 +1,465 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/dashboard-plan/v1alpha1/plan.schema.json",
+  "title": "Generated Nexus plan (deployments/control-plane/nexus-plan.json)",
+  "description": "The compiled join of dashboard contributions and the topology plan: logical components with their physical instances, destination URLs, Argo identities and declared summaries, plus the repository default view. Deterministic - no timestamps, no runtime health (health is layered on by the plugin backend at serve time and never written here). An unresolved binding stays in the plan with resolved: false and no instances; it must render, not disappear.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "inputsHash",
+    "sourceSha",
+    "components",
+    "relationships",
+    "view"
+  ],
+  "$defs": {
+    "componentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "displayText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "httpUrl": {
+      "type": "string",
+      "pattern": "^https?://[^\\s@]+$",
+      "maxLength": 500,
+      "description": "http(s) only, no whitespace, no userinfo - the compiler refuses anything else; the backend re-asserts before serving."
+    },
+    "coordinate": {
+      "type": "number",
+      "minimum": -100000,
+      "maximum": 100000
+    }
+  },
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "inputsHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 over every input file of THIS plan (contributions, views, the topology plan, workload-endpoint config). Independent of the topology plan's own hash."
+    },
+    "sourceSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "The dashboard source commit the contributions were read at (all zeros for an uncommitted local preview)."
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "resolved",
+          "instances"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/componentId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "application",
+              "human",
+              "group"
+            ]
+          },
+          "title": {
+            "$ref": "#/$defs/displayText"
+          },
+          "description": {
+            "$ref": "#/$defs/displayText"
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "maxLength": 63
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId",
+                "description": "The catalogue source directory the component came from."
+              },
+              "path": {
+                "type": "string",
+                "maxLength": 300,
+                "description": "Repository-relative path of the authoring file."
+              }
+            }
+          },
+          "bind": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "profile"
+            ],
+            "properties": {
+              "profile": {
+                "$ref": "#/$defs/componentId"
+              },
+              "app": {
+                "$ref": "#/$defs/componentId"
+              }
+            }
+          },
+          "resolved": {
+            "type": "boolean",
+            "description": "false when the bind names a profile or app the topology plan does not contain; such components render with unknown health."
+          },
+          "unresolvedReason": {
+            "$ref": "#/$defs/displayText"
+          },
+          "groupKind": {
+            "type": "string",
+            "enum": [
+              "department",
+              "team",
+              "system"
+            ]
+          },
+          "personTitle": {
+            "$ref": "#/$defs/displayText"
+          },
+          "cohorts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/componentId"
+            }
+          },
+          "accessors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/componentId"
+            }
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "showCrons": {
+                "type": "boolean"
+              },
+              "showConfigSummary": {
+                "type": "boolean"
+              },
+              "showAccessors": {
+                "type": "boolean"
+              },
+              "showArgoCd": {
+                "type": "boolean"
+              }
+            }
+          },
+          "crons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "schedule"
+              ],
+              "properties": {
+                "name": {
+                  "$ref": "#/$defs/displayText"
+                },
+                "schedule": {
+                  "type": "string",
+                  "maxLength": 100
+                }
+              }
+            },
+            "description": "Declared crons from the profile contract - name and schedule only, the whole allowlist. Prompts never enter the plan."
+          },
+          "configSummary": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "profile": {
+                "$ref": "#/$defs/componentId"
+              },
+              "modelProvider": {
+                "$ref": "#/$defs/displayText"
+              },
+              "model": {
+                "$ref": "#/$defs/displayText"
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/displayText"
+                }
+              },
+              "skillCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cronCount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "description": "The declared-configuration allowlist, closed by additionalProperties: false. Keys, tokens, prompts, webhook secrets and raw documents are structurally unrepresentable here."
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "scope"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 130,
+                  "description": "The topology plan instance id: <profile>@<scope> or <profile>/<app>@<scope>."
+                },
+                "scope": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "region": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "target": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "application": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "The Argo CD Application name from the topology plan."
+                },
+                "namespace": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "destinations": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "hermesClassic": {
+                      "$ref": "#/$defs/httpUrl",
+                      "description": "The instance's own Hermes dashboard (its compiled `dashboard` endpoint URL)."
+                    },
+                    "deployed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name",
+                          "url"
+                        ],
+                        "properties": {
+                          "name": {
+                            "$ref": "#/$defs/componentId"
+                          },
+                          "url": {
+                            "$ref": "#/$defs/httpUrl"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "grafanaDashboardUid": {
+                  "type": "string",
+                  "maxLength": 63,
+                  "description": "The instance's concrete Grafana dashboard uid, resolved by the compiler from the chart release naming (release names carry the scope, so the uid is per-instance). A uid, never a URL - the backend builds links from its configured base."
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "application"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "bind"
+              ],
+              "properties": {
+                "bind": {
+                  "required": [
+                    "profile",
+                    "app"
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "agent"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "bind"
+              ],
+              "properties": {
+                "bind": {
+                  "not": {
+                    "required": [
+                      "app"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "human",
+                    "group"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "bind"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "from",
+          "to",
+          "label"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/componentId"
+          },
+          "from": {
+            "$ref": "#/$defs/componentId"
+          },
+          "to": {
+            "$ref": "#/$defs/componentId"
+          },
+          "label": {
+            "$ref": "#/$defs/displayText"
+          }
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "nodes"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/componentId"
+        },
+        "title": {
+          "$ref": "#/$defs/displayText"
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ref",
+              "position"
+            ],
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/componentId"
+              },
+              "position": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "x",
+                  "y"
+                ],
+                "properties": {
+                  "x": {
+                    "$ref": "#/$defs/coordinate"
+                  },
+                  "y": {
+                    "$ref": "#/$defs/coordinate"
+                  }
+                }
+              },
+              "parent": {
+                "$ref": "#/$defs/componentId"
+              }
+            }
+          }
+        },
+        "viewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y",
+            "zoom"
+          ],
+          "properties": {
+            "x": {
+              "$ref": "#/$defs/coordinate"
+            },
+            "y": {
+              "$ref": "#/$defs/coordinate"
+            },
+            "zoom": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 10
+            }
+          }
+        }
+      }
+    }
+  }
+}

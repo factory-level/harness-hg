@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{#- The page-actions bar (ADR 0176): a breadcrumb, and the control that hands
+    the page over as markdown. It lands inside `article.md-content__inner
+    .md-typeset`, so extra.css resets the typeset styling it would inherit.
+
+    The three links are built HERE, at build time, from the page's own source
+    path and canonical URL - no JS needs to guess a URL from the directory-URL
+    scheme. Only the clipboard and the menu toggle are scripted. -#}
+{% block content %}
+  {% set md = page.file.src_uri | url %}
+  {% set ask = "Read " ~ page.canonical_url ~ " and answer questions about it." %}
+  <div class="hg-actions">
+    {% if page.ancestors %}
+      <nav class="hg-crumbs" aria-label="Breadcrumb">
+        {% for a in page.ancestors | reverse %}<span>{{ a.title }}</span>{% endfor %}
+      </nav>
+    {% else %}
+      <span class="hg-crumbs"></span>
+    {% endif %}
+
+    <div class="hg-copy" data-hg-md="{{ md }}">
+      <button class="hg-copy__go" type="button">
+        <svg class="hg-copy__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
+        </svg>
+        <span class="hg-copy__label">Copy page</span>
+      </button>
+      <button class="hg-copy__more" type="button" aria-haspopup="menu" aria-expanded="false"
+              aria-label="More ways to take this page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+      <div class="hg-copy__menu" role="menu" hidden>
+        <button class="hg-copy__go" type="button" role="menuitem">Copy page as Markdown</button>
+        <a role="menuitem" href="{{ md }}" target="_blank" rel="noopener">View as Markdown</a>
+        <a role="menuitem" target="_blank" rel="noopener"
+           href="https://chatgpt.com/?hints=search&q={{ ask | urlencode }}">Open in ChatGPT</a>
+        <a role="menuitem" target="_blank" rel="noopener"
+           href="https://claude.ai/new?q={{ ask | urlencode }}">Open in Claude</a>
+      </div>
+    </div>
+  </div>
+  {{ super() }}
+{% endblock %}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-capabilities/v1alpha1/capabilities.schema.json",
+  "title": "EnvironmentCapabilities",
+  "description": "Operator-authored environment/capabilities.yaml (#144): capabilities the ENVIRONMENT provides, bound to implementations it provisioned. The other half of the capability model - a profile's requires[] names a capability; a provider is either a peer profile's endpoint (provides:) or an entry here. A capability satisfied by BOTH is TOPO005 (ambiguous), never a precedence rule: two sources of truth for one URL is a conflict to resolve, not to rank. Consumed by the topology compiler; the resolved URL materializes through the same injection path as endpoint-provided capabilities. In an agent-team repository this file lives at `harness-hg/capabilities.yaml`; the legacy path stays readable for repositories not yet migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "bindings"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Environment capabilities contract version."
+    },
+    "bindings": {
+      "type": "object",
+      "description": "Capability name -> the implementation serving it. The name is the whole contract: consumers cite it in requires[] and never learn what implements it.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "maxLength": 63
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["implementation", "url"],
+        "properties": {
+          "implementation": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What serves this capability, in the operator's words (e.g. managed-redis, external-sentiment-api). Documentation and a stable identifier for the plan - the compiler never interprets it."
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https?://\\S+$",
+            "description": "The resolved URL injected into consumers. Non-sensitive by contract: credentials travel the secret path (envRequires), never a capability binding."
+          },
+          "region": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 40,
+            "description": "Region this implementation lives in, for locality resolution: a same-region requirement matches only consumers in this region. Absent = global (reachable from anywhere, satisfies any locality except same-target - an environment binding is never target-local)."
+          }
+        }
+      }
+    }
+  }
+}

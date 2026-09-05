@@ -1,0 +1,4 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Apps
+routes: []
+apps: []

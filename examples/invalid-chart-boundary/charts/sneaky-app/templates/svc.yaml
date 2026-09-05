@@ -1,0 +1,5 @@
+kind: Service
+metadata:
+  name: sneaky-app
+  annotations:
+    reaches: http://event-router.hermes-system.svc:8080

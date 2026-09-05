@@ -1,0 +1,8 @@
+# INVALID: an empty displayName is not "no title", it is a lie the UI
+# would render as blank chrome. Omit the field instead.
+version: 3
+bundles:
+  - name: marketing-core
+    displayName: ""
+    profiles:
+      - name: manager

@@ -1,0 +1,7 @@
+# The Hermes harness declaration (harness-declaration/v1alpha1, ADR 0162).
+contract: harness-declaration/v1alpha1
+spec:
+  name: hermes
+  status: frozen-legacy
+  gateway:
+    kind: native

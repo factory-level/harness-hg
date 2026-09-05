@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-communication/v1alpha1/communication.schema.json",
+  "title": "Environment communication configuration (environment/communication.yaml)",
+  "description": "The environment-owned half of the communication plane, authored beside environment/topology.yaml. Profiles declare logical intent (outputs, routes, spaces as alias#destination); this file binds it physically: which provider plugin backs each ChatOps connection alias, where its credentials live, and which durable transport carries queued routes. Absent file = communication feature off for the environment; a profile declaring queued routes or ChatOps outputs then fails compilation loudly instead of guessing. Secrets never appear here - only references.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "chatopsConnections": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*$",
+        "maxLength": 63
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "discord",
+              "slack",
+              "generic-webhook"
+            ],
+            "description": "The provider plugin behind this alias. `recording` captures messages locally instead of sending - rebinding a real alias to recording lets the same authored routes and eval fixtures run locally and in production."
+          },
+          "credentialRef": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Kubernetes Secret name holding the provider credential (in-cluster delivery)."
+              },
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "env": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "Environment variable holding the credential on the operator host (CLI-side delivery, e.g. `hg chatops test`). Exactly one of name/key or env."
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "name",
+                  "key"
+                ],
+                "not": {
+                  "required": [
+                    "env"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "env"
+                ],
+                "not": {
+                  "required": [
+                    "name"
+                  ]
+                }
+              }
+            ],
+            "description": "Where the provider credential lives - a Secret reference or an operator-host env var name. The VALUE never enters Git, plans, receipts, or logs. Required by every provider except recording."
+          }
+        },
+        "if": {
+          "properties": {
+            "provider": {
+              "not": {
+                "const": "recording"
+              }
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "credentialRef"
+          ]
+        }
+      },
+      "description": "Connection aliases routes reference as <alias>#<destination>. The alias is the whole ChatOps configuration surface - no provider-specific fields leak into profile contracts."
+    },
+    "durableProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plugin"
+      ],
+      "properties": {
+        "plugin": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-.a-z0-9]*[a-z0-9])?$",
+          "description": "The durable transport plugin backing queued delivery (e.g. redis-streams). The compiler holds each plugin's capability table (queued/fifo/dlq/replay) and refuses a route requiring a capability the plugin lacks - a guarantee is never silently weakened."
+        },
+        "config": {
+          "type": "object",
+          "description": "Plugin-specific, secret-free configuration (host, stream prefix, retention). Credentials, if any, ride a credentialRef-shaped entry inside - never a literal."
+        }
+      },
+      "description": "The environment's durable transport. Profiles say only `delivery: {mode: queued}`; this says what physically carries it."
+    }
+  }
+}

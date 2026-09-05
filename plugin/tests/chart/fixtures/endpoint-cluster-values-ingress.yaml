@@ -1,0 +1,5 @@
+# The target's WHERE layer for the endpoint-chart goldens.
+providers:
+  ingress: ingress
+ingress:
+  className: traefik

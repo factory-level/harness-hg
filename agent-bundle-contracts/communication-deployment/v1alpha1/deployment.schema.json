@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/communication-deployment/v1alpha1/deployment.schema.json",
+  "title": "Event-router deployment record (deployments/communication/<id>/deployment.yaml)",
+  "description": "One physical event-router instance, compiler-written, plain values under a single spec block. The router hosts the publisher adapter, delivery worker, session router, ChatOps adapter, and the shared external webhook gateway for its scope - one process, one record. It delivers events TO Hermes agent gateways; it is not one of them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec"
+  ],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "target",
+        "argoDestination",
+        "namespace",
+        "application",
+        "service"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "router, or router@<scope> in multi-scope layouts."
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "region": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argoDestination": {
+          "type": "string",
+          "minLength": 1
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "description": "hermes-system, or hermes-system-<scope>."
+        },
+        "application": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

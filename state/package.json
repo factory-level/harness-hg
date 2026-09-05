@@ -1,0 +1,18 @@
+{
+    "name": "hermes-gitops-state",
+    "description": "The state/ stack (spec §23): per-agent Pulumi state buckets, deploy SAs and IAM, rooted in the manually created bucket + KMS key",
+    "main": "src/index.ts",
+    "type": "module",
+    "scripts": {
+        "typecheck": "tsc --noEmit",
+        "test": "bun test"
+    },
+    "dependencies": {
+        "@pulumi/gcp": "^9.0.0",
+        "@pulumi/pulumi": "^3.226.0"
+    },
+    "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.5"
+    }
+}

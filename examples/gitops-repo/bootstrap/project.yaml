@@ -1,0 +1,33 @@
+# AppProject "hermes-gitops" — the safety fence the ApplicationSet works
+# inside. It allowlists the source repos (the two platform repos, plus any
+# remote Helm repos profiles' apps use) and exactly one destination: the
+# in-cluster server Argo CD ships with. v1 is single cluster (tech spec,
+# section 16), so nothing else can be targeted.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hermes-gitops
+  namespace: argocd
+spec:
+  description: Hermes GitOps agents on the single v1 cluster.
+  sourceRepos:
+    - __GITOPS_REPO_URL__        # this GitOps repo
+    - __HERMES_GITOPS_REPO_URL__   # the plugin repo (source of the chart;
+                                   # also serves profiles' `repo: local` apps)
+    # REMOTE HELM REPO ALLOWLIST — every https:// or oci:// repo named by a
+    # profile's spec.apps[].repo must be listed here, or Argo CD refuses to
+    # sync that app. `local` apps need nothing: they come from the plugin
+    # repo above. The platform config feeds this list; example:
+    # - https://qdrant.github.io/qdrant-helm
+  destinations:
+    # The one v1 cluster: the same cluster Argo CD runs in.
+    - server: https://kubernetes.default.svc
+      namespace: "hermes-*"
+  clusterResourceWhitelist:
+    # Namespace only — one per persona via CreateNamespace=true. There is
+    # no HermesProfile CRD to whitelist; profiles are plain Helm values.
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

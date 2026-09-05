@@ -1,0 +1,34 @@
+# A two-member bundle (ADR-28), the shape `hg up` emits into
+# deployments/bundles/<name>/values.yaml. Deliberately the marketing-core
+# shape - two agents sharing one pod, one of them carrying a repository
+# workspace - because that is the arrangement whose backup coverage was
+# missing entirely until #282.
+spec:
+  name: marketing-core
+  profiles:
+    - name: marketing-manager
+      source: https://example.invalid/social-media.hermes-gitops.git
+      sha: "1111111111111111111111111111111111111111"
+      sourceSubdir: distributions/manager
+      gatewayEnabled: true
+      apiServerPort: 8642
+      envSecretRef: hermes-marketing-manager-env
+      envRequires:
+        - ANTHROPIC_API_KEY
+      webhookPort: 8644
+      repositoryRefs: ["brand"]
+    - name: marketing-research
+      source: https://example.invalid/social-media.hermes-gitops.git
+      sha: "1111111111111111111111111111111111111111"
+      sourceSubdir: distributions/research
+      gatewayEnabled: false
+      repositoryRefs: []
+  repositories:
+    - name: brand
+      source: https://example.invalid/vision-manager.git
+      sha: "2222222222222222222222222222222222222222"
+      mountPath: /workspaces/brand
+      access: read-write
+  deployment:
+    diskSizeGb: 20
+    workspaceSizeGb: 20

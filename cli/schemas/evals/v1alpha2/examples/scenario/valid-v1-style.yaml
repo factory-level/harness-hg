@@ -1,0 +1,10 @@
+# Valid: a v1-style prompt + evaluator scenario is still legal in
+# v1alpha2 - the version adds surfaces, it does not retire any.
+name: prompt-style
+profile: platform-sre
+prompt: prompt.md
+evaluate: evaluate.py
+setup:
+  - kubectl apply -f fixtures/stub.yaml
+cleanup:
+  - kubectl delete -f fixtures/stub.yaml --ignore-not-found

@@ -1,0 +1,11 @@
+# requires[].optional is a boolean, not a string - "yes"/"true"/"1" must
+# all reject. A truthy string silently coerced would turn a MANDATORY
+# requirement optional, which is exactly the direction a type error must
+# not fail in.
+contractVersion: 5
+
+requires:
+  - capability: sentiment-feed
+    optional: "true"
+    inject:
+      env: HERMES_CAP_SENTIMENT_FEED_URL

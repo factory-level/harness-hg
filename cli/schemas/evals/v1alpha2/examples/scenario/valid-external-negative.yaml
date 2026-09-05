@@ -1,0 +1,11 @@
+# Valid: a negative external-webhook mode asserted entirely by the runner.
+name: ingress-invalid-signature
+profile: platform-sre
+invoke:
+  externalWebhook:
+    binding: demo-alert-source
+    payload: fixtures/external-alert.json
+    signature: invalid
+expect:
+  rejected:
+    reason: invalid-signature
