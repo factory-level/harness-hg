@@ -1,0 +1,8 @@
+# An external input with no verification policy is an unauthenticated
+# public webhook - refused by schema, the same rule TOPO013 enforces for
+# typed webhook endpoints.
+contractVersion: 4
+communication:
+  externalInputs:
+    - name: demo-alert-source
+      event: source.demo.alert/v1

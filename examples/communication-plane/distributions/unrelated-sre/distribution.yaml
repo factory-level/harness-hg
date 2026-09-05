@@ -1,0 +1,22 @@
+# The isolation control of the communication-plane reference fixture:
+# the same gateway surface as platform-sre, and NO subscription. Every
+# proof asserts this persona receives nothing - the router routes by
+# compiled IaC, never by "who could accept the POST".
+name: unrelated-sre
+version: 0.1.0
+description: "Reference isolation-control persona - could accept deliveries, subscribes to nothing, must receive nothing."
+author: "hermes-gitops examples"
+license: "UNLICENSED"
+
+hermes_requires: ">=0.9"
+
+env_requires:
+  - name: ANTHROPIC_API_KEY
+    description: "Anthropic API key - the agent's model provider"
+    required: true
+  - name: WEBHOOK_ENABLED
+    description: "Set to '1' - the gateway surface exists so its silence is meaningful"
+    required: true
+  - name: WEBHOOK_SECRET
+    description: "HMAC secret for the webhook platform - distinct from platform-sre's"
+    required: true

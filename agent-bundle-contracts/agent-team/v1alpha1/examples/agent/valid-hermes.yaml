@@ -1,0 +1,14 @@
+# A Hermes agent: env requirements come from src/distribution.yaml, so
+# envRequires is forbidden here.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Agent
+harness: hermes
+requires:
+  - capability: content-board
+    inject: {env: HERMES_CAP_CONTENT_BOARD_URL}
+topology:
+  supportedLayouts: [single, hub-spoke]
+  agent: {multiplicity: per-region, dataBoundary: region}
+deployment:
+  diskSizeGb: 10
+gitAuthSecretRef: hermes-marketing-manager-git-auth

@@ -1,0 +1,137 @@
+{
+  "apiVersion": "nexus.hermes.ai/panel-catalog/v1alpha2",
+  "kind": "PanelCatalog",
+  "panels": [
+    {
+      "id": "system-firing-alerts",
+      "surface": "system",
+      "title": "Firing alerts",
+      "dashboard": "hg-control-plane-overview",
+      "panelId": 1,
+      "size": "compact"
+    },
+    {
+      "id": "system-argo-attention",
+      "surface": "system",
+      "title": "Argo apps needing attention",
+      "dashboard": "hg-control-plane-overview",
+      "panelId": 2,
+      "size": "compact"
+    },
+    {
+      "id": "system-workload-memory",
+      "surface": "system",
+      "title": "Hermes workload memory (top 10)",
+      "dashboard": "hg-control-plane-overview",
+      "panelId": 9,
+      "size": "wide",
+      "range": "6h"
+    },
+    {
+      "id": "communication-dead-letters",
+      "surface": "communication",
+      "title": "Dead-lettered events",
+      "dashboard": "hg-control-plane-overview",
+      "panelId": 3,
+      "size": "compact"
+    },
+    {
+      "id": "communication-deliveries",
+      "surface": "communication",
+      "title": "Event deliveries and failures (per hour)",
+      "dashboard": "hg-control-plane-overview",
+      "panelId": 8,
+      "size": "wide",
+      "range": "24h"
+    },
+    {
+      "id": "backup-routine-staleness",
+      "surface": "backup",
+      "title": "Backup routine staleness (h since last success)",
+      "dashboard": "hg-control-plane-overview",
+      "panelId": 7,
+      "size": "standard",
+      "range": "7d",
+      "note": "Staleness of the SCHEDULE. It says nothing about whether an artifact was ever read back - that axis lives in the Backups view, not here (ADR-59)."
+    },
+    {
+      "id": "backup-history-control-plane",
+      "surface": "backup",
+      "title": "Backup runs \u2014 control plane",
+      "dashboard": "hg-backup-history",
+      "panelId": 1,
+      "size": "wide",
+      "range": "7d",
+      "note": "Every run - succeeded, failed, active - for the control plane's own routines. History is bounded by Prometheus retention (15d)."
+    },
+    {
+      "id": "backup-history-control-plane-duration",
+      "surface": "backup",
+      "title": "Run duration (s) \u2014 control plane",
+      "dashboard": "hg-backup-history",
+      "panelId": 2,
+      "size": "standard",
+      "range": "7d"
+    },
+    {
+      "id": "backup-history-agents",
+      "surface": "backup",
+      "title": "Backup runs \u2014 agents",
+      "dashboard": "hg-backup-history",
+      "panelId": 3,
+      "size": "wide",
+      "range": "7d",
+      "note": "Every run - succeeded, failed, active - for the agents' routines (per-profile, bundle and app charts)."
+    },
+    {
+      "id": "backup-history-agents-duration",
+      "surface": "backup",
+      "title": "Run duration (s) \u2014 agents",
+      "dashboard": "hg-backup-history",
+      "panelId": 4,
+      "size": "standard",
+      "range": "7d"
+    },
+    {
+      "id": "agent-ready-pods",
+      "surface": "agent",
+      "title": "Agent ready pods",
+      "dashboard": "{instance}",
+      "panelId": 3,
+      "size": "compact",
+      "range": "24h"
+    },
+    {
+      "id": "agent-freshness",
+      "surface": "agent",
+      "title": "Agent freshness (s since last observer event)",
+      "dashboard": "{instance}",
+      "panelId": 8,
+      "size": "standard",
+      "range": "24h",
+      "note": "The honest reading of 'activity': how long since the runtime last emitted anything. Not tool calls - nothing publishes those yet (#292)."
+    },
+    {
+      "id": "application-unavailable-replicas",
+      "surface": "application",
+      "title": "App unavailable replicas",
+      "dashboard": "{instance}",
+      "panelId": 4,
+      "size": "compact",
+      "range": "24h"
+    },
+    {
+      "id": "backup-history-target",
+      "surface": "backup",
+      "title": "Backup runs for the selected component",
+      "dashboard": "hg-backup-history",
+      "panelId": 3,
+      "size": "wide",
+      "range": "7d",
+      "variables": {
+        "namespace": "target"
+      },
+      "note": "ADR-100: the contextual host's panel. var-namespace narrows the agents row to the selected routine's namespace; with no selection the dashboard default (hermes-.*) applies, so the same entry is also a valid static panel."
+    }
+  ]
+}

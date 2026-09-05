@@ -1,0 +1,12 @@
+# The smallest honest environment: one name, the root-of-trust
+# coordinates, a gitops destination. Everything else defaults.
+apiVersion: hermes-gitops.factorylevel.dev/environment/v1alpha1
+name: scratch
+project: example-project
+rootKms: {location: us, keyring: pulumi, key: pulumi-root}
+state:
+  deployerGroup: deployers@example.dev
+  agents: [scratch]
+infra:
+  gitopsRepoUrl: https://github.com/example/scratch.gitops.git
+  providers: {compute: pod, secret: k8s, ingress: none}

@@ -1,0 +1,8 @@
+apiVersion: hermes.gitops/v1alpha1
+kind: Connections
+
+connections:
+  - name: company-discord
+    provider: discord
+    bindings:
+      - profile: echo

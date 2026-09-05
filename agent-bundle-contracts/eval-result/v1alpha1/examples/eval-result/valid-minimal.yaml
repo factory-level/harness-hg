@@ -1,0 +1,12 @@
+# The smallest honest publish: everything optional omitted. A result with
+# no score is still a result - `pass` is the claim, a number is not
+# required to make it.
+apiVersion: hermes.dev/eval-result/v1alpha1
+records:
+  - runId: run-1
+    componentId: marketing-sre
+    suite: sre-behaviour
+    scenario: acknowledges-alert
+    status: pass
+    harness: local-harness
+    ranAt: "2026-08-01T07:00:00Z"

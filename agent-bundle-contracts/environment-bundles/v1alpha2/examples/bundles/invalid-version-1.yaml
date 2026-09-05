@@ -1,0 +1,8 @@
+# INVALID: version 1 documents belong to the v1alpha1 directory. The
+# version is refused loudly rather than guessed at - the house posture in
+# place of a migration framework.
+version: 1
+bundles:
+  - name: marketing-core
+    profiles:
+      - name: manager

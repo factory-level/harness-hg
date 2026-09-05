@@ -1,0 +1,53 @@
+# Full HermesProfile record fixture for the golden renders
+# (infra/scripts/render-test.sh) - the helm-apps contract shape: spec.apps
+# is the RESOLVED apps array (values already merged by the emitter,
+# valuesRequired satisfied and dropped from the record). One remote app
+# (versioned chart from an allow-listed helm repo - the allowlist rides in
+# cluster-values-test-extra.yaml's appProject.sourceRepos) and one local
+# app (chart path into the platform repo, no version - it versions with
+# platformRepo.revision).
+#
+# Chart-test-owned fixture - see profile-minimal.yaml's header for why it
+# is not one of the frozen schema examples.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  ref: v1.3.0
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  distributionVersion: 1.3.0
+  deployment:
+    baseImageTag: hermes-base-2026-07
+    diskSizeGb: 100
+  apps:
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm
+      version: 1.9.1
+      values:
+        replicas: 1
+        auth:
+          apiKeySecretRef: vector-db-api-key
+    # An oci:// registry app: proves the chart renders Argo's helm-OCI
+    # contract (SCHEME-LESS repoURL + chart + targetRevision, #187) while
+    # the record and the allowlist keep the oci:// identity.
+    - name: relay
+      chart: marketing-sre-relay
+      repo: oci://ghcr.io/factory-level/charts
+      version: 0.1.0
+      values:
+        hmacSecret: golden-fixture-secret
+    - name: docs-site
+      chart: cli/test-env/charts/test-page
+      repo: local
+      values:
+        page:
+          title: Hermes GitOps test page
+  envRequires:
+    - DISCORD_BOT_TOKEN
+  expose:
+    services:
+      - name: tools
+        port: 8080
+        path: /
+    access:
+      policy: service-token

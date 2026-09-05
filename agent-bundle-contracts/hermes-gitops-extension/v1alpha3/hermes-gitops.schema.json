@@ -1,0 +1,894 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/hermes-gitops-extension/v1alpha3/hermes-gitops.schema.json",
+  "title": "GitOps extension v3 (hermes-gitops.yaml with contractVersion: 3)",
+  "description": "Contract version 3 of the one file a developer adds beside distribution.yaml. Additive over v1alpha2: every v2 block stays validation-compatible, and the communication plane arrives - apps[] entries gain outputs[] (typed event producers whose generated publisher URL is injected into the producing app's own values), and a top-level communication block declares routes (producer or external input -> agent handlers and ChatOps spaces) and externalInputs (shared-gateway webhook bindings with mandatory verification). Environment-owned communication configuration (chatopsConnections, durableProvider) is NOT authored here - it lives in environment/communication.yaml (environment-communication/v1alpha1). A route names only logical things: profiles, handlers, connection aliases; physical placement, transports, and credentials are the environment's decision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion"
+  ],
+  "$defs": {
+    "capabilityName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "DNS-label capability name. Unique per provider within the compiled catalogue at a given locality."
+    },
+    "eventType": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(\\.[a-z0-9-]+)*/v[0-9]+$",
+      "maxLength": 120,
+      "description": "Versioned event type, e.g. observability.alert/v1. The version suffix is part of the contract: changing the payload shape is a new event type, never a silent widening."
+    },
+    "chatopsSpace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*#\\S+$",
+      "maxLength": 200,
+      "description": "A ChatOps destination as <connection-alias>#<opaque-destination>. The alias resolves to a provider plugin + credentials in environment/communication.yaml; everything after the first # is passed to that plugin verbatim (a Discord channel ID, a Slack destination, ...). Referencing a space here IS its registration - no separate registry exists."
+    },
+    "sessionPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "per-event",
+            "keyed",
+            "route"
+          ],
+          "description": "How deliveries map onto Hermes sessions: per-event = a fresh session per event; keyed = one session per value of `key` (an incident, a workflow); route = one session for the whole route. The generated session key always carries <environment>/<profile>/<route>."
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^(subject|data\\.[^.\\s]+(\\.[^.\\s]+)*)$",
+          "description": "REQUIRED when mode is keyed: the envelope field the session groups by - `subject`, or a dot-path into the payload (`data.labels.incident`)."
+        }
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "keyed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "key"
+        ]
+      }
+    },
+    "deliveryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "queued"
+          ],
+          "description": "direct = publisher -> destination, no broker (does not survive an extended destination outage); queued = publisher -> durable provider -> delivery worker -> destination, at-least-once. queued requires the environment to declare a durableProvider with the matching capabilities (EVENT007 otherwise)."
+        },
+        "guarantee": {
+          "const": "at-least-once",
+          "description": "The only guarantee the platform sells: at-least-once delivery + stable event IDs + destination idempotency. Exactly-once is deliberately not offered."
+        },
+        "retry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maxAttempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "backoff": {
+              "type": "string",
+              "enum": [
+                "fixed",
+                "exponential"
+              ]
+            }
+          }
+        },
+        "deadLetter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "retention": {
+              "type": "string",
+              "pattern": "^[0-9]+d$",
+              "description": "DLQ retention in days, e.g. 14d."
+            }
+          }
+        },
+        "ordering": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "fifo",
+              "description": "FIFO is scoped to one output edge + one ordering key - never a global order. Different keys process concurrently."
+            },
+            "key": {
+              "type": "string",
+              "pattern": "^(subject|data\\.[^.\\s]+(\\.[^.\\s]+)*)$",
+              "description": "The envelope field events are ordered by: `subject` or a data dot-path."
+            },
+            "onFailure": {
+              "type": "string",
+              "enum": [
+                "block",
+                "dead-letter-and-continue"
+              ],
+              "description": "Poison-message policy: block = a failed event blocks later same-key events (strict order over progress); dead-letter-and-continue = after retry exhaustion the event enters the DLQ and the ordering group continues. Default: dead-letter-and-continue."
+            }
+          }
+        }
+      }
+    },
+    "outputDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "event"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "DNS-label output name, unique within the owning app. Routes cite it as <app>#<output>."
+        },
+        "event": {
+          "$ref": "#/$defs/eventType"
+        },
+        "schema": {
+          "type": "string",
+          "pattern": "^[^/\\s][^\\s]*\\.schema\\.json$",
+          "description": "Repo-relative path to the event's payload JSON Schema. The publisher validates every payload against it before routing; absent means any JSON body is accepted."
+        },
+        "subject": {
+          "type": "string",
+          "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$",
+          "description": "Dot-path into the native payload naming the business subject (an incident, a workflow). Becomes envelope.subject - the identity FIFO ordering (key: subject) and keyed sessions group by. Absent or unresolvable: the event has no subject and keyed sessions isolate per event."
+        },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "const": "webhook",
+              "description": "How the application hands events to the platform. webhook = the compiler generates a publisher-ingest URL and the app POSTs its native payload there. The only adapter type today."
+            },
+            "inject": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "appValue"
+              ],
+              "properties": {
+                "appValue": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$",
+                      "description": "Dot-path into the PRODUCING app's own merged values where the generated publisher URL lands (e.g. alert.webhookUrl). The app never learns what consumes the event."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "agentOutputTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "handler"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "Target profile name. The compiler binds only to a webhook handler that profile's OWN contract declares - there is no fallback profile, ever."
+        },
+        "handler": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "The named webhook route on the target profile's gateway (config.yaml platforms.webhook routes)."
+        },
+        "session": {
+          "$ref": "#/$defs/sessionPolicy"
+        },
+        "delivery": {
+          "$ref": "#/$defs/deliveryPolicy",
+          "description": "Per-output override of the route's delivery default."
+        }
+      }
+    },
+    "routeOutput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/agentOutputTarget"
+        },
+        "chatops": {
+          "$ref": "#/$defs/chatopsSpace"
+        },
+        "delivery": {
+          "$ref": "#/$defs/deliveryPolicy",
+          "description": "Per-output override of the route's delivery default (chatops outputs)."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "agent"
+          ],
+          "not": {
+            "required": [
+              "chatops"
+            ]
+          }
+        },
+        {
+          "required": [
+            "chatops"
+          ],
+          "not": {
+            "required": [
+              "agent"
+            ]
+          }
+        }
+      ],
+      "description": "Exactly one destination: an agent (profile + handler) or a ChatOps space. Each output is an independent delivery edge with its own delivery ID, retry state, and receipt - one failing edge never blocks another."
+    },
+    "routeDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "from",
+        "outputs"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "DNS-label route name, unique within the file."
+        },
+        "from": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "app": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "maxLength": 40,
+              "description": "An app declared in THIS profile's apps[]."
+            },
+            "output": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "maxLength": 40,
+              "description": "An output declared on that app."
+            },
+            "externalInput": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+              "maxLength": 40,
+              "description": "An entry in communication.externalInputs of THIS profile."
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "app",
+                "output"
+              ],
+              "not": {
+                "required": [
+                  "externalInput"
+                ]
+              }
+            },
+            {
+              "required": [
+                "externalInput"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "app"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "output"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "filter": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^(subject|data\\.[^.\\s]+(\\.[^.\\s]+)*)$"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          },
+          "description": "Equality filters over declared normalized fields (`subject` or data dot-paths). A route delivers only events matching every entry. Filters select among declared routes - a payload can never CREATE a route."
+        },
+        "delivery": {
+          "$ref": "#/$defs/deliveryPolicy",
+          "description": "The route's delivery default; individual outputs may override."
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/routeOutput"
+          }
+        }
+      }
+    },
+    "externalInputDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "event",
+        "verification"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "DNS-label binding name. Becomes the opaque virtual path /v1/hooks/<binding-id> on the ONE shared webhook gateway - no per-profile public endpoint exists."
+        },
+        "event": {
+          "$ref": "#/$defs/eventType"
+        },
+        "schema": {
+          "type": "string",
+          "pattern": "^[^/\\s][^\\s]*\\.schema\\.json$",
+          "description": "Repo-relative path to the normalized payload's JSON Schema."
+        },
+        "subject": {
+          "type": "string",
+          "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$",
+          "description": "Dot-path into the normalized payload naming the business subject (same semantics as an output's subject field)."
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "description": "Optional provider normalizer (e.g. github). Absent = the generic normalizer: the verified body IS the event payload."
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "secretRef"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "hmac-sha256",
+                "github-hmac-sha256"
+              ],
+              "description": "Signature scheme the gateway enforces. An unverifiable external input is rejected at compile - this field is required by schema, not just convention."
+            },
+            "secretRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "key"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Kubernetes Secret name holding the per-binding signing secret. The secret VALUE never appears in Git, plans, or receipts."
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        "accepts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Optional allowlist of provider event kinds (e.g. issues.opened). Anything else is rejected at the gateway."
+        }
+      }
+    },
+    "dataBoundary": {
+      "type": "string",
+      "enum": [
+        "global",
+        "region",
+        "target"
+      ],
+      "description": "The NARROWEST boundary this component's state may leave. Placement says where compute runs; dataBoundary says where the data must stay. The compiler rejects a boundary narrower than the scope the component's consumers span."
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "port",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40,
+          "description": "DNS-label endpoint name. Becomes the first hostname label of the canonical URL. Uniqueness within the owning component is enforced by the compiler, not here - uniqueItems only rejects entries identical in every field."
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 63,
+          "description": "Kubernetes Service backing this endpoint. REQUIRED on app endpoints (the compiler cross-checks it against the rendered chart under doctor --deep); FORBIDDEN on agent endpoints, which are backed by the agent pod's own Service."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Optional path prefix; defaults to /."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "internal",
+            "private",
+            "authenticated",
+            "public",
+            "webhook",
+            "external"
+          ],
+          "description": "Who consumes this endpoint: internal = same component, cluster DNS only, never exposed; private = other workloads in the environment; authenticated = a person, behind the identity provider; public = anyone, and ONLY ever explicit; webhook = an external event sender (signature declaration required); external = a named machine client under a service-token policy. Authentication is per-endpoint - v1's profile-level expose.access.policy has no v2 equivalent."
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Signature-verification scheme the receiver enforces (e.g. hmac-sha256). REQUIRED when type is webhook - an unverifiable webhook endpoint is rejected at compile (TOPO013)."
+        },
+        "provides": {
+          "$ref": "#/$defs/capabilityName",
+          "description": "Capability this endpoint provides. Consumers cite the capability name in requires[] instead of a literal URL; the compiler binds and injects the resolved URL."
+        }
+      },
+      "if": {
+        "properties": {
+          "type": {
+            "const": "webhook"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "required": [
+          "signature"
+        ]
+      }
+    },
+    "agentEndpoint": {
+      "$ref": "#/$defs/endpoint",
+      "not": {
+        "required": [
+          "service"
+        ]
+      }
+    },
+    "appEndpoint": {
+      "$ref": "#/$defs/endpoint",
+      "required": [
+        "service"
+      ]
+    }
+  },
+  "properties": {
+    "contractVersion": {
+      "const": 3,
+      "description": "The authored contract version. Readers dispatch on this key's VALUE: 3 validates here, 2 against v1alpha2, absent against v1alpha1 - no file is valid under more than one. Emitted records stay markerless - only AUTHORED files carry a version key."
+    },
+    "communication": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The communication plane: routes from this profile's producer outputs or external inputs to agent handlers and ChatOps spaces. Transport, provider, and credential choices live in environment/communication.yaml - a route here is pure logical intent.",
+      "properties": {
+        "routes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/routeDecl"
+          }
+        },
+        "externalInputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/externalInputDecl"
+          }
+        }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What this profile supports, never where it runs - placement is the environment's decision (environment/topology.yaml), constrained by these declarations.",
+      "properties": {
+        "supportedLayouts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "single",
+              "replicated",
+              "hub-spoke"
+            ]
+          },
+          "description": "Layouts this profile has been designed and validated for. An environment cannot deploy the profile into a layout not listed here (TOPO001). Default when absent: [single]."
+        },
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "multiplicity": {
+              "type": "string",
+              "enum": [
+                "singleton",
+                "per-region",
+                "per-target"
+              ],
+              "description": "How many physical agent instances the compiler creates. per-agent is meaningless for the agent itself and is rejected here. Default: singleton."
+            },
+            "dataBoundary": {
+              "$ref": "#/$defs/dataBoundary",
+              "description": "Default: target."
+            }
+          }
+        }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/agentEndpoint"
+      },
+      "description": "The agent's own endpoints (backed by the agent pod - no service field). Replaces v1's expose.services with typed entries; a v1 file's expose block is projected onto this shape during adaptation."
+    },
+    "requires": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability",
+          "inject"
+        ],
+        "properties": {
+          "capability": {
+            "$ref": "#/$defs/capabilityName"
+          },
+          "locality": {
+            "type": "string",
+            "enum": [
+              "same-target",
+              "same-region",
+              "global"
+            ],
+            "description": "Where the provider must be relative to this consumer. Default: global. A same-region requirement that resolves outside the region is a compile error - never a silent fallback."
+          },
+          "inject": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Exactly one destination for the resolved URL: an agent environment variable, or a dot-path into a declared app's values (resolved after placement, before values are emitted).",
+            "properties": {
+              "env": {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$",
+                "description": "Agent environment variable name (convention: HERMES_CAP_<NAME>_URL). Collisions with declared envRequires or another injection are a compile error (TOPO014)."
+              },
+              "appValue": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "app",
+                  "path"
+                ],
+                "properties": {
+                  "app": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 40,
+                    "description": "Name of an app declared in THIS profile's apps[] (TOPO015 rejects an undeclared app)."
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$",
+                    "description": "Dot-path into the app's merged values where the resolved URL lands."
+                  }
+                }
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "env"
+                ]
+              },
+              {
+                "required": [
+                  "appValue"
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "description": "Capabilities this profile consumes, by name. The compiler fails on a missing provider (TOPO004) and on an ambiguous one (TOPO005); hardcoded cross-profile URLs are the thing this block deletes."
+    },
+    "apps": {
+      "type": "array",
+      "description": "The helm apps this profile launches, in author order - v1's shape, plus optional topology and endpoints per entry. Each entry becomes one physical app instance per its multiplicity.",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "chart",
+          "repo"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 40,
+            "description": "DNS-label app name, unique within the file."
+          },
+          "chart": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Chart name in the remote helm repo, or (for `repo: local`) the chart's path inside the platform/GitOps chart tree."
+          },
+          "repo": {
+            "type": "string",
+            "pattern": "^(local|https://\\S+|oci://\\S+)$",
+            "description": "Helm repo URL (https:// or oci://), or the RESERVED WORD `local`."
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Chart version. REQUIRED for remote repos; FORBIDDEN for `repo: local`."
+          },
+          "values": {
+            "type": "object",
+            "description": "Inline chart values - the author's defaults. Fleet defaults and per-instance overrides deep-merge on top; capability injections land last."
+          },
+          "valuesRequired": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[^.\\s]+(\\.[^.\\s]+)*$"
+            },
+            "description": "Dot-paths into the merged values the OPERATOR must supply. Validated pre-render."
+          },
+          "topology": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "multiplicity": {
+                "type": "string",
+                "enum": [
+                  "singleton",
+                  "per-region",
+                  "per-target",
+                  "per-agent"
+                ],
+                "description": "Default: per-agent (one instance paired with every physical agent instance - v1's implicit behaviour)."
+              },
+              "dataBoundary": {
+                "$ref": "#/$defs/dataBoundary",
+                "description": "Default: target."
+              }
+            }
+          },
+          "endpoints": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/appEndpoint"
+            },
+            "description": "Endpoints this app provides, each backed by a named Kubernetes Service the chart renders."
+          },
+          "outputs": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/outputDecl"
+            },
+            "description": "Typed events this app produces. The compiler generates one publisher-ingest URL per output and injects it at the declared appValue path; communication.routes decide what consumes the event - the app never knows its subscribers."
+          }
+        },
+        "if": {
+          "properties": {
+            "repo": {
+              "const": "local"
+            }
+          }
+        },
+        "then": {
+          "not": {
+            "required": [
+              "version"
+            ]
+          }
+        },
+        "else": {
+          "required": [
+            "version"
+          ]
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Agent pod knobs - pod-compute only (unchanged from v1).",
+      "properties": {
+        "baseImageTag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "diskSizeGb": {
+          "type": "integer",
+          "minimum": 10
+        }
+      }
+    },
+    "expose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "services"
+      ],
+      "description": "v1's exposure block, kept verbatim for the additive window: a v2 file MAY still carry it (the emitter renders it into the record unchanged), but endpoints[] is the v2 surface and the compiler treats expose as the legacy projection. Declaring the same port in both is a doctor finding.",
+      "properties": {
+        "services": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "port"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^/"
+              }
+            }
+          }
+        },
+        "access": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "policy": {
+              "type": "string",
+              "enum": [
+                "service-token",
+                "idp",
+                "mixed"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schedule"
+      ],
+      "description": "Backup intent (unchanged from v1 - schedule + retention only; the destination is a platform concern).",
+      "properties": {
+        "schedule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retention": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "gitAuthSecretRef": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Name of a Kubernetes Secret in the instance's own namespace holding the credential to clone a PRIVATE spec.source (unchanged from v1)."
+    }
+  }
+}

@@ -1,0 +1,22 @@
+# Runtime settings for unrelated-sre (the isolation control).
+model:
+  provider: anthropic
+  name: claude-sonnet-4-5
+
+platforms:
+  # The surface EXISTS (so receiving nothing is a real assertion), but no
+  # route in any contract targets it.
+  webhook:
+    enabled: true
+    extra:
+      routes:
+        alerts:
+          prompt: |
+            You should never be woken by the communication plane - no
+            route targets you. If you are reading this from a webhook
+            delivery, that is itself the incident: report it.
+
+            Payload:
+            {__raw__}
+  discord:
+    enabled: false

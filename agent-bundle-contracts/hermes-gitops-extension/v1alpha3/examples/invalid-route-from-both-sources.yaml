@@ -1,0 +1,26 @@
+# A route has exactly one source: an app output OR an external input.
+contractVersion: 3
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+communication:
+  externalInputs:
+    - name: demo-alert-source
+      event: source.demo.alert/v1
+      verification:
+        type: hmac-sha256
+        secretRef:
+          name: demo-alert-source-webhook
+          key: secret
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+        externalInput: demo-alert-source
+      outputs:
+        - chatops: company_discord#123456789012345678

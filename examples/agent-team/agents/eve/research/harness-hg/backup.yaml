@@ -1,0 +1,7 @@
+# Archive intent only - schedule + retention; the destination is the
+# platform's. Read by the emitter into the record's backup routine;
+# `hg backup run|verify|restore` drive it. Absent = nothing backed up.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Backup
+schedule: "0 4 * * *"
+retention: 7

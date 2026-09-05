@@ -1,0 +1,11 @@
+# Invalid: a resolved remote app must carry `version` (the Application's
+# targetRevision) - same version-required-iff-remote rule as the
+# hermes-gitops.yaml extension it was rendered from.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  apps:
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm

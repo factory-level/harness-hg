@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bundling is a co-location decision, not a security one — Harness Hg devlog</title>
+<meta name="description" content="The same asymmetry turned up three separate times before I named it. Moving two agents into a bundle to save resources was quietly removing the ability to isolate them.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="Bundling is a co-location decision, not a security one — Harness Hg devlog">
+<meta property="og:description" content="The same asymmetry turned up three separate times before I named it. Moving two agents into a bundle to save resources was quietly removing the ability to isolate them.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. Only the two text faces are
+     preloaded: JetBrains Mono appears on inline literals mid-article, not on
+     the first screen. `crossorigin` because font fetches are CORS-mode
+     requests even same-origin. -->
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js"></script>
+<link rel="stylesheet" href="../styles.css?v=18">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href="../">
+      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Hermes</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="../features/">Overview</a></li>
+          <li><a href="../features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="../features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="../features/communication.html">Communication</a></li>
+          <li><a href="../features/backups.html">Backups</a></li>
+          <li><a href="../features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="../docs/">Docs</a>
+      <a href="../demo/">Demo</a>
+      <a href="./">Devlog</a>
+      <a href="../about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main class="reading" id="main" tabindex="-1">
+
+
+    <article>
+      <div class="post__head">
+        <p class="meta"><span>1 August 2026</span><span class="sep">·</span><span>Bundles</span><span class="sep">·</span><strong>Workload security</strong></p>
+        <h1 class="post__title">Bundling is a co-location decision, not a security one</h1>
+        <p class="post__standfirst">The same asymmetry turned up three separate times before I named it. Moving two agents into a bundle to save resources was quietly removing the ability to isolate them.</p>
+      </div>
+
+      <div class="post__body">
+        <p>Bundles exist for a boring reason. Running one pod for two small agents costs less than running two. It is a resource decision, and it should be nothing more than a resource decision.</p>
+
+        <p>Three times, in three unrelated reviews, I found that it had become more than that.</p>
+
+        <ul>
+          <li><strong>Backups.</strong> Routine coverage resolved against a profile's own namespace, so a bundled agent read as uncovered when it was not.</li>
+          <li><strong>Namespace resolution in <span class="mono">hg backup</span>.</strong> Same shape, different surface, found separately.</li>
+          <li><strong>Network policy.</strong> The profile chart had carried an opt-in NetworkPolicy since the pod provider landed. The bundle chart had none at all — so moving two agents into a bundle silently removed the option to isolate them.</li>
+        </ul>
+
+        <p>Individually, each of those reads as a small bug worth a small fix. Together they are one design defect: a feature added for efficiency inherited none of the guarantees of the thing it replaced, and nothing in the system knew the two were meant to be equivalent.</p>
+
+        <p class="pull">Bundling is a co-location decision. It must never be a security downgrade.</p>
+
+        <p>The third instance is when you stop fixing instances and write the rule down.</p>
+
+        <h2>What shipped</h2>
+
+        <p>The bundle chart got its NetworkPolicy. Off by default — the same default the profile chart uses, and for the same honest reason: on a cluster whose network plugin does not enforce policy, an enabled-by-default policy would look like protection while being nothing at all. A security control that lies about itself is worse than one you know you have not switched on.</p>
+
+        <p>When it is on, it admits exactly the ports the members declare, and a render test fails if any declared port is missing from the rendered policy. A policy that quietly severs a member's listener is worse than no policy — you would spend a day debugging the agent before suspecting the thing that was supposed to be protecting it.</p>
+
+        <p>The same pull request gave the bundle chart its first tests at all, which tells you something about how the feature arrived in the first place.</p>
+
+        <h2>Why this one is written down</h2>
+
+        <p>Not because a NetworkPolicy is interesting. Because <em>the efficient variant must inherit every guarantee of the thing it replaces</em> is a rule I now apply to any feature whose entire justification is saving resources — and I did not have that rule three weeks ago. It cost three bugs that all looked unrelated to acquire it.</p>
+
+        <p>It generalises past this project. Any time you offer a cheaper path alongside a safe one, the cheaper path is where the guarantees quietly go missing, because nobody re-derives them — they assume the two variants are the same thing wearing different clothes.</p>
+      </div>
+
+      <div class="post__foot">
+        <span class="label">Sources</span>
+        <div class="post__links">
+          <a href="../docs/agent-team-install/">Architecture: profile bundles →</a>
+          <a href="https://github.com/factory-level/harness-hg/blob/main/maintainers/gaps.md">Known gaps →</a>
+          <a href="https://github.com/factory-level/harness-hg/issues/284">Issue #284 →</a>
+        </div>
+      </div>
+    </article>
+
+    <nav class="post__nav" aria-label="Devlog">
+      <a href="the-panel-meant-something-else.html">← Previous: the panel rendered perfectly and meant something else</a>
+      <a href="the-copy-is-the-one-that-rots.html">Next: the copy is always the one that rots →</a>
+    </nav>
+
+</main>
+
+<script src="../hero.js?v=18"></script>
+</body>
+</html>

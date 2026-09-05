@@ -1,0 +1,17 @@
+# A route with no outputs routes nothing - rejected at schema, before the
+# compiler ever sees it (EVENT003 covers the resolved-but-empty case).
+contractVersion: 5
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      outputs: []

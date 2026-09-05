@@ -1,0 +1,6 @@
+# Environment variable names follow the same rule as the record's envRequires.
+contractVersion: 5
+runtime:
+  kind: eve
+  envRequires:
+    - lower_case

@@ -1,0 +1,53 @@
+# The ADR-150 surface of an EveAgent record: resolved child apps (one
+# remote https, one oci://, one local - the same trio profile-full.yaml
+# uses, so the rendered Applications can be compared across charts),
+# backup intent, plus a workspace binding layered the way
+# deployments/workspaces/profiles/<name>.yaml lands (spec.workspace).
+spec:
+  persona: echo
+  runtime: eve
+  source: https://github.com/factorylevel/eve-agents.git
+  ref: main
+  sourceSubdir: agents/echo
+  sha: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  envRequires:
+    - ANTHROPIC_API_KEY
+  apps:
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm
+      version: 1.9.1
+      values:
+        replicas: 1
+        auth:
+          apiKeySecretRef: vector-db-api-key
+    - name: relay
+      chart: marketing-sre-relay
+      repo: oci://ghcr.io/factory-level/charts
+      version: 0.1.0
+      values:
+        hmacSecret: golden-fixture-secret
+    - name: docs-site
+      chart: cli/test-env/charts/test-page
+      repo: local
+      values:
+        page:
+          title: Hermes GitOps test page
+  backup:
+    schedule: "0 3 * * *"
+    retention: 14
+  workspace:
+    sizeGb: 5
+    terminalCwd: /workspaces/platform
+    repositories:
+      - name: platform
+        source: github.com/factory-level/hermes-gitops-plugin
+        sha: b5113eb5c0ffee00000000000000000000000000
+        mountPath: /workspaces/platform
+        access: read-only
+      - name: notes
+        source: https://github.com/factory-level/notes.git
+        sha: 0123456789abcdef0123456789abcdef01234567
+        mountPath: /workspaces/notes
+        access: read-write
+        gitAuthSecretRef: notes-git-auth

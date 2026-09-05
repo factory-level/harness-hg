@@ -1,0 +1,61 @@
+# AppProject "hermes-gitops" — the security boundary the root Application and
+# the hermes-gitops-profiles ApplicationSet operate inside. Scoped to exactly
+# the source repos this deployment is allowed to sync from (the two platform
+# repos plus the operator-maintained remote helm repo allowlist below), and
+# to the handful of cluster-scoped resource kinds bootstrap/reconciliation
+# needs.
+#
+# Token syntax: see applicationset.yaml's header comment. `__DOUBLE_UNDERSCORE__`
+# tokens here are substituted once by the emitter's scaffold step.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hermes-gitops
+  namespace: argocd
+spec:
+  description: >-
+    Hermes GitOps app-of-apps project. One Application per installed Hermes
+    agent persona (rendered from the hermes-profile chart and this GitOps
+    repo's profiles/ records), plus one child Application per helm app a
+    profile declares (spec.apps).
+  sourceRepos:
+    # The two platform repos - required, do not remove: this GitOps repo
+    # itself, and the harness-hg repo the hermes-profile chart
+    # (and every `repo: local` app chart) syncs from. Because the platform
+    # repo is always allowed, `repo: local` apps need no extra entry here.
+    - __GITOPS_REPO_URL__
+    - __HERMES_GITOPS_REPO_URL__
+    # --- Remote helm repo allowlist (the environment's half) ---
+    # Every https:// or oci:// helm repo that profiles' apps[].repo entries
+    # name must be allowed here before Argo CD will sync it. Declare them
+    # ONCE, in values/cluster-values.yaml appProject.sourceRepos (the chart
+    # fail-fasts at render time against that copy); the scaffold renders
+    # that list below on every reconcile, adding the scheme-less twin of
+    # each oci:// registry (the hermes-profile chart renders helm-OCI child
+    # Applications with a SCHEME-LESS repoURL - Argo CD's helm-OCI contract,
+    # #187 - and this AppProject matches the form the Application carries).
+    # Helm-OCI registries also need a repository Secret with enableOCI -
+    # declared via the bootstrap's helmOciRegistries stack config. Never
+    # hand-edit this list: an edit makes the file operator-owned and the
+    # scaffold stops updating it (bootstrap/scaffold.yaml, ADR-37).
+__OPERATOR_SOURCE_REPOS__
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+    # Any cluster the operator explicitly registered as an Argo CD cluster
+    # Secret (infra targetClusters config, issue #5 [C1]) — the
+    # ApplicationSet's name-based destination (issue #8 [C2]) resolves
+    # against those Secrets' `name` field. Registration is the
+    # authorization act: this wildcard admits nothing that wasn't
+    # deliberately minted by `pulumi up`.
+    - name: "*"
+      namespace: "*"
+  clusterResourceWhitelist:
+    # Namespace only — the ApplicationSet template creates one Namespace per
+    # persona via CreateNamespace=true. There is no HermesProfile CRD to
+    # whitelist; profiles are plain Helm values.
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

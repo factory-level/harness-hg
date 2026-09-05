@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hermes-event-router.service" . }}-config
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  # The router's ENTIRE configuration: the compiled spec plus the two
+  # environment knobs. Credential references only - a secret value has no
+  # path into this ConfigMap.
+  config.json: |
+{{ dict "environment" .Values.environment "recordingBase" .Values.recordingBase "spec" .Values.spec | toPrettyJson | indent 4 }}

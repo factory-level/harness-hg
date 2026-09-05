@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The panel rendered perfectly and meant something else — Harness Hg devlog</title>
+<meta name="description" content="I built the first embedded dashboard, verified it in a browser, and withdrew it. Nothing about the frame was broken. The tab said Uptime and the panel behind it was spend.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="The panel rendered perfectly and meant something else — Harness Hg devlog">
+<meta property="og:description" content="I built the first embedded dashboard, verified it in a browser, and withdrew it. Nothing about the frame was broken. The tab said Uptime and the panel behind it was spend.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. Only the two text faces are
+     preloaded: JetBrains Mono appears on inline literals mid-article, not on
+     the first screen. `crossorigin` because font fetches are CORS-mode
+     requests even same-origin. -->
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js"></script>
+<link rel="stylesheet" href="../styles.css?v=18">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href="../">
+      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Hermes</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="../features/">Overview</a></li>
+          <li><a href="../features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="../features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="../features/communication.html">Communication</a></li>
+          <li><a href="../features/backups.html">Backups</a></li>
+          <li><a href="../features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="../docs/">Docs</a>
+      <a href="../demo/">Demo</a>
+      <a href="./">Devlog</a>
+      <a href="../about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main class="reading" id="main" tabindex="-1">
+
+
+    <article>
+      <div class="post__head">
+        <p class="meta"><span>2 August 2026</span><span class="sep">·</span><span>Nexus</span><span class="sep">·</span><strong>ADR-44</strong></p>
+        <h1 class="post__title">The panel rendered perfectly and meant something else</h1>
+        <p class="post__standfirst">I built the first embedded dashboard, verified it in a browser, and then withdrew it. Nothing about the frame was broken. The tab said Uptime and the panel behind it was spend.</p>
+      </div>
+
+      <div class="post__body">
+        <p>The goal was ordinary enough. The fleet view should show you the relevant graph in place, so that answering one question does not mean opening three tools and correlating them by hand. Grafana can be embedded. Argo CD cannot. So the first embed went where Grafana already had something worth showing.</p>
+
+        <p>I built it. I opened it in a browser and checked it properly. It rendered — correct size, live data, no console errors — inside a tab labelled <em>Uptime</em>.</p>
+
+        <p class="pull">Nothing about the frame was broken. The panel rendered perfectly, and it meant something else.</p>
+
+        <p>The dashboard behind that card was a cost dashboard. Somebody glancing at a tab named Uptime would have read spend as availability. There was no bug in any component. Every layer did exactly its job. The <em>composition</em> was a lie, and it was a confident, well-rendered, live-data lie, which is the worst kind.</p>
+
+        <p>So I pulled it. Everything in the contract that replaced it follows from that one sentence:</p>
+
+        <ul>
+          <li>the panels a surface may embed come from an <strong>allowlist</strong>, not from whatever dashboard id a caller passes;</li>
+          <li>what the plan <em>promises</em> is checked against live Grafana rather than assumed;</li>
+          <li>and there is a check whose entire job is asking whether the plan's promises are true at all.</li>
+        </ul>
+
+        <h2>The part I got wrong in the write-up</h2>
+
+        <p>When I came back to the decision record afterwards, I found I had documented the mechanism and not the reason. It described what the allowlist was and how it was enforced. It did not say <em>why</em>: that a correct panel in the wrong frame is indistinguishable from a broken one, except that it inspires confidence instead of suspicion.</p>
+
+        <p>So I amended it to lead with the reason and leave the mechanism second. If someone deletes the allowlist in a year to ship something faster, the mechanism will not stop them — they will be deleting it precisely because it is in the way. The sentence about what it is for might.</p>
+
+        <h2>What it still cannot do</h2>
+
+        <p>The remainder is in the record's cost section rather than smoothed over here:</p>
+
+        <ul>
+          <li>the catalog is platform-owned, so no persona repository can contribute a panel of its own yet;</li>
+          <li>there is no eval panel to catalogue, because evals do not emit one;</li>
+          <li>and the cross-site half is unproven, because the local loop frames plain-HTTP forwards.</li>
+        </ul>
+
+        <p>Three limits, written down, on a feature I would otherwise be describing as done.</p>
+      </div>
+
+      <div class="post__foot">
+        <span class="label">Sources</span>
+        <div class="post__links">
+          <a href="../docs/platform/nexus/">Platform: Nexus UI →</a>
+          <a href="../docs/nexus-ui/">Nexus UI →</a>
+          <a href="https://github.com/factory-level/harness-hg/issues/281">Issue #281 →</a>
+        </div>
+      </div>
+    </article>
+
+    <nav class="post__nav" aria-label="Devlog">
+      <a href="the-rehearsal-found-the-lie.html">← Previous: the rehearsal proved the fleet was not rebuildable</a>
+      <a href="bundling-is-not-a-downgrade.html">Next: bundling is a co-location decision →</a>
+    </nav>
+
+</main>
+
+<script src="../hero.js?v=18"></script>
+</body>
+</html>

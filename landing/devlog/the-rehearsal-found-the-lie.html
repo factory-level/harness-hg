@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The rehearsal proved the fleet was not rebuildable — Harness Hg devlog</title>
+<meta name="description" content="The first honest run of the recovery gate failed at the rebuild, on a credential created by hand weeks earlier. Everything had been green the whole time.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="The rehearsal proved the fleet was not rebuildable — Harness Hg devlog">
+<meta property="og:description" content="The first honest run of the recovery gate failed at the rebuild, on a credential created by hand weeks earlier. Everything had been green the whole time.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. Only the two text faces are
+     preloaded: JetBrains Mono appears on inline literals mid-article, not on
+     the first screen. `crossorigin` because font fetches are CORS-mode
+     requests even same-origin. -->
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js"></script>
+<link rel="stylesheet" href="../styles.css?v=18">
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href="../">
+      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Hermes</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="../features/">Overview</a></li>
+          <li><a href="../features/agent-bundles.html">Agent Bundles</a></li>
+          <li><a href="../features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="../features/communication.html">Communication</a></li>
+          <li><a href="../features/backups.html">Backups</a></li>
+          <li><a href="../features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="../docs/">Docs</a>
+      <a href="../demo/">Demo</a>
+      <a href="./">Devlog</a>
+      <a href="../about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main class="reading" id="main" tabindex="-1">
+
+
+    <article>
+      <div class="post__head">
+        <p class="meta"><span>2 August 2026</span><span class="sep">·</span><span>Recovery</span><span class="sep">·</span><strong>ADR-52</strong></p>
+        <h1 class="post__title">The rehearsal proved the fleet was not rebuildable</h1>
+        <p class="post__standfirst">The first honest run of the recovery gate failed at the rebuild, on a credential somebody had created by hand weeks earlier. The fleet had not been rebuildable since that day — and everything was green the entire time.</p>
+      </div>
+
+      <div class="post__body">
+        <p>There is a difference between a restore rehearsal and a recovery rehearsal, and it comes down to one line: whether you delete the local scaffold <em>before</em> you restore. Until you do, you are testing that a backup can be unpacked. Once you do, you are testing the claim that actually matters — that the fleet can be rebuilt from what you kept.</p>
+
+        <p>I moved that line and ran the whole thing end to end for the first time. It failed at the rebuild.</p>
+
+        <p>The bundle pod sat in <span class="mono">Init:0/1</span> for fifteen minutes, waiting on a repository credential that did not exist. That credential had only ever existed because, at some point weeks earlier, an operator created it by hand to get past a problem in the moment.</p>
+
+        <p class="pull">A credential created by hand is not declared state.</p>
+
+        <p>Which means the fleet had not been rebuildable since the day that command was run. Nothing said so. It was genuinely healthy the entire time — right up until something deleted the cluster, which is the only moment the claim is ever tested, and the worst possible moment to discover it was false.</p>
+
+        <p>That is precisely what the gate exists to test, and the first honest run of it found the claim was false. I want to be careful about how satisfying that is to write versus how it should read: a gate that finds nothing on its first run has usually not been pointed at anything real.</p>
+
+        <h2>What shipped, and what deliberately did not</h2>
+
+        <p><span class="mono">hg up</span> now creates an empty placeholder for any bundle repository credential that has none. It does <strong>not</strong> make a private clone work, and that is the entire point of it. It converts a pod hanging forever on a mount error that nothing surfaces and nobody is watching into a failure that arrives at apply time, loudly, where a human is already looking. A real credential is never overwritten.</p>
+
+        <p>That is a smaller fix than the problem deserves, so I logged the real one instead of pretending otherwise: the key has to arrive through the declared secret path like every other credential does. And there is a posture question underneath it I would rather answer deliberately than by accident — whether <span class="mono">up</span> should refuse outright rather than write a placeholder at all. Refusing is more honest and worse to use. I have not decided, and the issue says so.</p>
+
+        <h2>The shape this keeps taking</h2>
+
+        <p>This is not the first time the same lesson has arrived on this project. The interesting failures are almost never in the code you wrote. They are in the state somebody created <em>outside</em> it, which by definition no test covers, because no declaration mentions it.</p>
+
+        <p>It is also why "a backup exists" and "a restore worked" are two different words on every surface this thing has — the CLI, the fleet view, the Grafana panels. A backup is <span class="mono">available</span> when it uploads and <span class="mono">restorable</span> only once a restore has actually run against it. A fleet with nightly uploads and no restore runs displays <span class="mono">restorable: never</span>, and it reads as alarming precisely because it is.</p>
+      </div>
+
+      <div class="post__foot">
+        <span class="label">Sources</span>
+        <div class="post__links">
+          <a href="../docs/platform/backups/#available-is-not-restorable">available is not restorable →</a>
+          <a href="../docs/runbooks/recovery/">Runbook: recovery →</a>
+          <a href="https://github.com/factory-level/harness-hg/issues/283">Issue #283 →</a>
+        </div>
+      </div>
+    </article>
+
+    <nav class="post__nav" aria-label="Devlog">
+      <a href="./">← All entries</a>
+      <a href="the-panel-meant-something-else.html">Next: the panel rendered perfectly and meant something else →</a>
+    </nav>
+
+</main>
+
+<script src="../hero.js?v=18"></script>
+</body>
+</html>

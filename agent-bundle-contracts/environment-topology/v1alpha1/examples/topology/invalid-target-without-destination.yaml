@@ -1,0 +1,9 @@
+# Every target must name its Argo CD destination - there is no default
+# cluster in a topology-aware environment.
+version: 1
+layout: single
+regions:
+  - name: eu-west
+    jurisdiction: EU
+    targets:
+      - name: eu-west-a

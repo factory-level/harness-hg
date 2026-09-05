@@ -1,0 +1,12 @@
+apiVersion: hermes-gitops.factorylevel.dev/environment/v1alpha2
+name: production
+project: example-project
+rootKms: {location: us, keyring: pulumi, key: pulumi-root}
+state:
+  deployerGroup: deployers@example.dev
+  agents: [production]
+infra:
+  gitopsRepoUrl: https://github.com/example/production.gitops.git
+  providers: {compute: pod, secret: k8s, ingress: none}
+grants:
+  clusters: [ca-west-a]

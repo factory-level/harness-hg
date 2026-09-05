@@ -1,0 +1,65 @@
+# hermes-gitops-communication ApplicationSet (ADR-39) - one Application
+# per EVENT-ROUTER INSTANCE record under deployments/communication/. The
+# router's routing table is the adjacent values.yaml, consumed VERBATIM
+# through the ref:gitops second source - the same multi-source pattern as
+# the apps generator. The chart ships with the platform (repo: local
+# semantics; there is exactly one router chart).
+#
+# The router delivers events TO each profile's own Hermes agent gateway.
+# It never replaces the gateway, and nothing in this generator can add a
+# destination the compiled record does not declare.
+#
+# OPTIONAL: hg gitops doctor treats this generator's absence as fine - a
+# fleet without a communication plane never carries the record either.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-communication
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "deployments/communication/*/deployment.yaml"
+  template:
+    metadata:
+      name: "{{.spec.application}}"
+      labels:
+        hermes-gitops.factorylevel.dev/router: "{{.spec.id}}"
+        hermes-gitops.factorylevel.dev/scope: "{{.spec.scope}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          path: control-plane/event-router/chart
+          helm:
+            releaseName: "{{.spec.application}}"
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $gitops/deployments/communication/{{.path.basename}}/values.yaml
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        name: "{{.spec.argoDestination}}"
+        namespace: "{{.spec.namespace}}"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

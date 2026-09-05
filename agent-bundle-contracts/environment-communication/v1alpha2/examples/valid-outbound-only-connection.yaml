@@ -1,0 +1,10 @@
+# No `inbound` block at all: this connection posts and accepts nothing.
+# Absent is DENY, not allow - which is why an outbound-only connection
+# needs no policy to be safe.
+version: 1
+chatopsConnections:
+  alerts:
+    provider: discord
+    credentialRef:
+      name: hermes-alerts-chatops
+      key: DISCORD_BOT_TOKEN

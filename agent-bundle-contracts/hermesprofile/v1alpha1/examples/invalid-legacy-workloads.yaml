@@ -1,0 +1,9 @@
+# Invalid: the legacy spec.workloads selection list (workloadCatalog era)
+# is gone - replaced by spec.apps, the resolved helm apps array.
+# additionalProperties: false under spec rejects the old key.
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  workloads:
+    - vector-store

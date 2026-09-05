@@ -1,0 +1,88 @@
+---
+# Source: hermes-endpoint/templates/ingress.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketing-manager-content-kanban-global-site
+  namespace: hermes-endpoints
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-endpoint
+    app.kubernetes.io/managed-by: hermes-endpoint
+    hermes.dev/endpoint-owner: "marketing-manager-content-kanban-global"
+spec:
+  type: ExternalName
+  externalName: content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local
+  ports:
+    - port: 80
+---
+# Source: hermes-endpoint/templates/ingress.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketing-manager-content-kanban-global-hooks
+  namespace: hermes-endpoints
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-endpoint
+    app.kubernetes.io/managed-by: hermes-endpoint
+    hermes.dev/endpoint-owner: "marketing-manager-content-kanban-global"
+spec:
+  type: ExternalName
+  externalName: content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local
+  ports:
+    - port: 80
+---
+# Source: hermes-endpoint/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: marketing-manager-content-kanban-global-site
+  namespace: hermes-endpoints
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-endpoint
+    app.kubernetes.io/managed-by: hermes-endpoint
+    hermes.dev/endpoint-owner: "marketing-manager-content-kanban-global"
+  annotations:
+    hermes.dev/endpoint-type: "public"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: "site.content-kanban-marketing-manager-global.hermes.example.dev"
+      http:
+        paths:
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: marketing-manager-content-kanban-global-site
+                port:
+                  number: 80
+---
+# Source: hermes-endpoint/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: marketing-manager-content-kanban-global-hooks
+  namespace: hermes-endpoints
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-endpoint
+    app.kubernetes.io/managed-by: hermes-endpoint
+    hermes.dev/endpoint-owner: "marketing-manager-content-kanban-global"
+  annotations:
+    hermes.dev/endpoint-type: "webhook"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: "hooks.content-kanban-marketing-manager-global.hermes.example.dev"
+      http:
+        paths:
+          - path: "/hooks"
+            pathType: Prefix
+            backend:
+              service:
+                name: marketing-manager-content-kanban-global-hooks
+                port:
+                  number: 80

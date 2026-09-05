@@ -1,0 +1,14 @@
+# INVALID: a variables entry naming a context kind Nexus does not have.
+# The context enum is closed - "whatever the browser sends" is exactly
+# what this schema exists to prevent.
+apiVersion: nexus.hermes.ai/panel-catalog/v1alpha2
+kind: PanelCatalog
+panels:
+  - id: x
+    surface: backup
+    title: Something
+    dashboard: hg-backup-history
+    panelId: 3
+    size: wide
+    variables:
+      namespace: userQuery

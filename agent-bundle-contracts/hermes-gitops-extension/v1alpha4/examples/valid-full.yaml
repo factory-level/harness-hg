@@ -1,0 +1,119 @@
+# Every v3 surface at once: everything v2 carries, plus the communication
+# plane - a typed app output whose generated publisher URL is injected into
+# the producing app's own values, a route fanning that event out to an agent
+# handler (durable FIFO, keyed session) and two ChatOps spaces, and an
+# external webhook binding on the shared gateway.
+#
+# The agent output names a HANDLER on the target profile's own Hermes
+# gateway (platforms.webhook routes) - the communication plane delivers TO
+# that gateway; it never replaces it.
+contractVersion: 4
+
+topology:
+  supportedLayouts: [single, hub-spoke]
+  agent:
+    multiplicity: per-region
+    dataBoundary: region
+
+endpoints:
+  - name: dashboard
+    port: 9119
+    path: /
+    type: authenticated
+  - name: hooks
+    port: 8644
+    path: /webhooks/alerts
+    type: webhook
+    signature: hmac-sha256
+
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    values:
+      alert:
+        threshold: 100
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+        schema: events/observability-alert/v1.schema.json
+        adapter:
+          type: webhook
+          inject:
+            appValue:
+              path: alert.webhookUrl
+
+requires:
+  # A mandatory capability: no provider is TOPO004 at compile.
+  - capability: content-board
+    inject:
+      env: HERMES_CAP_CONTENT_BOARD_URL
+  # v1alpha4: an OPTIONAL capability - no provider means no injection and
+  # an info finding, never an error. The consumer must tolerate the
+  # variable being unset.
+  - capability: sentiment-feed
+    optional: true
+    locality: same-region
+    inject:
+      env: HERMES_CAP_SENTIMENT_FEED_URL
+
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      delivery:
+        mode: queued
+        guarantee: at-least-once
+        retry:
+          maxAttempts: 5
+          backoff: exponential
+        deadLetter:
+          enabled: true
+          retention: 14d
+        ordering:
+          mode: fifo
+          key: subject
+          onFailure: dead-letter-and-continue
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts
+            session:
+              mode: keyed
+              key: subject
+        - chatops: company_discord#123456789012345678
+        - chatops: company_discord#987654321098765432
+          delivery:
+            mode: direct
+
+    - name: external-alert-triage
+      from:
+        externalInput: demo-alert-source
+      filter:
+        data.team: platform
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts
+            session:
+              mode: per-event
+
+  externalInputs:
+    - name: demo-alert-source
+      event: source.demo.alert/v1
+      schema: events/demo-alert/v1.schema.json
+      verification:
+        type: hmac-sha256
+        secretRef:
+          name: demo-alert-source-webhook
+          key: secret
+      accepts:
+        - alert.raised
+
+backup:
+  schedule: "0 3 * * *"
+  retention: 14
+
+gitAuthSecretRef: hermes-example-git-auth

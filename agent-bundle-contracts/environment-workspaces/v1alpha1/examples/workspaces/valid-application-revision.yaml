@@ -1,0 +1,22 @@
+# An application-revision repository: the compiler resolves the revision
+# from the named application's deployed record, so the mounted source is
+# always the revision that is actually running.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: operation-source
+    source:
+      url: https://github.com/organization/operation-source
+      revision:
+        mode: application-revision
+        application: marketing-sre
+      authSecretRef: hermes-operation-source-git
+    mount:
+      path: /workspaces/operation-source
+      access: read-only
+
+bindings:
+  - repository: operation-source
+    profiles: [marketing-sre]
+    purpose: operation-source

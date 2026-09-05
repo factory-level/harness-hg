@@ -1,0 +1,7 @@
+# A scenario with neither an evaluator nor expectations asserts nothing.
+name: asserts-nothing
+profile: platform-sre
+invoke:
+  event:
+    name: observability.alert
+    payload: fixtures/alert-firing.json

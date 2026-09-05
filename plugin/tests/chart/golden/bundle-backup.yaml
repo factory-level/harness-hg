@@ -1,0 +1,754 @@
+---
+# Source: hermes-bundle/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hermes-marketing-core
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+---
+# Source: hermes-bundle/templates/configmap-boot.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-marketing-core-boot
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+data:
+  boot.sh: |
+    #!/bin/sh
+    set -eu
+
+    export HOME=/opt/data
+    export HERMES_HOME=/opt/data
+    BUNDLE="marketing-core"
+    STATE_DIR="$HERMES_HOME/.hermes-gitops/bundles/$BUNDLE"
+    WORKSPACE_ROOT=/workspaces/repos
+    mkdir -p "$STATE_DIR" "$HERMES_HOME/profiles" "$WORKSPACE_ROOT"
+
+    normalize_source() {
+      case "$1" in
+        https://*|http://*|git@*|ssh://*) printf '%s' "$1" ;;
+        github.com/*|gitlab.com/*|bitbucket.org/*) printf 'https://%s' "$1" ;;
+        *) echo "unsupported git source: $1" >&2; return 1 ;;
+      esac
+    }
+
+    AUTH_CLEANUP=""
+    prepare_git_auth() {
+      source_url="$1"
+      auth_dir="$2"
+      AUTH_CLEANUP=""
+      unset GIT_SSH_COMMAND || true
+      rm -f "$HOME/.netrc" "$HOME/.ssh/hermes-bundle-key" 2>/dev/null || true
+      [ -n "$auth_dir" ] || return 0
+      [ -d "$auth_dir" ] || {
+        echo "referenced git auth directory is missing: $auth_dir" >&2
+        return 1
+      }
+      case "$source_url" in
+        https://*|http://*)
+          [ -f "$auth_dir/username" ] && [ -f "$auth_dir/password" ] || {
+            echo "$auth_dir needs username and password keys for an HTTPS source" >&2
+            return 1
+          }
+          host="$(printf '%s' "$source_url" | sed -E 's#^https?://([^/]+)/.*#\1#')"
+          printf 'machine %s\nlogin %s\npassword %s\n' \
+            "$host" "$(cat "$auth_dir/username")" "$(cat "$auth_dir/password")" > "$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+          AUTH_CLEANUP="$HOME/.netrc"
+          ;;
+        git@*|ssh://*)
+          [ -f "$auth_dir/ssh-privatekey" ] || {
+            echo "$auth_dir needs ssh-privatekey for an SSH source" >&2
+            return 1
+          }
+          mkdir -p "$HOME/.ssh"
+          cp "$auth_dir/ssh-privatekey" "$HOME/.ssh/hermes-bundle-key"
+          chmod 600 "$HOME/.ssh/hermes-bundle-key"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/hermes-bundle-key -o StrictHostKeyChecking=accept-new"
+          AUTH_CLEANUP="$HOME/.ssh/hermes-bundle-key"
+          ;;
+      esac
+    }
+
+    clear_git_auth() {
+      [ -z "$AUTH_CLEANUP" ] || rm -f "$AUTH_CLEANUP"
+      AUTH_CLEANUP=""
+      unset GIT_SSH_COMMAND || true
+    }
+
+    clone_profile() {
+      source_url="$(normalize_source "$1")"
+      source_sha="$2"
+      destination="$3"
+      auth_dir="$4"
+      rm -rf "$destination"
+      prepare_git_auth "$source_url" "$auth_dir"
+      if ! git clone --no-checkout "$source_url" "$destination"; then
+        clear_git_auth
+        return 1
+      fi
+      if ! git -C "$destination" checkout --detach "$source_sha"; then
+        clear_git_auth
+        return 1
+      fi
+      clear_git_auth
+    }
+
+    sync_workspace() {
+      repo_name="$1"
+      source_url="$(normalize_source "$2")"
+      source_sha="$3"
+      access="$4"
+      auth_dir="$5"
+      destination="$WORKSPACE_ROOT/$repo_name"
+      stamp="$STATE_DIR/workspace-$repo_name.sha"
+      previous_declared=""
+      previous_source=""
+      if [ -f "$stamp" ]; then
+        # "<sha>" (legacy, pre-source-tracking) or "<sha> <source>".
+        previous_declared="$(cut -d" " -f1 < "$stamp")"
+        previous_source="$(cut -d" " -f2- < "$stamp")"
+        [ "$previous_source" != "$previous_declared" ] || previous_source=""
+      fi
+
+      if [ ! -d "$destination/.git" ]; then
+        rm -rf "$destination"
+        prepare_git_auth "$source_url" "$auth_dir"
+        if ! git clone --no-checkout "$source_url" "$destination"; then
+          clear_git_auth
+          return 1
+        fi
+        if ! git -C "$destination" checkout --detach "$source_sha"; then
+          clear_git_auth
+          return 1
+        fi
+        clear_git_auth
+        printf '%s %s' "$source_sha" "$source_url" > "$stamp"
+        return 0
+      fi
+
+      current="$(git -C "$destination" rev-parse HEAD)"
+      # A matching SHA is NOT enough to skip: if `source` changed, this
+      # checkout is the old repository and fetching would either resolve an
+      # identically-named commit from the wrong remote or fail forever. The
+      # remote is realigned before any fetch, and only after the
+      # preservation checks below have had their say.
+      current_source="$(git -C "$destination" remote get-url origin 2>/dev/null || echo "")"
+      source_changed=0
+      if [ -n "$previous_source" ] && [ "$previous_source" != "$source_url" ]; then
+        source_changed=1
+      elif [ -n "$current_source" ] && [ "$current_source" != "$source_url" ]; then
+        source_changed=1
+      fi
+      if [ "$current" = "$source_sha" ] && [ "$source_changed" -eq 0 ]; then
+        printf '%s %s' "$source_sha" "$source_url" > "$stamp"
+        return 0
+      fi
+      # Deliberately NOT gated on "$access" = read-write. The declaration
+      # being applied is the NEW one, and a change that flips a repository
+      # from read-write to read-only in the same commit that bumps the SHA
+      # would otherwise skip both checks and hard-checkout over an agent's
+      # uncommitted work. What matters is whether THIS CHECKOUT has work in
+      # it, which is knowable, not what the incoming declaration says it
+      # should have been. A genuinely read-only checkout is clean and sits
+      # at the declared SHA, so it passes both tests for free.
+      if [ -n "$(git -C "$destination" status --porcelain)" ]; then
+        echo "workspace $repo_name has uncommitted changes; refusing to replace $current with $source_sha" >&2
+        echo "commit or discard them in the pod, then restart" >&2
+        exit 1
+      fi
+      if [ -z "$previous_declared" ] || [ "$current" != "$previous_declared" ]; then
+        echo "workspace $repo_name has local commits at $current; refusing to replace them with $source_sha" >&2
+        echo "push or preserve the work, then restore the checkout to declared SHA ${previous_declared:-unknown}" >&2
+        exit 1
+      fi
+      if [ "$source_changed" -eq 1 ]; then
+        echo "[bundle] workspace $repo_name source changed to $source_url; realigning origin" >&2
+        git -C "$destination" remote set-url origin "$source_url"
+      fi
+      prepare_git_auth "$source_url" "$auth_dir"
+      if ! git -C "$destination" fetch --force origin "$source_sha"; then
+        clear_git_auth
+        return 1
+      fi
+      if ! git -C "$destination" checkout --detach "$source_sha"; then
+        clear_git_auth
+        return 1
+      fi
+      clear_git_auth
+      printf '%s %s' "$source_sha" "$source_url" > "$stamp"
+    }
+
+    echo "[bundle] syncing pinned workspace repositories"
+    # DEGRADE, do not refuse. An external workspace that cannot be cloned
+    # is a missing checkout; refusing to boot over one takes down every
+    # agent in the bundle for a repository none of them needs in order to
+    # run. Found by the recovery rehearsal: a placeholder credential left
+    # two agents in CrashLoopBackOff, which is a worse failure than the
+    # one it was reporting.
+    #
+    # Degrading silently would be worse still, so the reason is written
+    # where something can read it - the workspace is ABSENT and says why,
+    # rather than being quietly empty.
+    if ! sync_workspace \
+      "brand" \
+      "https://example.invalid/vision-manager.git" \
+      "2222222222222222222222222222222222222222" \
+      "read-write" \
+      ""; then
+      echo "[bundle] WARNING: workspace brand is UNAVAILABLE - it could not be cloned." >&2
+      echo "[bundle] the agents start without it; anything that reads it will find nothing." >&2
+      mkdir -p "$STATE_DIR"
+      printf 'unavailable %s\n' "https://example.invalid/vision-manager.git" > "$STATE_DIR/workspace-brand.unavailable"
+    else
+      rm -f "$STATE_DIR/workspace-brand.unavailable"
+    fi
+
+    echo "[bundle] installing profile distributions"
+    profile="marketing-manager"
+    expected_sha="1111111111111111111111111111111111111111"
+    stamp="$STATE_DIR/$profile.sha"
+    installed_sha=""
+    [ ! -f "$stamp" ] || installed_sha="$(cat "$stamp")"
+    if [ "$installed_sha" != "$expected_sha" ]; then
+      tmp="/tmp/hermes-profile-$profile"
+      clone_profile \
+        "https://example.invalid/social-media.hermes-gitops.git" \
+        "$expected_sha" \
+        "$tmp" \
+        ""
+      rm -rf "$tmp/.git"
+      hermes profile install "$tmp/distributions/manager" \
+        --name "$profile" --force -y
+      rm -rf "$tmp"
+      printf '%s' "$expected_sha" > "$stamp"
+    fi
+
+    profile_dir="$HERMES_HOME/profiles/$profile"
+    mkdir -p "$profile_dir"
+    env_tmp="$profile_dir/.env.tmp"
+    : > "$env_tmp"
+    if [ ! -d "/run/secrets/profiles/marketing-manager/env" ]; then
+      echo "profile marketing-manager env Secret is referenced but not mounted" >&2
+      exit 1
+    fi
+    for file in "/run/secrets/profiles/marketing-manager/env"/*; do
+      [ -e "$file" ] || continue
+      printf '%s=%s\n' "$(basename "$file")" "$(cat "$file")" >> "$env_tmp"
+    done
+    grep -v -E '^(API_SERVER_ENABLED|API_SERVER_PORT|WEBHOOK_PORT|HERMES_GITOPS_REPOSITORIES)=' "$env_tmp" > "$env_tmp.filtered" || true
+    mv "$env_tmp.filtered" "$env_tmp"
+    printf 'API_SERVER_ENABLED=true\nAPI_SERVER_PORT=%s\n' "8642" >> "$env_tmp"
+    
+    printf 'WEBHOOK_PORT=%s\n' "8644" >> "$env_tmp"
+    printf 'HERMES_GITOPS_REPOSITORIES=%s\n' "/workspaces/brand" >> "$env_tmp"
+    mv "$env_tmp" "$profile_dir/.env"
+    chmod 600 "$profile_dir/.env"
+    if hermes -p "$profile" cron sync --help >/dev/null 2>&1; then
+      hermes -p "$profile" cron sync
+    fi
+    profile="marketing-research"
+    expected_sha="1111111111111111111111111111111111111111"
+    stamp="$STATE_DIR/$profile.sha"
+    installed_sha=""
+    [ ! -f "$stamp" ] || installed_sha="$(cat "$stamp")"
+    if [ "$installed_sha" != "$expected_sha" ]; then
+      tmp="/tmp/hermes-profile-$profile"
+      clone_profile \
+        "https://example.invalid/social-media.hermes-gitops.git" \
+        "$expected_sha" \
+        "$tmp" \
+        ""
+      rm -rf "$tmp/.git"
+      hermes profile install "$tmp/distributions/research" \
+        --name "$profile" --force -y
+      rm -rf "$tmp"
+      printf '%s' "$expected_sha" > "$stamp"
+    fi
+
+    profile_dir="$HERMES_HOME/profiles/$profile"
+    mkdir -p "$profile_dir"
+    env_tmp="$profile_dir/.env.tmp"
+    : > "$env_tmp"
+    grep -v -E '^(API_SERVER_ENABLED|API_SERVER_PORT|WEBHOOK_PORT|HERMES_GITOPS_REPOSITORIES)=' "$env_tmp" > "$env_tmp.filtered" || true
+    mv "$env_tmp.filtered" "$env_tmp"
+    printf 'API_SERVER_ENABLED=false\n' >> "$env_tmp"
+    mv "$env_tmp" "$profile_dir/.env"
+    chmod 600 "$profile_dir/.env"
+    if hermes -p "$profile" cron sync --help >/dev/null 2>&1; then
+      hermes -p "$profile" cron sync
+    fi
+
+    current_profiles="$STATE_DIR/profiles.current"
+    : > "$current_profiles"
+    printf '%s\n' "marketing-manager" >> "$current_profiles"
+    printf '%s\n' "marketing-research" >> "$current_profiles"
+    if [ -f "$STATE_DIR/profiles.previous" ]; then
+      while IFS= read -r old_profile; do
+        [ -n "$old_profile" ] || continue
+        if ! grep -Fxq "$old_profile" "$current_profiles"; then
+          echo "[bundle] pruning removed managed profile $old_profile"
+          rm -rf "$HERMES_HOME/profiles/$old_profile" "$STATE_DIR/$old_profile.sha"
+        fi
+      done < "$STATE_DIR/profiles.previous"
+    fi
+    mv "$current_profiles" "$STATE_DIR/profiles.previous"
+    echo "[bundle] bootstrap complete"
+---
+# Source: hermes-bundle/templates/backup.yaml
+# The bundle's backup routine (#282). Bundling (ADR-28) retires each
+# member's per-profile StatefulSet, and with it the per-profile backup
+# CronJob that chart shipped - so until this file existed, every bundled
+# agent's data volume was protected by nothing at all. Two agents ran for
+# a day unbacked here, and no surface said so, because a Backups page
+# built from discovered routines lists what IS protected and reads as
+# complete. The `unprotected` list in the Nexus view is what found it.
+#
+# Gated on the ENVIRONMENT's sink alone, not on a per-bundle `spec.backup`
+# intent - the one place this chart deliberately departs from the profile
+# chart's intent-driven rule. Every member already declared `spec.backup`
+# in its own profile; bundling is what dropped that intent on the floor.
+# Rendering whenever a sink exists restores it rather than inventing one,
+# and it avoids threading a new field through environment-bundles, the
+# emitter and this chart's values schema to re-state something the members
+# have already said. Schedule and retention come from the platform
+# `backup:` block, which cluster-values already layers in.
+#
+# ONE routine over the `data` volume, deliberately, not two:
+#
+#   - `data` is the members' real state (profiles/, memory) and nothing
+#     else can rebuild it.
+#   - `workspaces` holds pinned git checkouts, restored by re-cloning at
+#     the recorded SHA. It is declarative state, and archiving it would
+#     make an artifact whose restore target is ambiguous - `hg backup`
+#     discovers a routine's restore target as its first non-`backups` PVC
+#     volume, so a routine mounting two would restore into one and
+#     silently drop the other. A second routine is the right shape if
+#     workspaces ever holds anything a clone cannot reproduce.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hermes-marketing-core-backups
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+  annotations:
+    # Pending until the first backup pod mounts it is this PVC's normal
+    # steady state on WaitForFirstConsumer StorageClasses - Argo CD would
+    # otherwise pin the whole Application at Progressing until the first
+    # scheduled run (same opt-out the profile chart's PVC carries).
+    argocd.argoproj.io/ignore-healthcheck: "true"
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+# Source: hermes-bundle/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hermes-marketing-core
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+  ports:
+    - name: api-0
+      port: 8642
+      targetPort: api-0
+      protocol: TCP
+      appProtocol: http
+    - name: hook-0
+      port: 8644
+      targetPort: hook-0
+      protocol: TCP
+      appProtocol: http
+---
+# Source: hermes-bundle/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hermes-marketing-core
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  replicas: 1
+  serviceName: hermes-marketing-core
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-bundle
+      app.kubernetes.io/instance: hermes-marketing-core
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: hermes-bundle
+          app.kubernetes.io/instance: hermes-marketing-core
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+    - metadata:
+        name: workspaces
+        labels:
+          app.kubernetes.io/name: hermes-bundle
+          app.kubernetes.io/instance: hermes-marketing-core
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-bundle
+        app.kubernetes.io/instance: hermes-marketing-core
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: "hermes-bundle-0.1.0"
+        hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+        hermes-gitops.factorylevel.dev/managed: "true"
+      annotations:
+        checksum/spec: 41c28b4416f2b7240f0708011be4169fe06912b89dd6417356b1cfc17b4632f6
+        # The BOOT SCRIPT is a ConfigMap the init container reads once, so a
+        # change to it alone never rolled the pod: the mount updated minutes
+        # later and the already-written .env kept the old values. Found live -
+        # a new WEBHOOK_PORT sat in the ConfigMap while the running gateway
+        # bound nothing. Checksum the rendered script, same as spec.
+        checksum/boot: 1db2c95e3b54a4c120aaf051cf6349bcfee6728f7ae2a5df200c93309a4f0d9c
+    spec:
+      serviceAccountName: hermes-marketing-core
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: bootstrap-bundle
+          image: ghcr.io/dummy/hermes-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: workspaces
+              mountPath: /workspaces
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: profile-marketing-manager-env
+              mountPath: /run/secrets/profiles/marketing-manager/env
+              readOnly: true
+      containers:
+        - name: profile-marketing-manager
+          image: ghcr.io/dummy/hermes-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/hermes/bin/hermes"]
+          args: ["-p", "marketing-manager", "gateway", "run"]
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          ports:
+            - name: api-0
+              containerPort: 8642
+              protocol: TCP
+            
+            - name: hook-0
+              containerPort: 8644
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: workspaces
+              mountPath: "/workspaces/brand"
+              subPath: repos/brand
+              readOnly: false
+      volumes:
+        - name: boot-script
+          configMap:
+            name: hermes-marketing-core-boot
+            defaultMode: 0555
+        - name: profile-marketing-manager-env
+          secret:
+            secretName: hermes-marketing-manager-env
+---
+# Source: hermes-bundle/templates/backup.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hermes-marketing-core-backup
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+    hermes.dev/backup-routine: "true"
+  annotations:
+    # Every bundled member keeps its state under profiles/, so the same
+    # pattern the per-profile routine asserts holds here.
+    hermes.dev/backup-protects: "profiles/,state.db,config.yaml,memories/,skills/,plugins/,sessions/,cron/,.hermes-db-snapshot.json"
+    hermes.dev/backup-retention: "7"
+    hermes.dev/backup-destination: "pvc"
+spec:
+  schedule: "30 3 * * *"
+  concurrencyPolicy: Forbid
+  # Keep enough finished Jobs for the Backups view's per-run strip to
+  # show real history (defaults are 3/1); the long window lives in
+  # Grafana's kube_job_* series, not in retained objects.
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: hermes-bundle
+            app.kubernetes.io/instance: hermes-marketing-core
+        spec:
+          restartPolicy: OnFailure
+          # Both PVCs are ReadWriteOnce and the data volume is attached to
+          # whichever node runs the bundle pod, so the backup pod MUST
+          # co-schedule with it or its mount hangs forever.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: hermes-bundle
+                      app.kubernetes.io/instance: hermes-marketing-core
+                  topologyKey: kubernetes.io/hostname
+          securityContext:
+            fsGroup: 10000
+          containers:
+            - name: backup
+              image: python:3.12-slim
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ts="$(date -u +%Y%m%d-%H%M%S)"
+                  archive="/backups/hermes-marketing-core-${ts}.tar.gz"
+                  echo "[backup] archiving /data -> ${archive}"
+                  # SQLite consistency (#436, ADR-106): tar reads state.db and
+                  # its -wal at different instants while the agent writes, so a
+                  # raw copy can be torn. Every *.db is snapshotted through
+                  # sqlite3.backup() (the same API hermes_cli/backup.py uses)
+                  # into /tmp/snap and integrity-checked; the snapshot tree is
+                  # appended as the archive's LAST root, so extraction
+                  # overwrites the live (possibly torn) copy with the
+                  # consistent one - tar's last-member-wins is the substitution
+                  # mechanism, chosen over per-file excludes because tar
+                  # applies excludes to every root, snapshots included. The
+                  # sidecars (-wal/-shm/-journal) are excluded outright: a
+                  # fresh snapshot next to stale sidecar state is a torn
+                  # restore on the next open. Any failure is LOUD - a silent
+                  # fallback to a hot copy is the bug this step removes.
+                  # ponytail: the archive carries each db twice (live + snap);
+                  # a single-pass python tarfile writer removes that if size
+                  # ever matters.
+                  rm -rf /tmp/snap && mkdir -p /tmp/snap
+                  python3 - <<'PY'
+                  import json, os, sqlite3, sys, time
+                  # Mirrors the tar exclude list below - keep in sync.
+                  PRUNE = ("backups", "checkpoints", "cache", ".cache", "tmp",
+                           "__pycache__", "node_modules", ".venv", "venv",
+                           "site-packages", ".pytest_cache", ".mypy_cache",
+                           ".ruff_cache")
+                  dbs = []
+                  for root, dirs, files in os.walk("/data"):
+                      dirs[:] = [d for d in dirs if d not in PRUNE]
+                      for f in files:
+                          if not f.endswith(".db"):
+                              continue
+                          src = os.path.join(root, f)
+                          rel = os.path.relpath(src, "/data")
+                          dst = os.path.join("/tmp/snap", rel)
+                          os.makedirs(os.path.dirname(dst), exist_ok=True)
+                          conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+                          out = sqlite3.connect(dst)
+                          conn.backup(out)
+                          conn.close()
+                          check = out.execute("PRAGMA integrity_check").fetchone()[0]
+                          out.close()
+                          if check != "ok":
+                              print(f"[backup] FATAL {rel}: integrity_check {check}", file=sys.stderr)
+                              sys.exit(1)
+                          print(f"[backup] snapshot {rel}: integrity_check ok")
+                          dbs.append(dict(db=rel, integrity_check=check))
+                  marker = dict(
+                      takenAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                      method="sqlite3.backup + PRAGMA integrity_check",
+                      databases=dbs,
+                  )
+                  with open("/tmp/snap/.hermes-db-snapshot.json", "w") as fh:
+                      json.dump(marker, fh, indent=2)
+                  print(f"[backup] snapshot marker written ({len(dbs)} database(s))")
+                  PY
+
+                  # Hermes states its own backup contract in code
+                  # (hermes_cli/backup.py), and these exclusions are that
+                  # contract, not tidiness (#417). Three of them are
+                  # correctness rather than size:
+                  #
+                  #   backups/      capturing prior archives nests them
+                  #                 exponentially - every run tars the last.
+                  #   gateway state PIDs, locks and gateway_state.json belong
+                  #                 to the SOURCE machine's process namespace.
+                  #                 Restoring them leaves the gateway stuck
+                  #                 "starting" and disconnected from the
+                  #                 portal - upstream's _IMPORT_SKIP_NAMES
+                  #                 exists for exactly this failure.
+                  #   caches/deps   a plugin venv or pip cache under
+                  #                 HERMES_HOME turns one archive into
+                  #                 hundreds of thousands of entries; upstream
+                  #                 records this as the "backup stuck for
+                  #                 days" symptom.
+                  #
+                  # NOT excluded, deliberately: skills/.archive holds
+                  # restorable user skills, and logs/ is history Hermes keeps
+                  # in its own backups too.
+                  # GNU tar exits 1 (not 0) when a file CHANGED while being
+                  # read - routine under a live agent (a session log mid
+                  # append), and exactly the class the db snapshot above
+                  # already handles for the files whose consistency is
+                  # guaranteed. Everything else is best-effort, as it always
+                  # was; only exit >1 (fatal) fails the job. Found live: the
+                  # manager's first python-image run died on a mid-append
+                  # file that busybox tar used to ship silently.
+                  set +e
+                  tar czf "${archive}" \
+                    --exclude=./backups \
+                    --exclude=./checkpoints \
+                    --exclude=./cache \
+                    --exclude=./.cache \
+                    --exclude=./tmp \
+                    --exclude='*/__pycache__' \
+                    --exclude='*.pyc' \
+                    --exclude='*.pyo' \
+                    --exclude='*/node_modules' \
+                    --exclude='*/.venv' \
+                    --exclude='*/venv' \
+                    --exclude='*/site-packages' \
+                    --exclude='*/.pytest_cache' \
+                    --exclude='*/.mypy_cache' \
+                    --exclude='*/.ruff_cache' \
+                    --exclude='*gateway.pid' \
+                    --exclude='*cron.pid' \
+                    --exclude='*gateway.lock' \
+                    --exclude='*gateway_state.json' \
+                    --exclude='*processes.json' \
+                    --exclude='*.db-wal' \
+                    --exclude='*.db-shm' \
+                    --exclude='*.db-journal' \
+                    -C /data . -C /tmp/snap .
+                  rc=$?
+                  set -e
+                  if [ "$rc" -gt 1 ]; then
+                    echo "[backup] FATAL tar exited ${rc}" >&2
+                    exit "$rc"
+                  fi
+                  # Retention: keep the newest 7 archives.
+                  # Timestamped names sort lexicographically = chronologically.
+                  ls -1 /backups/*.tar.gz | sort -r | tail -n +8 | while read -r old; do
+                    echo "[backup] pruning ${old} (retention: 7)"
+                    rm -f "${old}"
+                  done
+                  echo "[backup] done: $(ls -1 /backups/*.tar.gz | wc -l) archive(s) retained"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 10000
+                runAsGroup: 10000
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  # NOT readOnly, deliberately (#436, found live): the
+                  # wal-mode databases on this volume need a writable -shm
+                  # for the snapshot's mode=ro connection to join the live
+                  # agent's locking protocol. A read-only filesystem made
+                  # sqlite3.connect fail outright ("unable to open database
+                  # file") on every wal db without a live -shm - and the
+                  # read-only heap fallback would bypass writer coordination
+                  # anyway. The connection stays mode=ro; tar only reads.
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            # The StatefulSet's volumeClaimTemplate "data" at replica 0 -
+            # the bundle is pinned to one replica, so this name is stable.
+            - name: data
+              persistentVolumeClaim:
+                claimName: data-hermes-marketing-core-0
+            - name: backups
+              persistentVolumeClaim:
+                claimName: hermes-marketing-core-backups

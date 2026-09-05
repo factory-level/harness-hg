@@ -1,0 +1,5 @@
+# Nightly at 03:00, two weeks kept.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Backup
+schedule: "0 3 * * *"
+retention: 14

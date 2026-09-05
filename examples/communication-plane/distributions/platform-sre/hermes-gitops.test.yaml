@@ -1,0 +1,15 @@
+# Local test config - read by the hermes-gitops CLI only. LOCAL DEV
+# constants, never production values.
+version: 1
+profile: .
+
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+  WEBHOOK_ENABLED: "1"
+  WEBHOOK_SECRET: local-dev-platform-sre-hmac-0123456789abcdef
+
+smoke:
+  - service: hermes-platform-sre
+    port: 8642
+    path: /health
+    expect_contains: '"status": "ok"'

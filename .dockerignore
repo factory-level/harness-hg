@@ -1,0 +1,8 @@
+# Only the wiki image builds from the repo root (control-plane/wiki/image);
+# every other image uses its own directory as context. Keep .git - the
+# site build derives the platform version from history.
+**/node_modules
+.venv
+_docs/site
+.pytest_cache
+**/.pytest_cache

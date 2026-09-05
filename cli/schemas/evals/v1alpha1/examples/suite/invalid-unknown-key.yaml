@@ -1,0 +1,4 @@
+# Invalid: unknown fields fail loudly (additionalProperties: false).
+apiVersion: hermes-gitops.factorylevel.dev/evals/v1alpha1
+name: social-media-evals
+judge: llm

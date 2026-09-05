@@ -1,0 +1,23 @@
+[project]
+name = "hermes-cloudflare-tunnel"
+version = "0.1.0"
+description = "Pulumi program: Cloudflare Tunnel ingress path for one Hermes agent instance (Task 12 / Milestone 8)."
+requires-python = ">=3.10"
+dependencies = [
+    "pulumi>=3.253.0,<4.0",
+    "pulumi-cloudflare>=6.0.0,<7.0",
+    # Only imported when providers.secret == k8s (secrets.py writes the
+    # tunnel/access-token Secrets into hermes-secrets) - see that module's
+    # header comment.
+    "pulumi-kubernetes>=4.0.0,<5.0",
+]
+
+[tool.uv]
+# This is a Pulumi program, not a distributable library: no wheel is ever
+# built from it, so don't ask uv to try.
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]

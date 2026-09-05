@@ -1,0 +1,127 @@
+{{- /*
+Fleet budget alerting provisioning, delivered as a ConfigMap: the
+platform Grafana's alerts sidecar (bootstrap/monitoring-stack.yaml,
+label grafana_alert: "1", all namespaces) imports it as a provisioning
+file. One fleet contact point (Discord and/or generic webhook, from
+values) and one rule group with a BudgetExceeded rule per budgeted
+persona - each routed straight to the contact point via
+notification_settings, so the root notification-policy tree is never
+touched (same contract as charts/monitoring).
+
+The rules evaluate hermes_cost_usd_mtd - the observer plugin's
+persisted month-to-date ESTIMATE, not provider billing. noDataState: OK
+means a profile whose observer never emits will never fire its budget
+rule; that gap is surfaced by the fleet dashboard's observer-health
+panel instead (an ObserverSilent rule is deferred, spec §28).
+*/ -}}
+{{- include "fleet.receiversGuard" . -}}
+{{- if include "fleet.rulesWouldRender" . }}
+{{- $cp := include "fleet.contactPoint" . -}}
+{{- $budgets := default dict .Values.budgets -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: fleet-dashboard
+    grafana_alert: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  {{ .Release.Name }}-alerts.yaml: |
+    apiVersion: 1
+    {{- include "hermes-alerting.contactPoints" (dict "uidPrefix" "hermes-fleet" "name" $cp "webhookUrl" .Values.alert.webhookUrl "discordUrl" .Values.alert.discordUrl) | nindent 4 }}
+    groups:
+      - orgId: 1
+        name: hermes-fleet-budget
+        folder: Hermes GitOps
+        interval: {{ .Values.alert.evaluationInterval }}
+        rules:
+          {{- range $persona := keys $budgets | sortAlpha }}
+          {{- $budget := index $budgets $persona }}
+          - uid: {{ include "fleet.budgetRuleUid" $persona | quote }}
+            title: {{ printf "BudgetExceeded (%s)" $persona | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: {{ $.Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: {{ printf "max(hermes_cost_usd_mtd{profile=%q}) or vector(0)" $persona | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: valuesObject edits and Pulumi-style
+                          # override channels can deliver the budget as a
+                          # STRING, and Grafana's threshold evaluator
+                          # silently errors on string params (masked by
+                          # execErrState: OK) - the rule imports fine and
+                          # then never, ever fires.
+                          - {{ $budget | float64 }}
+            noDataState: OK
+            execErrState: OK
+            for: {{ $.Values.alert.pendingFor }}
+            labels:
+              persona: {{ $persona | quote }}
+              severity: warning
+            annotations:
+              summary: {{ printf "Profile %s MTD estimated spend exceeded its $%v monthly budget (observer pricing estimate, not provider billing)" $persona $budget | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+          {{- if gt (.Values.alert.fleetBudgetUsd | float64) 0.0 }}
+          - uid: hermes-fleet-bgt-total
+            title: "FleetBudgetExceeded"
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: {{ .Values.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: "sum(hermes_cost_usd_mtd) or vector(0)"
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          # float64: same string-param trap as above.
+                          - {{ .Values.alert.fleetBudgetUsd | float64 }}
+            noDataState: OK
+            execErrState: OK
+            for: {{ .Values.alert.pendingFor }}
+            labels:
+              severity: warning
+            annotations:
+              summary: {{ printf "Fleet-wide MTD estimated spend exceeded the $%v monthly budget (observer pricing estimate, not provider billing)" .Values.alert.fleetBudgetUsd | quote }}
+            isPaused: false
+            {{- include "hermes-alerting.notificationSettings" (dict "receiver" $cp) | nindent 12 }}
+          {{- end }}
+{{- end }}

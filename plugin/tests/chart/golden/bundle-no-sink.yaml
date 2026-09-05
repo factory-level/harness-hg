@@ -1,0 +1,481 @@
+---
+# Source: hermes-bundle/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hermes-marketing-core
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+---
+# Source: hermes-bundle/templates/configmap-boot.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hermes-marketing-core-boot
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+data:
+  boot.sh: |
+    #!/bin/sh
+    set -eu
+
+    export HOME=/opt/data
+    export HERMES_HOME=/opt/data
+    BUNDLE="marketing-core"
+    STATE_DIR="$HERMES_HOME/.hermes-gitops/bundles/$BUNDLE"
+    WORKSPACE_ROOT=/workspaces/repos
+    mkdir -p "$STATE_DIR" "$HERMES_HOME/profiles" "$WORKSPACE_ROOT"
+
+    normalize_source() {
+      case "$1" in
+        https://*|http://*|git@*|ssh://*) printf '%s' "$1" ;;
+        github.com/*|gitlab.com/*|bitbucket.org/*) printf 'https://%s' "$1" ;;
+        *) echo "unsupported git source: $1" >&2; return 1 ;;
+      esac
+    }
+
+    AUTH_CLEANUP=""
+    prepare_git_auth() {
+      source_url="$1"
+      auth_dir="$2"
+      AUTH_CLEANUP=""
+      unset GIT_SSH_COMMAND || true
+      rm -f "$HOME/.netrc" "$HOME/.ssh/hermes-bundle-key" 2>/dev/null || true
+      [ -n "$auth_dir" ] || return 0
+      [ -d "$auth_dir" ] || {
+        echo "referenced git auth directory is missing: $auth_dir" >&2
+        return 1
+      }
+      case "$source_url" in
+        https://*|http://*)
+          [ -f "$auth_dir/username" ] && [ -f "$auth_dir/password" ] || {
+            echo "$auth_dir needs username and password keys for an HTTPS source" >&2
+            return 1
+          }
+          host="$(printf '%s' "$source_url" | sed -E 's#^https?://([^/]+)/.*#\1#')"
+          printf 'machine %s\nlogin %s\npassword %s\n' \
+            "$host" "$(cat "$auth_dir/username")" "$(cat "$auth_dir/password")" > "$HOME/.netrc"
+          chmod 600 "$HOME/.netrc"
+          AUTH_CLEANUP="$HOME/.netrc"
+          ;;
+        git@*|ssh://*)
+          [ -f "$auth_dir/ssh-privatekey" ] || {
+            echo "$auth_dir needs ssh-privatekey for an SSH source" >&2
+            return 1
+          }
+          mkdir -p "$HOME/.ssh"
+          cp "$auth_dir/ssh-privatekey" "$HOME/.ssh/hermes-bundle-key"
+          chmod 600 "$HOME/.ssh/hermes-bundle-key"
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/hermes-bundle-key -o StrictHostKeyChecking=accept-new"
+          AUTH_CLEANUP="$HOME/.ssh/hermes-bundle-key"
+          ;;
+      esac
+    }
+
+    clear_git_auth() {
+      [ -z "$AUTH_CLEANUP" ] || rm -f "$AUTH_CLEANUP"
+      AUTH_CLEANUP=""
+      unset GIT_SSH_COMMAND || true
+    }
+
+    clone_profile() {
+      source_url="$(normalize_source "$1")"
+      source_sha="$2"
+      destination="$3"
+      auth_dir="$4"
+      rm -rf "$destination"
+      prepare_git_auth "$source_url" "$auth_dir"
+      if ! git clone --no-checkout "$source_url" "$destination"; then
+        clear_git_auth
+        return 1
+      fi
+      if ! git -C "$destination" checkout --detach "$source_sha"; then
+        clear_git_auth
+        return 1
+      fi
+      clear_git_auth
+    }
+
+    sync_workspace() {
+      repo_name="$1"
+      source_url="$(normalize_source "$2")"
+      source_sha="$3"
+      access="$4"
+      auth_dir="$5"
+      destination="$WORKSPACE_ROOT/$repo_name"
+      stamp="$STATE_DIR/workspace-$repo_name.sha"
+      previous_declared=""
+      previous_source=""
+      if [ -f "$stamp" ]; then
+        # "<sha>" (legacy, pre-source-tracking) or "<sha> <source>".
+        previous_declared="$(cut -d" " -f1 < "$stamp")"
+        previous_source="$(cut -d" " -f2- < "$stamp")"
+        [ "$previous_source" != "$previous_declared" ] || previous_source=""
+      fi
+
+      if [ ! -d "$destination/.git" ]; then
+        rm -rf "$destination"
+        prepare_git_auth "$source_url" "$auth_dir"
+        if ! git clone --no-checkout "$source_url" "$destination"; then
+          clear_git_auth
+          return 1
+        fi
+        if ! git -C "$destination" checkout --detach "$source_sha"; then
+          clear_git_auth
+          return 1
+        fi
+        clear_git_auth
+        printf '%s %s' "$source_sha" "$source_url" > "$stamp"
+        return 0
+      fi
+
+      current="$(git -C "$destination" rev-parse HEAD)"
+      # A matching SHA is NOT enough to skip: if `source` changed, this
+      # checkout is the old repository and fetching would either resolve an
+      # identically-named commit from the wrong remote or fail forever. The
+      # remote is realigned before any fetch, and only after the
+      # preservation checks below have had their say.
+      current_source="$(git -C "$destination" remote get-url origin 2>/dev/null || echo "")"
+      source_changed=0
+      if [ -n "$previous_source" ] && [ "$previous_source" != "$source_url" ]; then
+        source_changed=1
+      elif [ -n "$current_source" ] && [ "$current_source" != "$source_url" ]; then
+        source_changed=1
+      fi
+      if [ "$current" = "$source_sha" ] && [ "$source_changed" -eq 0 ]; then
+        printf '%s %s' "$source_sha" "$source_url" > "$stamp"
+        return 0
+      fi
+      # Deliberately NOT gated on "$access" = read-write. The declaration
+      # being applied is the NEW one, and a change that flips a repository
+      # from read-write to read-only in the same commit that bumps the SHA
+      # would otherwise skip both checks and hard-checkout over an agent's
+      # uncommitted work. What matters is whether THIS CHECKOUT has work in
+      # it, which is knowable, not what the incoming declaration says it
+      # should have been. A genuinely read-only checkout is clean and sits
+      # at the declared SHA, so it passes both tests for free.
+      if [ -n "$(git -C "$destination" status --porcelain)" ]; then
+        echo "workspace $repo_name has uncommitted changes; refusing to replace $current with $source_sha" >&2
+        echo "commit or discard them in the pod, then restart" >&2
+        exit 1
+      fi
+      if [ -z "$previous_declared" ] || [ "$current" != "$previous_declared" ]; then
+        echo "workspace $repo_name has local commits at $current; refusing to replace them with $source_sha" >&2
+        echo "push or preserve the work, then restore the checkout to declared SHA ${previous_declared:-unknown}" >&2
+        exit 1
+      fi
+      if [ "$source_changed" -eq 1 ]; then
+        echo "[bundle] workspace $repo_name source changed to $source_url; realigning origin" >&2
+        git -C "$destination" remote set-url origin "$source_url"
+      fi
+      prepare_git_auth "$source_url" "$auth_dir"
+      if ! git -C "$destination" fetch --force origin "$source_sha"; then
+        clear_git_auth
+        return 1
+      fi
+      if ! git -C "$destination" checkout --detach "$source_sha"; then
+        clear_git_auth
+        return 1
+      fi
+      clear_git_auth
+      printf '%s %s' "$source_sha" "$source_url" > "$stamp"
+    }
+
+    echo "[bundle] syncing pinned workspace repositories"
+    # DEGRADE, do not refuse. An external workspace that cannot be cloned
+    # is a missing checkout; refusing to boot over one takes down every
+    # agent in the bundle for a repository none of them needs in order to
+    # run. Found by the recovery rehearsal: a placeholder credential left
+    # two agents in CrashLoopBackOff, which is a worse failure than the
+    # one it was reporting.
+    #
+    # Degrading silently would be worse still, so the reason is written
+    # where something can read it - the workspace is ABSENT and says why,
+    # rather than being quietly empty.
+    if ! sync_workspace \
+      "brand" \
+      "https://example.invalid/vision-manager.git" \
+      "2222222222222222222222222222222222222222" \
+      "read-write" \
+      ""; then
+      echo "[bundle] WARNING: workspace brand is UNAVAILABLE - it could not be cloned." >&2
+      echo "[bundle] the agents start without it; anything that reads it will find nothing." >&2
+      mkdir -p "$STATE_DIR"
+      printf 'unavailable %s\n' "https://example.invalid/vision-manager.git" > "$STATE_DIR/workspace-brand.unavailable"
+    else
+      rm -f "$STATE_DIR/workspace-brand.unavailable"
+    fi
+
+    echo "[bundle] installing profile distributions"
+    profile="marketing-manager"
+    expected_sha="1111111111111111111111111111111111111111"
+    stamp="$STATE_DIR/$profile.sha"
+    installed_sha=""
+    [ ! -f "$stamp" ] || installed_sha="$(cat "$stamp")"
+    if [ "$installed_sha" != "$expected_sha" ]; then
+      tmp="/tmp/hermes-profile-$profile"
+      clone_profile \
+        "https://example.invalid/social-media.hermes-gitops.git" \
+        "$expected_sha" \
+        "$tmp" \
+        ""
+      rm -rf "$tmp/.git"
+      hermes profile install "$tmp/distributions/manager" \
+        --name "$profile" --force -y
+      rm -rf "$tmp"
+      printf '%s' "$expected_sha" > "$stamp"
+    fi
+
+    profile_dir="$HERMES_HOME/profiles/$profile"
+    mkdir -p "$profile_dir"
+    env_tmp="$profile_dir/.env.tmp"
+    : > "$env_tmp"
+    if [ ! -d "/run/secrets/profiles/marketing-manager/env" ]; then
+      echo "profile marketing-manager env Secret is referenced but not mounted" >&2
+      exit 1
+    fi
+    for file in "/run/secrets/profiles/marketing-manager/env"/*; do
+      [ -e "$file" ] || continue
+      printf '%s=%s\n' "$(basename "$file")" "$(cat "$file")" >> "$env_tmp"
+    done
+    grep -v -E '^(API_SERVER_ENABLED|API_SERVER_PORT|WEBHOOK_PORT|HERMES_GITOPS_REPOSITORIES)=' "$env_tmp" > "$env_tmp.filtered" || true
+    mv "$env_tmp.filtered" "$env_tmp"
+    printf 'API_SERVER_ENABLED=true\nAPI_SERVER_PORT=%s\n' "8642" >> "$env_tmp"
+    
+    printf 'WEBHOOK_PORT=%s\n' "8644" >> "$env_tmp"
+    printf 'HERMES_GITOPS_REPOSITORIES=%s\n' "/workspaces/brand" >> "$env_tmp"
+    mv "$env_tmp" "$profile_dir/.env"
+    chmod 600 "$profile_dir/.env"
+    if hermes -p "$profile" cron sync --help >/dev/null 2>&1; then
+      hermes -p "$profile" cron sync
+    fi
+    profile="marketing-research"
+    expected_sha="1111111111111111111111111111111111111111"
+    stamp="$STATE_DIR/$profile.sha"
+    installed_sha=""
+    [ ! -f "$stamp" ] || installed_sha="$(cat "$stamp")"
+    if [ "$installed_sha" != "$expected_sha" ]; then
+      tmp="/tmp/hermes-profile-$profile"
+      clone_profile \
+        "https://example.invalid/social-media.hermes-gitops.git" \
+        "$expected_sha" \
+        "$tmp" \
+        ""
+      rm -rf "$tmp/.git"
+      hermes profile install "$tmp/distributions/research" \
+        --name "$profile" --force -y
+      rm -rf "$tmp"
+      printf '%s' "$expected_sha" > "$stamp"
+    fi
+
+    profile_dir="$HERMES_HOME/profiles/$profile"
+    mkdir -p "$profile_dir"
+    env_tmp="$profile_dir/.env.tmp"
+    : > "$env_tmp"
+    grep -v -E '^(API_SERVER_ENABLED|API_SERVER_PORT|WEBHOOK_PORT|HERMES_GITOPS_REPOSITORIES)=' "$env_tmp" > "$env_tmp.filtered" || true
+    mv "$env_tmp.filtered" "$env_tmp"
+    printf 'API_SERVER_ENABLED=false\n' >> "$env_tmp"
+    mv "$env_tmp" "$profile_dir/.env"
+    chmod 600 "$profile_dir/.env"
+    if hermes -p "$profile" cron sync --help >/dev/null 2>&1; then
+      hermes -p "$profile" cron sync
+    fi
+
+    current_profiles="$STATE_DIR/profiles.current"
+    : > "$current_profiles"
+    printf '%s\n' "marketing-manager" >> "$current_profiles"
+    printf '%s\n' "marketing-research" >> "$current_profiles"
+    if [ -f "$STATE_DIR/profiles.previous" ]; then
+      while IFS= read -r old_profile; do
+        [ -n "$old_profile" ] || continue
+        if ! grep -Fxq "$old_profile" "$current_profiles"; then
+          echo "[bundle] pruning removed managed profile $old_profile"
+          rm -rf "$HERMES_HOME/profiles/$old_profile" "$STATE_DIR/$old_profile.sha"
+        fi
+      done < "$STATE_DIR/profiles.previous"
+    fi
+    mv "$current_profiles" "$STATE_DIR/profiles.previous"
+    echo "[bundle] bootstrap complete"
+---
+# Source: hermes-bundle/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hermes-marketing-core
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+  ports:
+    - name: api-0
+      port: 8642
+      targetPort: api-0
+      protocol: TCP
+      appProtocol: http
+    - name: hook-0
+      port: 8644
+      targetPort: hook-0
+      protocol: TCP
+      appProtocol: http
+---
+# Source: hermes-bundle/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: hermes-marketing-core
+  namespace: hermes-marketing-core
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-bundle
+    app.kubernetes.io/name: hermes-bundle
+    app.kubernetes.io/instance: hermes-marketing-core
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: "hermes-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  replicas: 1
+  serviceName: hermes-marketing-core
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-bundle
+      app.kubernetes.io/instance: hermes-marketing-core
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: hermes-bundle
+          app.kubernetes.io/instance: hermes-marketing-core
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+    - metadata:
+        name: workspaces
+        labels:
+          app.kubernetes.io/name: hermes-bundle
+          app.kubernetes.io/instance: hermes-marketing-core
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-bundle
+        app.kubernetes.io/instance: hermes-marketing-core
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: "hermes-bundle-0.1.0"
+        hermes-gitops.factorylevel.dev/bundle: "marketing-core"
+        hermes-gitops.factorylevel.dev/managed: "true"
+      annotations:
+        checksum/spec: 41c28b4416f2b7240f0708011be4169fe06912b89dd6417356b1cfc17b4632f6
+        # The BOOT SCRIPT is a ConfigMap the init container reads once, so a
+        # change to it alone never rolled the pod: the mount updated minutes
+        # later and the already-written .env kept the old values. Found live -
+        # a new WEBHOOK_PORT sat in the ConfigMap while the running gateway
+        # bound nothing. Checksum the rendered script, same as spec.
+        checksum/boot: 1db2c95e3b54a4c120aaf051cf6349bcfee6728f7ae2a5df200c93309a4f0d9c
+    spec:
+      serviceAccountName: hermes-marketing-core
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 10000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: bootstrap-bundle
+          image: ghcr.io/factory-level/hermes-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: workspaces
+              mountPath: /workspaces
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: profile-marketing-manager-env
+              mountPath: /run/secrets/profiles/marketing-manager/env
+              readOnly: true
+      containers:
+        - name: profile-marketing-manager
+          image: ghcr.io/factory-level/hermes-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/hermes/bin/hermes"]
+          args: ["-p", "marketing-manager", "gateway", "run"]
+          env:
+            - name: HERMES_HOME
+              value: /opt/data
+            - name: HOME
+              value: /opt/data
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+          ports:
+            - name: api-0
+              containerPort: 8642
+              protocol: TCP
+            
+            - name: hook-0
+              containerPort: 8644
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: workspaces
+              mountPath: "/workspaces/brand"
+              subPath: repos/brand
+              readOnly: false
+      volumes:
+        - name: boot-script
+          configMap:
+            name: hermes-marketing-core-boot
+            defaultMode: 0555
+        - name: profile-marketing-manager-env
+          secret:
+            secretName: hermes-marketing-manager-env

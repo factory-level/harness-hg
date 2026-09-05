@@ -1,0 +1,21 @@
+# A route output is exactly one destination - agent or chatops, never both
+# in one entry (each is an independent delivery edge; author two entries).
+contractVersion: 4
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      outputs:
+        - agent:
+            profile: platform-sre
+            handler: alerts
+          chatops: company_discord#123456789012345678

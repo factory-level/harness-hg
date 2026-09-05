@@ -1,0 +1,7 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Endpoints
+routes:
+  - name: kanban-alerts
+    from: {app: content-kanban, output: alerts}
+    outputs:
+      - chatops: company_discord#sre-alerts

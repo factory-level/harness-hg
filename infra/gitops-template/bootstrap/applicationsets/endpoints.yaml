@@ -1,0 +1,69 @@
+# hermes-gitops-endpoints ApplicationSet (ADR-36) - one hermes-endpoint
+# chart release per COMPONENT INSTANCE's endpoint record under
+# deployments/endpoints/. The record doubles as the chart's `spec:` values
+# (the same record-is-values discipline as profile.yaml), layered on the
+# target's WHERE values. Releases land in a per-target hermes-endpoints
+# namespace on the record's destination.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-endpoints
+  namespace: argocd
+spec:
+  # STAGED, NOT PROMOTED: the root Application excludes this file from its
+  # recursive bootstrap sync (see infra/src/components/root-app). If a live
+  # copy is ever deleted or pruned anyway, leave the generated Applications
+  # standing (no owner-reference cascade): the 2026-08-28 accidental
+  # promotion showed a pruned AppSet cascade-deletes its Applications AND
+  # their workloads/PVCs. (This is the AppSet-level syncPolicy - distinct
+  # from the generated Applications' template.spec.syncPolicy.)
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "deployments/endpoints/*/deployment.yaml"
+  template:
+    metadata:
+      name: "hermes-ep-{{.path.basename}}"
+      labels:
+        hermes-gitops.factorylevel.dev/profile: "{{.spec.profile}}"
+        hermes-gitops.factorylevel.dev/component: "{{.spec.component}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          path: harness/hermes/charts/hermes-endpoint
+          helm:
+            releaseName: "hermes-ep-{{.path.basename}}"
+            ignoreMissingValueFiles: true
+            valueFiles:
+              - $gitops/bootstrap/values/cluster-values.yaml
+              - $gitops/environment/targets/{{.spec.target}}/values.yaml
+              - $gitops/deployments/endpoints/{{.path.basename}}/deployment.yaml
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        name: "{{.spec.argoDestination}}"
+        namespace: "hermes-endpoints"
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

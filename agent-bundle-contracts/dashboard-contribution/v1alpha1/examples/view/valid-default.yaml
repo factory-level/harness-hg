@@ -1,0 +1,19 @@
+apiVersion: dashboard.hermes-gitops/v1alpha1
+kind: NexusView
+metadata:
+  id: default
+  title: Social Media Operation
+spec:
+  nodes:
+    - ref: marketing
+      position: {x: 120, y: 120}
+    - ref: calvin
+      position: {x: 180, y: 260}
+      parent: marketing
+    - ref: marketing-manager
+      position: {x: 520, y: 220}
+      parent: marketing
+  viewport:
+    x: 0
+    y: 0
+    zoom: 0.85

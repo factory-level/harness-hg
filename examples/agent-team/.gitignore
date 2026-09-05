@@ -1,0 +1,5 @@
+# Eve build output and dependencies - the pod builds from the committed
+# lockfile with `npm ci`; vendored dependencies are a bug here.
+agents/*/*/src/node_modules/
+agents/*/*/src/.output/
+agents/*/*/src/.eve/

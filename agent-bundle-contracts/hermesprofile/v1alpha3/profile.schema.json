@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/hermesprofile/v1alpha3/profile.schema.json",
+  "title": "HermesProfile record",
+  "description": "The per-agent instance record (profile.yaml) pushed to the GitOps repo. v1alpha2 removes four fields no consumer read: spec.targetCluster, spec.reach (whose only key was regions), and spec.deployment.{machineType,region,diskType} - leftovers from the deleted VM compute path. See plugin/schemas/README.md for the migration note. Fully-resolved instance record for a single installed Hermes agent \u2014 PLAIN HELM VALUES for the hermes-profile chart, not a Kubernetes custom resource (there is no HermesProfile CRD). The record's identity is its directory name (profiles/<name>/profile.yaml, read by the ApplicationSet as {{.path.basename}}); the emitter enforces the name rules (DNS-1123 label, max 40 chars). Desired-state only; no status block.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "spec"
+  ],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "description": "The record's single top-level block. Every field under it doubles as a Helm value for the hermes-profile chart - there is no translation step.",
+      "additionalProperties": false,
+      "required": [
+        "persona",
+        "source",
+        "sha"
+      ],
+      "properties": {
+        "persona": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The installed instance name - identical to the record's directory name under profiles/. The chart stamps it on every rendered resource as the persona label."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git URL or path, e.g. github.com/factorylevel/support-agent"
+        },
+        "gitAuthSecretRef": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of a Kubernetes Secret in the instance's own namespace holding the credential to clone a PRIVATE spec.source: keys username+password (HTTPS PAT) or ssh-privatekey (SSH deploy key). Omit for public sources."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git ref the install resolved spec.sha from, recorded for provenance - the pod boots from spec.sha, not from this ref. Omitted when the install named none."
+        },
+        "sourceSubdir": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*\\.\\.)[^\\\\]+$",
+          "description": "Subdirectory of spec.source containing the distribution (the Hermes fork's --subdir / #subdirectory= install form). The pod boot path installs /tmp/dist/<sourceSubdir> from its clone. Omit for root-layout sources."
+        },
+        "sha": {
+          "type": "string",
+          "description": "Full commit SHA (40 lowercase hex chars).",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "distributionVersion": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The version the distribution declared at install time, recorded for provenance."
+        },
+        "deployment": {
+          "type": "object",
+          "description": "Agent pod knobs - pod-compute only.",
+          "additionalProperties": false,
+          "properties": {
+            "baseImageTag": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Tag of the Hermes agent container image this instance runs; overrides the platform's image tag for both the bootstrap initContainer and the main container."
+            },
+            "diskSizeGb": {
+              "type": "integer",
+              "minimum": 10,
+              "description": "Size in GiB of the instance's data volume claim. Default when absent: 10."
+            }
+          }
+        },
+        "apps": {
+          "type": "array",
+          "description": "The RESOLVED helm apps this instance launches, in author order - the emitter has already deep-merged author values + fleet defaults + per-instance appValues overrides into `values`, and every `valuesRequired` dot-path was satisfied pre-render (so that field is dropped from the record). The chart renders one Argo CD Application per entry (app-of-apps).",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "chart",
+              "repo"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 40,
+                "description": "DNS-label app name, unique within the record."
+              },
+              "chart": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Chart name in the remote helm repo, or (for `repo: local`) the chart's path inside the platform/GitOps chart tree."
+              },
+              "repo": {
+                "type": "string",
+                "pattern": "^(local|https://\\S+|oci://\\S+)$",
+                "description": "Helm repo URL (https:// or oci://), or the reserved word `local` (chart ships with the platform/GitOps repo)."
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Chart version - present for remote repos (the Application's targetRevision), absent for `repo: local`."
+              },
+              "values": {
+                "type": "object",
+                "description": "The fully-merged chart values (author values + fleet defaults + per-instance overrides), inlined."
+              }
+            },
+            "if": {
+              "properties": {
+                "repo": {
+                  "const": "local"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "version"
+                ]
+              }
+            },
+            "else": {
+              "required": [
+                "version"
+              ]
+            }
+          }
+        },
+        "envRequires": {
+          "description": "Every environment variable this profile needs, WITH the metadata the declaration carried. v1alpha2 and earlier stored a flat array of names, discarding the description, the required flag and the secret-versus-config distinction - the three facts the capability model and the secret lifecycle need (#141, #171, #149). Both shapes are accepted: a bare string is an entry with name only, and means `required: true, secret: true` by the same conservative default the resolver applies.",
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Z][A-Z0-9_]*$"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]*$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "required": {
+                    "description": "Absent means REQUIRED - the same default the distribution manifest applies, so an entry that says nothing is treated as mandatory rather than optional.",
+                    "type": "boolean"
+                  },
+                  "secret": {
+                    "description": "A credential rather than configuration. Absent means TRUE: treating an unclassified value as a secret costs an ExternalSecret; treating a secret as config puts it in a rendered manifest.",
+                    "type": "boolean"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "expose": {
+          "type": "object",
+          "description": "HTTP services on the agent pod to route ingress to, plus the access policy the tunnel ingress applies.",
+          "additionalProperties": false,
+          "required": [
+            "services"
+          ],
+          "properties": {
+            "services": {
+              "type": "array",
+              "description": "The exposed services. Each becomes a named port on the instance's Service and a routing rule on the configured ingress provider.",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "port"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "description": "DNS-label service name; becomes the port's name on the instance's Kubernetes Service."
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "TCP port on the agent pod this service targets."
+                  },
+                  "path": {
+                    "type": "string",
+                    "pattern": "^/",
+                    "description": "HTTP path prefix routed to this service. Default when absent: /."
+                  }
+                }
+              }
+            },
+            "access": {
+              "type": "object",
+              "description": "Access control for the exposed services under the Cloudflare tunnel ingress.",
+              "additionalProperties": false,
+              "properties": {
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "service-token",
+                    "idp",
+                    "mixed"
+                  ],
+                  "description": "Who may reach the exposed services: service-token = named machine clients, idp = people via the identity provider, mixed = both. Default when absent: service-token."
+                }
+              }
+            }
+          }
+        },
+        "backup": {
+          "type": "object",
+          "description": "Backup intent - schedule and retention only; the destination is a platform concern (providers.backup in cluster-values).",
+          "additionalProperties": false,
+          "required": [
+            "schedule"
+          ],
+          "properties": {
+            "schedule": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Cron expression for the CronJob that archives the instance's data volume."
+            },
+            "retention": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "How many of the newest archives are kept; older ones are pruned. Default when absent: 7."
+            }
+          }
+        }
+      }
+    }
+  }
+}

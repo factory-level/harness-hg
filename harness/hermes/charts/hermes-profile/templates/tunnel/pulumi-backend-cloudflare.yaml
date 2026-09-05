@@ -1,0 +1,45 @@
+{{- include "hermes.computeGuard" . -}}
+{{- include "hermes.ingressGuard" . -}}
+{{- if eq .Values.providers.ingress "cloudflare" -}}
+{{- include "hermes.cloudflareConfigGuard" . -}}
+{{/*
+Materializes the tunnel Stack's OWN Pulumi state-backend credential
+(templates/tunnel/stack-cloudflare.yaml's envRefs), via the SAME
+ClusterSecretStore "hermes-gitops" mechanism spec.envRequires already uses
+(only the k8s ClusterSecretStore backend is live-verified anywhere in
+this repo). This is a per-instance-namespace ExternalSecret reading a
+SHARED, fleet-wide remote key, not a per-instance one - a Stack CR's
+envRefs Secret reference is same-namespace only, so each instance
+namespace needs its own copy of the shared credential - see values.yaml's
+cloudflare.pulumiBackend header comment.
+*/}}
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {{ include "hermes.tunnelPulumiBackendSecretName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: hermes-profile
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: hermes-gitops
+    kind: ClusterSecretStore
+  target:
+    name: {{ include "hermes.tunnelPulumiBackendSecretName" . }}
+    creationPolicy: Owner
+  data:
+    {{- if eq .Values.cloudflare.pulumiBackend.mode "pulumi-cloud" }}
+    - secretKey: accessToken
+      remoteRef:
+        key: {{ .Values.cloudflare.pulumiBackend.pulumiCloud.remoteSecretKey | default "hermes-gitops-pulumi-backend-token" }}
+        property: value
+    {{- else }}
+    - secretKey: passphrase
+      remoteRef:
+        key: {{ .Values.cloudflare.pulumiBackend.selfManaged.remotePassphraseKey | default "hermes-gitops-pulumi-backend-passphrase" }}
+        property: value
+    {{- end }}
+{{- end -}}

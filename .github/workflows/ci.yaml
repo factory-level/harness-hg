@@ -1,0 +1,216 @@
+name: ci
+
+# pull_request only: on push AND pull_request the same commit billed
+# twice, and 12 sub-minute jobs round up to 12+ minutes per event.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  schema-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Validate schema fixtures
+        run: make schema-validate
+
+  retired-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No living references to retired trees or deleted aliases (#672)
+        run: make retired-paths
+      - name: Quickstarts carry their loop runs' asserted sequences (#675)
+        run: make quickstart-drift
+
+  gitops-emitter-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Schema + gitops-template drift checks, gitops_emitter unit tests
+        run: make pytest wheel-smoke
+
+  gitops-template-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Validate gitops-template (cluster-values schema + token substitution + kubeconform)
+        run: make gitops-template-validate
+
+  # harness/hermes/charts/hermes-profile: helm lint, golden `helm template` renders, negative
+  # render assertions, best-effort kubeconform. infra/scripts/render-test.sh
+  # self-installs helm (and, best-effort, kubeconform) user-local - no
+  # actions/setup-helm needed.
+  chart-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Chart golden renders, lint, negative assertions
+        run: make chart-test
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Docs drift check
+        run: make docs-drift
+
+  # Strict build of the MkDocs Material wiki (docs/ + mkdocs.yml). --strict
+  # promotes broken internal links, bad anchors, and nav/file mismatches to
+  # errors, so this catches wiki breakage on PRs before the wiki.yaml deploy
+  # workflow runs on main.
+  wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Build wiki (strict)
+        run: make wiki-build
+
+  # infra/pulumi/programs/cloudflare-tunnel is its OWN uv project (own
+  # pyproject.toml/lockfile/venv - deliberately not a dependency of the root
+  # gitops-emitter-test job above). Entirely offline (pulumi.runtime.set_mocks, no
+  # Cloudflare/GCP credentials or network) - includes its own security
+  # regression tests (test_access.py/test_secrets.py).
+  cloudflare-tunnel-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: cloudflare-tunnel Pulumi program unit tests (offline, mocked)
+        run: cd infra/pulumi/programs/cloudflare-tunnel && uv run --group dev pytest
+
+  # cli/ is the bun/TypeScript hg CLI (topology + nexus compilers and the
+  # operator command surface). Offline: typecheck + the full bun suite
+  # (tmpdir-synthesized repositories, no cluster). Added with the Nexus arc
+  # (ADR-42) - before that, cli/ had no PR gate at all.
+  cli-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: cd cli && bun install --frozen-lockfile
+      - name: Typecheck
+        run: cd cli && bun run typecheck
+      - name: Unit tests
+        run: cd cli && bun test
+
+
+  # nexus-ui/ is the rebuilt Nexus frontend (ADR 0157, #666) - Astryx
+  # components + custom canvas over the _docs/design/nexus-ui/ spec. Its
+  # The
+  # theme is a committed projection of design/tokens.json, and the dist
+  # rides a Helm release Secret with a 1MiB cap, so size is a gate too.
+  nexus-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: cd nexus-ui && bun install --frozen-lockfile
+      - name: Typecheck
+        run: cd nexus-ui && bun run typecheck
+      - name: Unit tests (theme projection, shims, style gates)
+        run: cd nexus-ui && bun test
+      - name: Theme drift
+        run: cd nexus-ui && bun run gen-theme && git diff --exit-code -- src/theme/theme.css
+      - name: Rebuild and byte-compare the committed dist
+        run: |
+          cd nexus-ui
+          # ORDER MATTERS: the main config empties the shared outDir and
+          # would delete the committed standalone bundle if run second.
+          bun run build
+          bun run build:standalone
+          git diff --exit-code -- ../control-plane/nexus/dist
+      - name: Chart-files projection in sync
+        run: bash infra/scripts/sync-nexus-chart.sh --check
+      - name: Size budget (Helm release Secret cap headroom)
+        run: |
+          cd nexus-ui
+          total=$(du -cb ../control-plane/nexus/dist/index.js ../control-plane/nexus/dist/standalone.js ../control-plane/nexus/dist/style.css | tail -1 | cut -f1)
+          echo "dist total: ${total} bytes (budget 870400)"
+          test "$total" -le 870400
+
+  # infra/ is the bun/TypeScript Pulumi bootstrap program (components +
+  # control-flow + index - see infra/src/index.ts). Offline: typecheck +
+  # bun test over the pure config-parsing/script-building surface; the
+  # live k3d loop stays a local/scheduled concern (see below).
+  infra-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: cd infra && bun install --frozen-lockfile
+      - name: Typecheck
+        run: cd infra && bun run typecheck
+      - name: Unit tests
+        run: cd infra && bun test
+
+  # PR gate for bootstrap stages 1-2 (issue #15 [I1]): the git-side verify
+  # script drives a real `pulumi up` against a LOCAL file backend + bare git
+  # repo - real fork hermes install, plugin config (I2 direct assertions),
+  # scaffold + profile push, schema validation, no-op re-up, D1/K5
+  # negatives, D2 self-heal, F5 update, F6 decommission. No docker/k3d (the
+  # script's own contract). The full cluster loop is NOT here - it runs
+  # nightly in .github/workflows/live-loop.yaml (which replaced the old
+  # commented-out bootstrap-live-verify placeholder).
+  bootstrap-git-side-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      # HERMES_FORK_PATH provisioning: the script's one external
+      # dependency is a checkout of the hermes fork's
+      # feat/profile-lifecycle-hooks branch. OPERATOR ACTION REQUIRED to
+      # arm this gate: that branch currently exists only in the fork
+      # maintainer's local checkout - `git push -u origin
+      # feat/profile-lifecycle-hooks` from there publishes it, and this
+      # job starts verifying for real on the next run (the guard below
+      # flips automatically; until then the job emits a loud warning and
+      # exits green so an unpublishable external dependency doesn't block
+      # every PR).
+      - name: Check fork hooks branch availability
+        id: fork
+        run: |
+          if git ls-remote --exit-code --heads \
+              https://github.com/factory-level/hermes-agent-gitops.git \
+              feat/profile-lifecycle-hooks >/dev/null; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=bootstrap-git-side-verify NOT armed::fork branch feat/profile-lifecycle-hooks is unpublished, so the git-side bootstrap verify DID NOT RUN. Push the branch to factory-level/hermes-agent-gitops to arm this PR gate."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.fork.outputs.available == 'true'
+        with:
+          repository: factory-level/hermes-agent-gitops
+          ref: feat/profile-lifecycle-hooks
+          path: .fork/hermes-agent-gitops
+      - name: Install uv
+        if: steps.fork.outputs.available == 'true'
+        uses: astral-sh/setup-uv@v3
+      - name: Install bun
+        if: steps.fork.outputs.available == 'true'
+        uses: oven-sh/setup-bun@v2
+      - name: Install pulumi
+        if: steps.fork.outputs.available == 'true'
+        run: |
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+      - name: Git-side bootstrap verify (stages 1-2, no cluster)
+        if: steps.fork.outputs.available == 'true'
+        env:
+          HERMES_FORK_PATH: ${{ github.workspace }}/.fork/hermes-agent-gitops
+        run: make verify-git-side

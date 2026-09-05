@@ -1,0 +1,2866 @@
+/* Harness Hg — the landing hero and the devlog.
+ *
+ * Written from the ground up. What carried over from the previous page is the
+ * palette, the contour-sphere mark, and the concepts (ADR-57's canvas grammar,
+ * ADR-69's decision to name the machinery). Every rule below is new.
+ *
+ * Two pages share this file: `index.html`, which is one screen and nothing
+ * else, and `devlog/`, which is a reading surface. They share tokens, the
+ * skip link, the grain and the type — nothing else.
+ */
+
+/* =========================================================== 0. the faces
+ *
+ * Self-hosted, from `fonts/` beside this sheet. They were Google-hosted, and
+ * that made the fonts stylesheet the one render-blocking request on a site
+ * whose identity is "no build step, no dependencies" — first paint waited on
+ * a third-party CDN, and every visitor's IP reached Google for three files
+ * that never change. The three woff2 are the exact latin-subset variable
+ * files the css2 API served this page (83KB together), vendored with their
+ * served unicode-ranges. The arrows in the devlog's link text (U+2190/2192)
+ * were never in the latin range, so they fall back to the system face exactly
+ * as they did from the CDN.
+ *
+ * JetBrains Mono is ONE variable file: the css2 response declared it twice —
+ * once per discrete weight — over the same URL, so the pair collapses to one
+ * block with a 400 500 range. */
+
+@font-face {
+  font-family: 'Figtree';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("fonts/figtree-latin.woff2?v=18") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("fonts/jetbrains-mono-latin.woff2?v=18") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Nunito Sans';
+  font-style: normal;
+  font-weight: 400 800;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fonts/nunito-sans-latin.woff2?v=18") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* ========================================================== 1. the tokens
+ *
+ * Light by default, dark under `[data-theme="dark"]` — set before paint by
+ * theme.js from the wiki's stored toggle choice (`__palette`), falling back
+ * to the system preference. The light palette is
+ * ported from the Nexus client (`dashboard/src/style.css` :29-88) — the same
+ * canvas object system this board implements, on the ground the source sheet
+ * was actually drawn on. ADR-127 recorded the dark rendition as "the one
+ * liberty taken"; this block returns it.
+ *
+ * Every value below carries a measured contrast ratio. Three rules govern it:
+ *
+ *   1. `--ink-6` is a CONTRAST FLOOR, not a shade. It must clear 4.5:1 on all
+ *      FOUR grounds it lands on: --bg, --panel, --card and --sunk.
+ *   2. `--accent` is a GRAPHIC. Text takes `--accent-ink` — the client's
+ *      terracotta is 3.44:1 on the monogram tint and cannot carry type.
+ *   3. Ownership colour never becomes a fill. A 2-3px bar, a 2px ring,
+ *      nothing else. A wash per kind is a rejected alternative (ADR-58).
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces, lightest first. `--panel` is the BOARD (the client's --paper);
+   * the sticky's paper is `--paper`, further down, and they are not the same
+   * material. */
+  --bg:    #EEEFF4;   /* the page          — client --bg    */
+  --panel: #FBFAF7;   /* the board         — client --paper */
+  --card:  #FFFFFF;   /* an object surface — client --sf    */
+  --sunk:  #EAECF3;   /* recessed ground   — client --sf3   */
+
+  /* Hairlines, faintest first. `--line-4` is the connector pencil and is NOT
+   * the client's .46 — that composites to 2.98:1 on the board, under the 3:1
+   * graphics floor, and the wires are the whole grammar of the canvas. */
+  --line:   rgba(20, 24, 36, .11);
+  --line-2: rgba(20, 24, 36, .18);
+  --line-3: #7F849B;                 /* the meta separator glyph — 3.22:1 */
+  --line-4: rgba(20, 24, 36, .55);   /* wires 3.89:1, li::marker 3.79:1   */
+
+  /* Ink, darkest first. */
+  --ink:   #141824;
+  --ink-2: #272C3E;
+  --ink-3: #3E4256;
+  --ink-4: #494E63;
+  --ink-5: #545970;
+  /* 4.5:1 is the floor and this token sets it, on FOUR grounds: --bg 5.16,
+   * --panel 5.67, --card 5.92, --sunk 5.02 (the reserved container's meta
+   * line lands there, and it is the darkest of the four). The client's
+   * --mut #6D7188 fails three of them — do not port it. */
+  --ink-6: #5F6379;
+
+  /* Terracotta does two jobs and needs two values. `--accent` is the GRAPHIC:
+   * bars, rings, tints, dots, the mark. It is the client's exact --acc and
+   * clears 3:1 everywhere (worst 3.44 on its own 16% tint). It cannot carry
+   * text — 3.64:1 on the page. `--accent-ink` is the text value: 4.96:1 at
+   * its worst ground, which is the monogram badge's 14% tint. */
+  --accent:      #B36A33;
+  --accent-ink:  #965423;
+  --accent-lift: #7F4A1E;   /* hover + focus ring; 1.24:1 step off the ink */
+  /* Ink on an accent FILL. Nothing clears 4.5:1 over #B36A33 (pure black tops
+   * out at 5.03), so `.skip` paints `--accent-ink` as its ground. */
+  --on-accent:   #FFFDF8;
+
+  /* The contour-sphere mark. On paper the specular INVERTS: light gathering
+   * on a light ground has to read as density, so `--mark-spec` is DARKER than
+   * `--mark-ink`. hero.js reads both off this block, which is what keeps the
+   * mark from drifting out of the palette. */
+  --mark-ink:  #B36A33;
+  /* 2.69:1 off the ink. Chosen by looking, not by arithmetic — at the first
+   * value tried (#85491D, 1.69:1) the lit lobe was invisible and the mark read
+   * as a flat medallion. #6E3A14 (2.21:1) is the floor where a lobe appears;
+   * #4A2408 (3.25:1) starts to smudge under a strong pull. Note the dark
+   * theme's pair is only 1.41:1 — narrower than this — because there the lobe
+   * survives on ground contrast rather than on ink separation. */
+  --mark-spec: #5C2F0F;
+
+  /* Ownership. Never status, never a fill. `--comm` splits like the accent
+   * does — the spine is a graphic, the label is text.
+   *
+   * `--own-staff` is a PLUM, and it moved off slate for one reason: at #4C5470
+   * it and `--human` #4A5C8A were 11.4 apart in CIE76, which is the same colour
+   * to the eye. They encode different things — a staff-owned object's bar says
+   * who owns it, a person's ring says this is a person, not a thing — and two
+   * channels that always read the same are one channel. Blue stayed with the
+   * people, because only people use it and it is the one hue on this board
+   * with a fixed meaning; ownership is the side that had somewhere to go.
+   *
+   * Not green, amber or red: colour on this board is ownership and never
+   * status, and those three would be read as status whatever the spec says.
+   * Measured against all three grounds an owner's bar lands on — 7.27 on
+   * --panel, 7.58 on --card, 6.43 on --sunk — and 27.1 CIE76 off --human. */
+  --own-marketing: #B36A33;
+  --own-staff:     #6E4187;
+  --human:         #4A5C8A;
+  --comm:          #2F6FE0;   /* the 3px spine and the rule */
+  --comm-ink:      #1F56C0;   /* the label and the count    */
+
+  /* Shadows carry the hue of the ground they fall on, not pure black. Two
+   * weights only: the lift an agent profile gets, and the low one everything
+   * else lying nearer the board gets. */
+  --sh-lift: 0 10px 26px rgba(20, 24, 36, .10);
+  --sh-low:  0 4px 12px rgba(20, 24, 36, .07);
+
+  /* Paper — the sticky, and the one material a person writes on, so nothing
+   * else may use it. This is the client's --sticky: warm, and unmistakably
+   * not a card. */
+  --paper:     #F7E6B8;
+  --paper-ink: #3A3210;
+
+  /* Atmosphere. Four literals that were dark-ground assumptions. */
+  --grid:   rgba(20, 24, 36, .13);
+  --sel:    rgba(179, 106, 51, .20);
+  --blob-1: rgba(179, 106, 51, .07);
+  --blob-2: rgba(120, 132, 168, .05);
+
+  /* Radii, named. Every one of these used to be a per-object literal. */
+  --r-xs:   2px;
+  --r-sm:   6px;
+  --r-md:  10px;
+  --r-lg:  14px;
+  --r-xl:  18px;
+  --r-pill: 999px;
+  --radius: var(--r-lg);
+
+  /* Figtree carries the display; Nunito Sans carries the body — both
+   * humanist, and the pair the client uses. JetBrains Mono survives on one
+   * thing only: a literal you would type. */
+  --display: 'Figtree', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --sans: 'Nunito Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shell: 1200px;
+  --gutter: clamp(20px, 3.2vw, 40px);
+
+  /* Vertical rhythm is fluid in the HEIGHT axis. Every spacing failure this
+   * layout had was on a short viewport — 960x600, 700x500, 360x640 — where
+   * fixed padding and gaps do not shrink with the room available, and a hero
+   * that is supposed to be one screen quietly becomes one and a bit. */
+  --pad-y: clamp(20px, 5.2vh, 58px);
+  --gap-y: clamp(10px, 2.7vh, 30px);
+
+  /* One easing for everything that moves. */
+  --ease: cubic-bezier(.16, 1, .3, 1);
+
+  /* The sticky header's height, read by the hero so "one screen" still means
+   * one screen with the bar standing on top of it. */
+  --topbar-h: 64px;
+
+  /* Layers, named. Nothing in this file invents a z-index outside these. */
+  --z-nav: 50;
+  --z-grain: 60;
+  --z-skip: 70;
+}
+
+/* The dark theme is ADR-129's audited palette, unchanged except for two
+ * pre-existing sub-floor values the light audit surfaced (`--line-3` and
+ * `--line-4`, both graphics, both under their floor today) and the tokens
+ * that are new on both sides.
+ *
+ * Keyed to the attribute, not the media query, so the wiki's stored theme
+ * choice can force either mode. ponytail: without JS the page is light-only —
+ * duplicate this block under `prefers-color-scheme` if that ever matters. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Surfaces, darkest first. Never #000 — this is a blue-black. */
+    --bg:    #0B0D14;
+    --panel: #0E121C;
+    --card:  #141824;
+    --sunk:  #090B11;
+
+    --line:   #1C2233;
+    --line-2: #262D3C;
+    /* was #3A3F52 — 1.86:1 on --bg, the separator was barely a glyph */
+    --line-3: #5C6275;
+    /* was #4A5468 — 2.46:1 on --panel, under the 3:1 floor the wires need */
+    --line-4: #5A657C;
+
+    --ink:   #F9F8FD;
+    --ink-2: #EBEAF4;
+    --ink-3: #C6C7DA;
+    --ink-4: #AFB0C8;
+    --ink-5: #8A8CA6;
+    --ink-6: #778195;
+
+    --accent:      #F5B98C;
+    --accent-ink:  #F5B98C;   /* apricot carries text fine on this ground */
+    --accent-lift: #FAD3B4;
+    --on-accent:   #231708;
+
+    --mark-ink:  #F5B98C;
+    --mark-spec: #FFE3D0;
+
+    --own-marketing: #F5B98C;
+    /* The plum, at this ground's weight. Was #94A4C8, 13.5 CIE76 off --human
+     * and indistinguishable from it; now 24.2, at 8.53 / 8.07 / 8.96 on
+     * --panel / --card / --sunk. */
+    --own-staff:     #CE9EDE;
+    --human:         #9FB6F0;
+    --comm:          #8FB0F2;
+    --comm-ink:      #8FB0F2;
+
+    --sh-lift: 0 10px 26px rgba(4, 5, 11, .58);
+    --sh-low:  0 4px 12px rgba(4, 5, 11, .44);
+
+    --paper:     #2A2517;
+    --paper-ink: #E4D6A8;
+
+    --grid:   rgba(175, 176, 200, .10);
+    --grain:  .032;
+    --sel:    rgba(245, 185, 140, .26);
+    --blob-1: rgba(245, 185, 140, .085);
+    --blob-2: rgba(200, 208, 228, .035);
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* ============================================================ 2. the base */
+
+/* `clip` belongs on `html`, not on `body`. The ambient blob behind the mark
+ * (`.hero::before`) reaches past the right edge on purpose; left uncontained
+ * it widens the scroll area, which both adds a horizontal scrollbar and
+ * shifts every centred container left by half the overflow. Clipping `body`
+ * alone does NOT fix it — `html` is the scroll container, and it kept
+ * reporting the full pre-clip width. Measured: 87px of overflow at a 500px
+ * viewport, 0 with this. `clip` rather than `hidden` so nothing here quietly
+ * becomes a scroll container. */
+html {
+  overflow-x: clip;
+  scroll-behavior: smooth;
+  scroll-padding-top: 2rem;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, p, ul, ol, figure { margin: 0; }
+
+/* `ol` as well as `ul`: the path's three steps are an ordered list, because
+ * the order is the whole point of them — but they carry their own set numbers,
+ * so a marker would render the count twice. */
+ul, ol { padding: 0; list-style: none; }
+
+canvas { display: block; }
+
+a { color: inherit; text-decoration: none; }
+
+::selection {
+  background: var(--sel);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-lift);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* The ambient wash — ATMOSPHERE, so it belongs to the page and not to the
+ * centred shell. It used to hang off `.hero::before`, which is 1200px wide and
+ * clips: on a 1366px viewport the blob was cut at x=83 and x=1283, leaving a
+ * flat gutter of --bg down each side with a hard vertical seam where the warm
+ * wash stopped. On the dark ground that was ~8.5% apricot over near-black and
+ * nearly invisible; on paper a warm wash meeting a cool #EEEFF4 page is the
+ * first thing you see, and it reads as a lens flare.
+ *
+ * `fixed`, not `absolute`, for two reasons: it takes the VIEWPORT as its
+ * containing block, which is the box it should have been measured against all
+ * along, and a fixed element contributes nothing to scrollable overflow — so
+ * the 198px of phantom page height that made `.hero` clip in the first place
+ * cannot come back. `overflow-x: clip` on <html> still stands and is still
+ * load-bearing for everything else; see the note there.
+ *
+ * Scoped with :has() because the devlog is a reading surface and deliberately
+ * has no atmosphere. Without the scope this rule would silently wash five
+ * documents that were designed flat. A browser without :has() gets no blob at
+ * all, which is the correct degradation for pure decoration.
+ *
+ * A radial blob, not a linear fade, and no glow on any element — depth here
+ * comes from the backdrop, not from outlines that light up. */
+body:has(.hero)::before {
+  content: "";
+  position: fixed;
+  bottom: -22dvh;
+  left: -22vw;
+  width: min(920px, 78vw);
+  aspect-ratio: 1.12;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 54% 46% 48% 52% / 50% 52% 48% 50%;
+  background: radial-gradient(closest-side circle at 50% 50%,
+              var(--blob-1) 0%,
+              var(--blob-2) 54%,
+              transparent 100%);
+}
+
+/* Grain — a DIFFERENT layer from the wash above, and dark only. The reason is
+ * the whole justification for it: five
+ * near-black surfaces separated by hairlines band badly on cheap panels. On
+ * paper nothing bands, and near-black noise over a light ground reads as
+ * dirt rather than as texture, so the layer is not painted at all. Fixed and
+ * pointer-events-none so it never repaints with a scrolling container. Felt,
+ * not seen: past ~.05 it reads as dirt even on the dark ground. */
+:root[data-theme="dark"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-grain);
+  pointer-events: none;
+  opacity: var(--grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: var(--z-skip);
+  padding: 12px 18px;
+  border-radius: 0 0 8px 0;
+  background: var(--accent-ink);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+.skip:focus { left: 0; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ============================================================ 3. the hero */
+
+/* `dvh`, never `vh`: on mobile Safari `vh` is measured against the viewport
+ * with the URL bar hidden, so the hero would be taller than the screen on load
+ * and resize under the reader as the bar retracts. */
+.hero {
+  position: relative;
+  /* One screen MINUS the sticky bar standing on it (ADR-133): at a plain
+   * 100dvh the hero's bottom edge sat one bar-height below the fold. The
+   * extra 1px is the bar's border-bottom, which its min-height does not
+   * include — measured, the hero bottom landed at viewport + 1 without it. */
+  min-height: calc(100dvh - var(--topbar-h) - 1px);
+  /* Kept after the ambient wash moved to `body::before`. It no longer has a
+   * blob to contain, but it is still the guard that stops any child of a hero
+   * that is exactly one viewport tall from adding page height — which is how
+   * 198px of phantom scroll got here the first time. `clip` rather than
+   * `hidden` so nothing here quietly becomes a scroll container. */
+  overflow: clip;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: var(--shell);
+  margin: 0 auto;
+  /* Optically asymmetric: the eye reads a block as low when top and bottom
+   * padding match, so the bottom carries more. */
+  padding: var(--pad-y) var(--gutter) calc(var(--pad-y) * 1.16);
+}
+
+/* The ambient wash lives on `body::before` (section 2) so it spans the
+ * viewport rather than this 1200px shell. This rule keeps the hero's own
+ * children above it. */
+.hero > * { position: relative; z-index: 1; }
+
+/* The band is the demonstration, and it now holds the full width. It used to
+ * be a lopsided two-column grid with the mark in the narrow side, which cost
+ * the board ~30% of its width and put 214px of brand next to a 207px board.
+ * Identity moved to the sticky header (ADR-133); what is left is the work. */
+.band {
+  /* The generous interval of the hero's rhythm: claim and demonstration are
+   * different thoughts, and this gap is what says so (the eyebrow-to-claim
+   * gap above is the tight one). */
+  margin-top: calc(var(--gap-y) * 1.5);
+}
+
+.band__work {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(11px, 2.1vh, 20px);
+}
+
+/* The prose and the links share a row under the canvas, weighted toward the
+ * prose — the links are a footer, not a menu. */
+.hero__foot {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+  gap: clamp(12px, 2vh, 20px) clamp(24px, 3.6vw, 48px);
+  align-items: center;
+  margin-top: var(--gap-y);
+}
+
+/* ------------------------------------------------------------- 3.1 eyebrow */
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  /* Ink, not accent. The hero was firing ten separate apricot events on one
+   * screen — mark, this line, its dot, the verb, the caret, two ownership
+   * bars, the status dot, the button — and on the dark ground, where
+   * `--accent` and `--accent-ink` are the same #F5B98C, every one of them
+   * fired at the same chroma. Nothing receded, so the eye counted ten equals.
+   * Accent now buys three things only: identity (the mark and this dot),
+   * action (`.btn`), and affordance (links, hover, the focus ring).
+   * 5.02:1 light / 4.52:1 dark at its worst ground. */
+  color: var(--ink-6);
+}
+
+/* The one apricot spark left on this row, and the reason the text above can
+ * afford to be grey: an explicit colour rather than `currentColor`, which
+ * would have dragged the dot down with the label. 3.54:1 light / 10.29:1
+ * dark — a graphic, so 3:1 is its floor. */
+.eyebrow__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------ 3.1b ident */
+
+/* The logo, leading the hero, with the eyebrow at its side and the headline
+ * underneath. Height is the hero's scarce axis, so the mark is bounded by vh
+ * as well as a px cap — at a 768px viewport it lands around 73px, bigger
+ * than the retired 58px identity row without spending a second row on it. */
+.hero__ident {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+/* The wordmark and the eyebrow stack beside the mark — logo AND typography,
+ * as one identity block. The pair together stands shorter than the mark, so
+ * the row costs no height the mark was not already spending. */
+.hero__id {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.lockup--hero .lockup__name { font-size: 28px; letter-spacing: -.028em; }
+.lockup--hero .lockup__sym { font-size: 17px; transform: translateY(5px); }
+
+.hero__mark {
+  width: clamp(60px, 9.5vh, 96px);
+  aspect-ratio: 1;
+  flex: none;
+}
+
+/* -------------------------------------------------------------- 3.2 claim */
+
+/* Not a scream. Hierarchy here is weight and colour first, size second: the
+ * second sentence is the same size as the first and simply brighter. */
+.claim {
+  font-family: var(--display);
+  /* Wide enough that each sentence holds one line — the <em> already forces
+   * the break between them, so this only has to stop a third line appearing.
+   * 40ch, up from 34: the fleet headline's longer line is 38 characters. */
+  max-width: 40ch;
+  /* Tight to the eyebrow above it: the eyebrow is this heading's label, and
+   * at a full --gap-y the two sat as far apart as unrelated groups — the
+   * hero's whole rhythm measured 21/24/21, one interval repeated until
+   * nothing grouped. Tight here is what buys the band its air below. */
+  margin-top: calc(var(--gap-y) * .55);
+  /* `min(vw, vh)` so the headline is bounded by BOTH axes. On a short, wide
+   * viewport the vw term alone would size it for a screen that is not there. */
+  font-size: clamp(1.7rem, min(3.9vw, 6.4vh), 3.05rem);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -.033em;
+  color: var(--ink-5);
+  text-wrap: balance;
+}
+
+.claim em {
+  display: block;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------ 3.3 command */
+
+/* A line of type, not a fake terminal. No chrome, no traffic-light dots, no
+ * window frame — the command is the object, so it gets a rule under it and
+ * nothing else. */
+/* The command and its control share the rule. The rule moved off `.cmd` and
+ * onto this row so the pause toggle sits ON the line rather than under it —
+ * full width of the work column either way, so it still lines up with the
+ * canvas edges beneath and the two read as one instrument. */
+.cmdrow {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  font-family: var(--mono);
+  font-size: clamp(.95rem, 1.55vw, 1.2rem);
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.cmd__bin { color: var(--ink-5); }
+
+.cmd__bin::after {
+  content: " ";
+  white-space: pre;
+}
+
+/* The roll. Each slot is a fixed-height window; the outgoing word leaves
+ * upward and the incoming arrives from below. Monospace and a `ch` width on
+ * the verb mean a swap never reflows anything beside it — which is the whole
+ * reason this animates transform and opacity and never width. */
+.roll {
+  position: relative;
+  display: inline-block;
+  height: 1.5em;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.roll--verb {
+  width: 8ch;          /* `upgrade`, `restore` — the longest, plus its space */
+  flex: none;
+  /* The verb was accent AND the only thing on the line that moves. Colour and
+   * motion were saying the same thing twice, and colour was the expensive
+   * half: 2,650px² of high-chroma apricot sitting directly under the claim.
+   * The roll still names it. 11.7:1 light / 14.8:1 dark. */
+  color: var(--ink-2);
+}
+
+.roll--target { color: var(--ink); }
+
+.roll__now,
+.roll__next {
+  display: block;
+  white-space: pre;
+}
+
+.roll__next {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+@keyframes roll-out {
+  to { transform: translateY(-100%); opacity: 0; }
+}
+
+@keyframes roll-in {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.is-rolling .roll__now { animation: roll-out .42s var(--ease) both; }
+.is-rolling .roll__next { animation: roll-in .42s var(--ease) both; }
+
+.cmd__caret {
+  width: .58em;
+  height: 1.05em;
+  margin-left: .34em;
+  flex: none;
+  align-self: center;
+  /* Px for px the loudest thing on the page: a saturated block that blinks.
+   * Accent buys attention, and a caret already has all of it from the motion.
+   * 5.85:1 light / 5.38:1 dark, well over the 3:1 a graphic owes. */
+  background: var(--ink-5);
+  animation: caret 1.1s steps(1) infinite;
+}
+
+@keyframes caret {
+  0%, 55% { opacity: 1; }
+  56%, 100% { opacity: 0; }
+}
+
+/* The cycle's stop. Hovering the command line already paused it, but a pointer
+ * is not a mechanism — a keyboard-only reader and a phone had no way to hold a
+ * frame, and the command rewrites itself every 2.9s indefinitely. This is
+ * built by hero.js and never by the markup: without script nothing cycles, and
+ * a pause control over a page that is standing still would be a lie.
+ *
+ * 32px, sitting on the rule at the end of the line it governs. It was 28 —
+ * over WCAG 2.5.5's 24px minimum but under the 30px floor ADR-129 measured and
+ * applied to the devlog's links in the same change, which left the one control
+ * on the hero as the smallest target on the site. The negative margin is
+ * re-derived, not inherited: the row aligns to `flex-end`, so a taller box
+ * grows upward, and holding the old optical centre needs -7 rather than -5. */
+.cyc {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-bottom: -7px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-6);
+  cursor: pointer;
+  transition: color .28s var(--ease), background-color .28s var(--ease);
+}
+
+.cyc:hover { color: var(--ink-2); background: var(--card); }
+
+.cyc:active { transform: translateY(1px); }
+
+/* One glyph is drawn at a time; both are the page's single 1.5 stroke weight. */
+.cyc__play { display: none; }
+.cyc.is-paused .cyc__pause { display: none; }
+.cyc.is-paused .cyc__play { display: block; }
+
+/* ------------------------------------------------------------- 3.4 shapes */
+
+/* ============================================ 3.4 the Fleet canvas objects
+
+   The same object system the Nexus client draws (`dashboard/src/style.css`,
+   "THE CANVAS OBJECT SYSTEM", ADR-58), on the ground it was drawn on: light by
+   default, dark under a media query. What is NOT the same is the size. The
+   client's board is a page; this one is a strip inside a hero that must stay
+   one screen, so every box carries a scale factor of 0.56 while the type does
+   not — 8px is not a size, and the stage already runs --zb: 1.16 to drag the
+   smallest labels up to reading size.
+
+   Two things scale by nothing at all. Silhouette radii are taken literally
+   from the client (18px card, 10px plaque, 2px sticky, 46px pill) because the
+   radius is part of what names the kind. And the named constants — the 3px
+   owner's bar, the 2px human ring, the 3px comm spine, the bead's knockout —
+   are meanings, not measurements. Three of them are pinned by value in
+   `.impeccable/config.json`; changing a number there un-suppresses a lint.
+
+   The client's own sheet warns that a full colour wash per kind "collapses in
+   dark mode, where the apricot surface is nearly black". That alternative
+   stays rejected, which is why colour here only ever lands on a 2–3px bar, a
+   2px ring, a tint under a monogram, or a dot.
+
+   Three channels, one job each:
+     SHAPE     kind        portrait card, plaque, container, circle, pill,
+                           fanned hand, clipped readout, tilted square
+     COLOUR    ownership   never status; healthy carries no colour at all
+     MATERIAL  authorship  crisp and aligned = published; paper = a person
+*/
+
+.canvas {
+  position: relative;
+  width: 100%;
+  /* Taller than it was (27vh). Height is what gates legibility here: objects
+   * are a fixed size and the stage zoom is capped by the height tier, so a
+   * wider board spreads them but a taller one is what lets the zoom come up. */
+  height: clamp(150px, 31vh, 330px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+/* A DOT field, not a two-axis rule grid. The client's canvas locates objects
+ * against dots (`--dot`, dashboard/src/style.css:31); the ruled version this
+ * replaces read as graph paper, which made the board an engineering drawing
+ * rather than a surface things sit on. The dots also stop competing with the
+ * connectors, which are the only lines that should carry meaning here.
+ *
+ * It lives on a pseudo-element so its vignette fades the FIELD at the edges
+ * without also fading the objects sitting near them. */
+.canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--grid) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+  -webkit-mask-image: radial-gradient(122% 108% at 50% 50%, #000 40%, transparent 92%);
+  mask-image: radial-gradient(122% 108% at 50% 50%, #000 40%, transparent 92%);
+}
+
+/* Bottom-LEFT. Every scene puts its tallest object on the left at mid-height
+ * and trails smaller ones down the right, so the bottom-right corner is the
+ * one place a label reliably collides — it was sitting under the person's
+ * "Person · approver" line. The bottom-left corner is empty in all six. */
+/* This is the one piece of type on the board that is not illustration — it is
+ * the disclosure that everything above it IS one. It was 9px at .65 opacity,
+ * 2.46:1, the least legible thing on the site, and it sat inside the
+ * aria-hidden subtree so no screen reader ever reached it. The opacity is gone
+ * and `aria-hidden` moved down to `.canvas__stage`, so the board is hidden and
+ * the label about the board is not. */
+.canvas__label {
+  position: absolute;
+  left: 14px;
+  bottom: 10px;
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--ink-6);
+}
+
+/* One stage for the wires and the objects, so a zoom scales both together.
+ * Positions are percentages of this box, so scaling it moves every object
+ * toward the centre by exactly the amount it shrinks — the composition holds
+ * instead of being re-laid-out. */
+.canvas__stage {
+  position: absolute;
+  inset: 0;
+  /* Two INDEPENDENT tiers multiplied together — one for width, one for height.
+   * A single `--z` cannot express this: the later media query would simply
+   * overwrite the earlier one, so a short-and-narrow viewport would take
+   * whichever rule happened to come last instead of the smaller of the two. */
+  /* `--zb` is the base: the board is full width now, so the whole arrangement
+   * comes up a notch and the smallest type (7.5-8.5px) comes with it. The two
+   * responsive tiers still multiply against it and still take the smaller. */
+  transform: scale(calc(var(--zb, 1) * var(--zw, 1) * var(--zh, 1)));
+  transform-origin: 50% 50%;
+  --zb: 1.16;
+}
+
+.objects { position: absolute; inset: 0; }
+
+/* -------------------------------------------------- connectors are pencil */
+/* "Straight strokes, an open arrowhead, and a lowercase italic verb on the
+ * paper — no pill, no border, no routing elbows." And never status colour. */
+
+.canvas__wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  color: var(--line-4);
+  transition: opacity .22s ease-in;
+}
+
+.canvas__wires.is-leaving { opacity: 0; }
+
+.wire {
+  fill: none;
+  stroke: var(--line-4);
+  stroke-width: 1;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  /* A dash-based reveal needs the dash measured in the same space as the
+   * geometry, and this viewBox is preserveAspectRatio="none" — vector-effect
+   * rescues the stroke WIDTH from the non-uniform scale but not the dash
+   * lengths, which came out mismatched and gapped every line. A fade
+   * sequences just as well and cannot break. */
+  animation: fade-in .42s var(--ease) both;
+  animation-delay: calc(var(--d) * 1ms);
+}
+
+/* The arrowhead. Two open strokes drawn by hero.js at the trimmed end of the
+ * wire, rather than the `marker-end` chevron in the markup's <defs>: a marker
+ * is rendered in the referencing element's user space, and this layer is
+ * `viewBox="0 0 100 100"` at preserveAspectRatio="none", so the marker came
+ * out ~39x11px — a flick whose proportions changed with the viewport. Same
+ * pencil as the line it terminates, same weight, same fade. */
+.wire__head {
+  fill: none;
+  stroke: var(--line-4);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  animation: fade-in .42s var(--ease) both;
+  animation-delay: calc(var(--d) * 1ms);
+}
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* On the paper, not in a pill: the board's ground is painted behind the word
+ * so the stroke passes under it, and nothing else is drawn. The negations are
+ * the rule — no border, no radius, no shadow, no tracking, no capitals — and
+ * they are written out rather than left unset, because every one of them is a
+ * thing a later hand would reach for to make a label "clearer" and each one
+ * turns the pencil back into plumbing.
+ *
+ * Weight, not colour, does the work: the client paints the verb in its pencil
+ * ink (--marker), but --line-4 composites to 3.89:1 on this board — legal for
+ * a stroke, illegal for type. So the verb keeps --ink-6, the contrast floor,
+ * and takes the client's 600 to hold its own beside a 1px wire. */
+.verb {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
+  padding: 0 5px;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--panel);
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-6);
+  white-space: nowrap;
+  animation: fade-in .42s var(--ease) both;
+  animation-delay: calc(var(--d) * 1ms);
+}
+
+/* ------------------------------------------------------------ the objects */
+
+.obj {
+  --i: 0;
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  /* The translate lives in the keyframes too, because it is also what centres
+   * the object on its coordinate. */
+  transform: translate(-50%, -50%);
+  animation: obj-pop .46s var(--ease) both;
+  animation-delay: calc(var(--i) * 90ms);
+}
+
+@keyframes obj-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.64); }
+  58% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.obj.is-leaving {
+  animation: obj-drop .24s ease-in both;
+  animation-delay: calc(var(--i) * 30ms);
+}
+
+@keyframes obj-drop {
+  to { opacity: 0; transform: translate(-50%, -50%) scale(.9); }
+}
+
+.obj__name {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.obj__meta {
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 500;
+  color: var(--ink-6);
+}
+
+.obj--tool > div { min-width: 0; }
+
+.obj--tool .obj__name,
+.obj--tool .obj__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status overhangs the corner, half outside the shape — and healthy is
+ * NEUTRAL. It must never compete with ownership colour, so a healthy board is
+ * entirely cool and the first warm thing on it is a real problem.
+ *
+ * The knockout ring is the BOARD's ground (--panel), not the card's surface:
+ * that is what makes the bead read as an object clipped to the card rather
+ * than a field printed inside it. --paper on this sheet is the sticky's
+ * material and must never appear here. */
+.bead {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-6);
+  box-shadow: 0 0 0 2.5px var(--panel);
+}
+
+/* --- 1. Agent Profile — TALL CARD · OWNER'S BAR · THE ONLY LIFTED OBJECT - */
+/* The only object with a portrait card and a real shadow, because it is the
+ * only one you operate. It carries the brand mark, in the owner's colour.
+ *
+ * The height is FIXED, as the client's is. `min-height` made the card's
+ * footprint depend on how long its copy happened to be, and every clearance
+ * figure on this board is computed from a bbox — an object whose height is a
+ * function of its description cannot be placed against a board edge. The copy
+ * is what yields instead, clamped to two lines. */
+.obj--profile {
+  width: 148px;
+  height: 140px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-top: 3px solid var(--own, var(--accent));
+  border-radius: var(--r-xl);
+  background: var(--card);
+  box-shadow: var(--sh-lift);
+  color: var(--ink);
+}
+
+.obj--profile .obj__name { font-size: 13px; margin-top: 8px; }
+
+.obj__desc {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-6);
+  /* The card no longer grows, so the description is the thing that gives. */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.obj__foot {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--ink-6);
+}
+
+/* The mark: concentric rings, the same figure contour-sphere.js draws. */
+.obj__mark { color: var(--own, var(--accent)); }
+
+/* A portrait filling the person disc - round-cropped by the disc, crisp. */
+.obj__face {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* A generated scene filling a value section's visual slot - the office and
+ * the hub. Contained, rounded like the vizboards, never wider than the slot. */
+.feat__scene {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 14px;
+}
+
+/* The avatar diorama a profile wears when the asset pass names one - same
+ * footprint discipline as the mark: fixed box, contain, crisp pixels. */
+.obj__ava {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  pointer-events: none;
+  /* Chrome paints a faint 1px layer edge around animated WebP under
+   * non-integer scale; the art never reaches its own outer pixel. */
+  clip-path: inset(0.78125%);
+}
+
+/* --- 2. Tool — WIDE PLAQUE · OWNER'S BAR · TIGHT RADIUS ------------------ */
+/* A nameplate, not a card. Its bar is the colour of whatever ships it, so a
+ * tool's allegiance is readable without tracing the connector back.
+ *
+ * 132 x 43 is the client's 3.2:1 plaque aspect, held at this board's scale.
+ * The client's 76px height is the one geometry this page cannot take: at the
+ * plaque aspect that would need a 162px width, and the tool sits at y: 20% in
+ * two scenes where the height budget is 47.7px. The board writes this one. */
+.obj--tool {
+  width: 132px;
+  height: 43px;
+  padding: 0 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* A wrapped meta line makes the plaque as tall as a card and the silhouette
+   * stops naming the kind, so the text is clipped rather than allowed to
+   * wrap — which is the client's own behaviour on the same line. */
+  white-space: nowrap;
+  border: none;
+  border-top: 3px solid var(--own, var(--accent));
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-low);
+  color: var(--ink);
+}
+
+/* The plate's tint mixes into the SURFACE it sits on, not into transparency:
+ * over a white card a 12% mix is a tint, over `transparent` it is whatever
+ * happens to be behind — which on this board is the dot grid.
+ *
+ * It reads `--own` with the SAME fallback as the bar above it. The client
+ * falls back to its staff ink here and to the domain colour on the bar, but
+ * `--own` is only ever set on the two reserved profiles (hero.js:170,179), so
+ * on this page that inconsistency would ship as every tool wearing an apricot
+ * bar over a slate plate — one object, two owners. */
+.obj__icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--own, var(--accent)) 12%, var(--card));
+  color: var(--own, var(--accent));
+}
+
+/* --- 3. Reserved Agent Profile — RECESSED CONTAINER · HOLDS TILES -------- */
+/* Grey ground with its links sitting inside it, so "holds" is literal rather
+ * than asserted. The ground stays recessed whatever it reserves; only the bar
+ * takes the domain colour, and there is deliberately NO shadow — this object
+ * does not lift. The profile above is the only thing on the board that does.
+ *
+ * The height is fixed, and 128 is what the content actually measures: at 119
+ * the box was ~5px short (clientHeight 116 against scrollHeight 121), and a
+ * flex column does not clip when it is short — it SHRINKS. The tile grid went
+ * from 64px to 41px, each 30px tile rendered at 18.5, and `space-between`
+ * collapsed until the status dot sat on its own label. The cap was set by the
+ * phone board's budget; re-measured at 390x844 the lower slot clears the
+ * board's bottom edge by 9.2px at 128 (against 13.3 at 119), so the budget was
+ * never the binding constraint. `overflow: hidden` stays as the honest half of
+ * a fixed height: the box is the box, and content that will not fit is clipped
+ * rather than quietly growing the footprint every clearance figure is measured
+ * from. */
+.obj--reserved {
+  width: 148px;
+  height: 128px;
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: none;
+  border-top: 3px solid var(--own, var(--accent));
+  border-radius: var(--r-xl);
+  background: var(--sunk);
+  box-shadow: none;
+}
+
+.obj__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  /* The header sits beside a 22px mark in a 148px box. Left to wrap it runs
+   * under the mark and clips; the container is a ground that HOLDS things, so
+   * its own label must never be the thing that breaks it. */
+  white-space: nowrap;
+}
+
+.obj__head > div { min-width: 0; }
+
+.obj__head .obj__name,
+.obj__head .obj__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* `flex: none`, because this is a flex item and its default `min-height: auto`
+ * is not a floor for a GRID whose rows are sized in px — the two 30px rows and
+ * their 4px gap are a 64px intrinsic height that the flex algorithm was free to
+ * compress, and did. The container's height is the thing that gives now, and it
+ * is fixed, so nothing gives at all. */
+.obj__tiles {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+/* "Every link inside a reserved profile is a button, not a label." A filled
+ * dot means an agent has registered the tile; a hollow one is published and
+ * unclaimed. The tile is a raised surface on a recessed ground — that contrast
+ * is the whole of "holds", and it is why the container is the one object that
+ * is grey. */
+.tile {
+  height: 30px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  font: inherit;
+  text-align: left;
+}
+
+.tile__dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--own, var(--accent));
+}
+
+/* The client fades this ring to .55, which on a white tile drops it to 2.33:1
+ * — under the 3:1 graphics floor, and this dot is the entire difference
+ * between "registered" and "unclaimed". The hollow reads as hollow without
+ * help; it takes the client's 1.5px stroke and keeps full strength. */
+.tile__dot--open {
+  background: none;
+  border: 1.5px solid var(--ink-6);
+}
+
+.tile__name {
+  font-family: var(--display);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* --- 4. Person — CIRCLE · BLUE RING · NAME OUTSIDE ----------------------- */
+/* "The only round object, and the only one whose name sits outside its shape.
+ * Humans are not cards; they don't have status, versions or owners." */
+.obj--person {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  /* Fixed, so the person's footprint does not depend on how long a name is.
+   * Auto width made this the one kind whose x-coordinate could not be computed
+   * without rendering it first — and the anchors are derived from widths. */
+  width: 101px;
+}
+
+/* border-box, or the 2px ring makes the circle 51 and every coordinate
+ * computed from the disc size is out by 4px. The ring reads `--own` like every
+ * other kind's, so a person CAN carry an ownership override; --human is only
+ * the default, not a hard-coded fact about humans. */
+.obj__disc {
+  box-sizing: border-box;
+  width: 47px;
+  height: 47px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--own, var(--human));
+  color: var(--own, var(--human));
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: var(--sh-low);
+}
+
+.obj--person .obj__name,
+.obj--person .obj__meta { text-align: center; }
+
+/* --- 5. Group of people — PILL · BLUE RING · AVATAR STACK ---------------- */
+/* "A circle stretched until more faces fit — the same shape family as a
+ * person, so the relationship between one and many is built into the
+ * geometry rather than stated in a caption." */
+/* 176 is fixed and is set by the TYPE it must hold — `Marketing cohort` at
+ * 12/700 over `Group of people · 3` at 9.5 — exactly as the client's 300 is
+ * set by its own pair. Scaling the client's width straight down clips the
+ * count line, which is the half of the label that says how many. */
+.obj--group {
+  width: 176px;
+  min-height: 49px;
+  padding: 0 12px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  /* A pill, so nothing inside it may wrap — a second line turns it into a
+   * rounded rectangle and the shape stops naming the kind. 46px rather than
+   * --r-pill because it is the client's own figure: at 49px tall the two
+   * render identically, and the literal keeps the two sheets comparable. */
+  border-radius: 46px;
+  white-space: nowrap;
+  background: var(--card);
+  border: 2px solid var(--own, var(--human));
+  box-shadow: var(--sh-low);
+}
+
+.faces { display: flex; flex: none; }
+
+/* The tint mixes into the card, not into transparency — the same correction
+ * the tool's plate takes, and for the same reason: a face overlaps its
+ * neighbour, so a transparent ground would show the face underneath. */
+.face {
+  font-family: var(--display);
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--own, var(--human)) 14%, var(--card));
+  color: var(--own, var(--human));
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.face + .face {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--card);
+}
+
+/* --- 6. Agent Distribution — FANNED HAND · OWNER'S BARS · NAME BELOW ----- */
+/* "Not a container: these are versions of one offering rather than members of
+ * a set, so they overlap instead of sitting in a grid. Only the front card is
+ * named — the rest show their monogram in the exposed strip."
+ *
+ * The height stays 128 rather than following the box scale: the client's 210
+ * is its label offset plus a title and a sub-line, and at this page's type
+ * ladder that sum lands at 128, not at a scaled 118. Type has a reading floor
+ * the box does not. */
+.obj--dist {
+  width: 168px;
+  height: 128px;
+}
+
+/* The bar reads `--own`, not `--accent`. Every other kind on this board asks
+ * who owns it before it picks a colour; the fan was the one that did not, so a
+ * staff-owned distribution rendered in the marketing colour — ownership stated
+ * wrongly, which is worse than not stated at all. */
+.obj--dist .fan {
+  position: absolute;
+  width: 54px;
+  height: 69px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-top: 3px solid var(--own, var(--accent));
+  border-radius: 7px;
+  background: var(--card);
+  box-shadow: var(--sh-low);
+  transform-origin: 50% 50%;
+}
+
+/* The client's fan, at this board's scale. The ANGLES do not scale — a hand of
+ * cards is recognised by its splay, and a shallower fan reads as a stack. */
+.obj--dist .fan:nth-child(1) { left: 7px;   top: 15px; transform: rotate(-12deg); z-index: 1; }
+.obj--dist .fan:nth-child(2) { left: 36px;  top: 8px;  transform: rotate(-4deg);  z-index: 2; }
+.obj--dist .fan:nth-child(3) { left: 78px;  top: 8px;  transform: rotate(4deg);   z-index: 3; }
+.obj--dist .fan:nth-child(4) { left: 108px; top: 15px; transform: rotate(12deg);  z-index: 4; }
+
+/* The plate is a graphic and the monogram on it is TEXT, so the two halves of
+ * the terracotta split land in the same rule: `--accent` tints the disc,
+ * `--accent-ink` carries the two letters. This badge is the worst ground on
+ * the page for accent-as-text and is what sets --accent-ink's value.
+ *
+ * 9px, up from 7.5. At 7.5 a two-letter monogram was texture — you could see
+ * that something was written there and not what — which is the one thing a
+ * monogram exists to do. The disc grew with it, 15 to 17, so the letters keep
+ * their air; the fan card is 54px wide and 42px of that is content, so the
+ * extra 2px costs the card nothing. The ratio is unchanged by size: 4.96:1. */
+.mono-badge {
+  font-family: var(--display);
+  width: 17px;
+  height: 17px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--own, var(--accent)) 14%, var(--card));
+  color: var(--own, var(--accent-ink));
+  font-size: 9px;
+  font-weight: 700;
+}
+
+/* 9px and ONE LINE, up from 7.5px wrapped. At 7.5 `Social Reply` broke across
+ * two lines inside a 54px card and the front of the fan — the one card the
+ * hand is turned to show you — looked torn rather than named. The client's
+ * equivalent does not wrap, and neither does this: the name is clipped with an
+ * ellipsis, which is the same thing the tool's plaque and the reserved
+ * container's header already do when a name outruns its box. */
+.obj--dist .fan__name {
+  margin-top: auto;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obj--dist .dist__label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 96px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* --- 7. Communication — TWO VARIANTS · ABSTRACT EVENT · REGISTRATIONS ---- */
+/* "Neither is a white card — tinted ground and clipped corners mark them as
+ * readouts you operate, never things you own." Inbound wears its spine on the
+ * left; outbound is the mirror. */
+/* No shadow and no radius, both stated rather than left unset: this is the one
+ * kind that must never look lifted or rounded, because the clipped corners and
+ * the flat ground are the whole of what says "not yours". */
+.obj--comm {
+  width: 185px;
+  min-height: 84px;
+  padding: 7px 10px 8px 9px;
+  background: color-mix(in srgb, var(--comm) 12%, var(--panel));
+  color: var(--ink);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The spine and the clip ARE the kind, and the two variants are mirrors down
+ * to the row order. Both spines stay at 3px in both directions. The side-tab
+ * lint is suppressed for this whole file in `.impeccable/config.json` — the
+ * detector extracts no value for the rule, so it cannot be pinned to these two
+ * declarations, and a NEW side accent anywhere here now passes unnoticed. */
+.obj--comm.is-in {
+  border-left: 3px solid var(--comm);
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+
+.obj--comm.is-out {
+  border-right: 3px solid var(--comm);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+.comm__head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* --comm-ink, NOT --comm. The graphic value measures 4.4999:1 on the board
+   * at 7.5px — under the 4.5 floor by a ten-thousandth, which is still under.
+   * The ink value is 6.39:1. On dark the two resolve to the same apricot, so
+   * this costs nothing there. */
+  color: var(--comm-ink);
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: .18em;
+}
+
+.comm__head .n {
+  margin-left: auto;
+  letter-spacing: 0;
+  opacity: 1;
+}
+
+.obj--comm.is-out .comm__head { flex-direction: row-reverse; }
+.obj--comm.is-out .comm__head .n { margin-left: 0; margin-right: auto; }
+.obj--comm.is-out { text-align: right; }
+
+.comm__event {
+  font-family: var(--display);
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--ink);
+}
+
+.comm__rule {
+  height: 1px;
+  margin: 6px 0 5px;
+  background: color-mix(in srgb, var(--comm) 24%, transparent);
+}
+
+/* 9.5px, up from 8.5, so the registration's NAME stays the senior of the pair
+ * after its endpoint came up to 9. Two rows at 1.6 leading is 3.2px more box,
+ * which the readout's `min-height` absorbs. */
+.comm__reg {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 9.5px;
+}
+
+.obj--comm.is-out .comm__reg { flex-direction: row-reverse; }
+
+.comm__reg b { font-weight: 700; color: var(--ink); }
+
+.comm__reg span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--ink-3);
+  /* The endpoint is the smallest type on the board and the only one that has
+   * ever been under AA. Re-measured on the light readout ground (--comm at 12%
+   * over the board, ≈#E2E9F4): the client's .62 lands at 3.14:1 and .78 at
+   * 4.59:1. Held at .78 — the spec's own instruction is to lift the opacity
+   * rather than the size when this misses, and it misses.
+   *
+   * 9px, up from 8. A host name is the one string on this object a reader has
+   * to be able to READ rather than recognise, and at 8px with the opacity on
+   * it, it was grey texture on the end of a row. The opacity is untouched, so
+   * the ratio is exactly what it was. */
+  opacity: .78;
+  font-size: 9px;
+}
+
+.obj--comm.is-out .comm__reg span { text-align: left; }
+
+/* --- 8. Sticky — SQUARE · TILTED · 2PX RADIUS · ITALIC ------------------- */
+/* Material means authorship. "Stickies are the one thing a human wrote, so
+ * they get a material nothing else uses: paper colour, square corners,
+ * off-axis, set in italic." The paper is the source sheet's own #F7E6B8 on
+ * light; the dark theme darkens it to #2A2517 so it stays warm without
+ * glaring. Either way it must stay unmistakably NOT a card — the moment a
+ * sticky becomes a neat surface, the board loses the line between what is
+ * true and what someone merely thinks. */
+.obj--sticky {
+  width: 101px;
+  min-height: 52px;
+  padding: 7px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: var(--paper);
+  color: var(--paper-ink);
+  font-size: 9.5px;
+  font-style: italic;
+  line-height: 1.45;
+  box-shadow: var(--sh-low);
+}
+
+/* The tilt is the whole point — it must survive the pop, so each keyframe
+ * carries it. Two angles, at the client's own figures, so a pair never looks
+ * stacked by a machine. The client also gives its second note a second PAPER;
+ * this page has one sticky material and adding a second is a token change,
+ * which this sheet's token block is not open for — so the alt is still angle
+ * alone, and two notes on one board still read as one hand twice. */
+.obj--sticky { --tilt: -1.8deg; }
+.obj--sticky.is-alt { --tilt: 2.2deg; }
+
+.obj--sticky,
+.obj--sticky.is-leaving { transform: translate(-50%, -50%) rotate(var(--tilt)); }
+
+.obj--sticky { animation-name: sticky-pop; }
+
+@keyframes sticky-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(var(--tilt)) scale(.64); }
+  58% { opacity: 1; transform: translate(-50%, -50%) rotate(var(--tilt)) scale(1.06); }
+  100% { opacity: 1; transform: translate(-50%, -50%) rotate(var(--tilt)) scale(1); }
+}
+
+.obj--sticky.is-leaving { animation-name: sticky-drop; }
+
+@keyframes sticky-drop {
+  to { opacity: 0; transform: translate(-50%, -50%) rotate(var(--tilt)) scale(.9); }
+}
+
+/* ---------------------------------------------------------- 3.5 the prose */
+
+.note {
+  max-width: 58ch;
+  font-size: 15.5px;
+  line-height: 1.68;
+  color: var(--ink-5);
+  text-wrap: pretty;
+}
+
+.note strong { font-weight: 600; color: var(--ink-3); }
+
+/* ---------------------------------------------------------- 3.6 the links */
+
+.links {
+  display: flex;
+  align-items: center;
+  gap: 8px 26px;
+  flex-wrap: wrap;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink-5);
+  transition: color .28s var(--ease), transform .14s var(--ease);
+}
+
+.link:hover { color: var(--ink); }
+
+/* Tactile: it moves under the finger. */
+.link:active { transform: translateY(1px); }
+
+/* --------------------------------------------------------- 3.7 the lockup */
+
+/* ADR-133: the identity row left the hero. The sticky header carries the
+ * wordmark on every page now, and the live mark moved to the closing section
+ * at a size worth looking at. What survives here is the lockup itself, which
+ * the header and the footer both set. */
+.lockup {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.lockup__name {
+  font-family: var(--display);
+  font-size: 22px;
+  letter-spacing: -.024em;
+}
+
+.lockup__sym {
+  font-family: var(--display);
+  margin-left: 2px;
+  font-size: 14px;
+  letter-spacing: -.01em;
+  transform: translateY(4px);
+  color: var(--ink-5);
+}
+
+/* ---------------------------------------------------- 3.9 hero breakpoints */
+
+/* The canvas objects are drawn at a fixed size at their own coordinates, so a
+ * narrower canvas means less room, not smaller objects. Zoom out to keep the
+ * arrangement — which is the point of a system where shape survives zoom. */
+@media (max-width: 1120px) { .canvas__stage { --zw: .88; } }
+@media (max-width: 980px)  { .canvas__stage { --zw: .78; } }
+
+@media (max-height: 820px) { .canvas__stage { --zh: .9; } }
+@media (max-height: 700px) { .canvas__stage { --zh: .78; } }
+@media (max-height: 600px) { .canvas__stage { --zh: .66; } }
+
+@media (max-width: 900px) {
+  .band { margin-top: 26px; }
+
+  .claim { max-width: 24ch; }
+}
+
+/* A viewport this short has no room for a board under a headline and a
+ * command, and squeezing one in would leave every object clipped. What is
+ * left tightens too: a landscape phone is ~420px tall and the whole hero has
+ * to live inside it. */
+@media (max-height: 520px) {
+  .canvas { display: none; }
+
+  .claim { line-height: 1; }
+
+  .note { font-size: 14px; line-height: 1.55; }
+}
+
+@media (max-width: 760px) {
+  /* Below this the canvas stops being readable rather than merely small —
+   * a tool's meta line is 9.5px before any zoom, and the source system itself
+   * notes that member tiles "become noise before the container does". Past the
+   * threshold it is not shrunk further, it is dropped: the paragraph under it
+   * already carries the same claim in words, and the command keeps rolling. */
+  .canvas { display: none; }
+
+  .hero__foot {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .links { gap: 8px 20px; }
+}
+
+/* ------------------------------------------------- the board, on a phone ---
+ *
+ * Dropping the board below 760px was right about the objects and wrong about
+ * the page. Measured at 390x844: 426px of content in an 844px hero — half the
+ * screen empty, and the half that was empty is where the demonstration had
+ * been. This is a Persuade surface whose argument IS the demonstration, and
+ * the recorded substitute ("the paragraph carries the same claim") is a
+ * paragraph the desktop reader also gets. Nothing was added back.
+ *
+ * The board returns in PORTRAIT: two objects at full size on a diagonal, not
+ * six shrunk into noise. hero.js keeps objects 0 and 1 of each scene — every
+ * scene's first two are its subject and the one thing it acts on, and every
+ * scene has a wire between them — so the phone gets a true subset, never a
+ * different claim.
+ *
+ * The min-height gate is the honest part, and it is high. A phone shorter than
+ * this cannot hold a headline, a command, a board, the prose AND the links —
+ * the smallest board worth drawing is ~180px and a 667px screen has ~141px
+ * spare. So this reaches modern phones (844, 852, 896, 932) and NOT an iPhone
+ * SE, which keeps exactly the behaviour it had.
+ *
+ * The earlier note here claimed "the hero clears one screen at 844 and up".
+ * That was FALSE when re-measured: 856.9px against 844, in both themes, on the
+ * most common phone in use. Two things pay it back, and neither is the board's
+ * size — the obvious fix, shrinking the clamp, was measured and REJECTED,
+ * because a shorter board is exactly what starves the two objects standing on
+ * it. At 28vh the minimum clearance between an object and the board edge falls
+ * from 9.6px to 5.1px and the profile and the readout begin to overlap at the
+ * corner; the height a phone needs back and the height the demonstration needs
+ * are the same height, and the board is the wrong place to take it from.
+ *
+ * So it comes out of this surface's own padding instead. `--pad-y` is 5.2vh
+ * everywhere else; at 3.3vh here it returns ~35px. The 830.7px-in-844
+ * measurement that used to close this note predates ADR-133: with the sticky
+ * bar in the equation and the brochure below, the phone hero now runs ~23px
+ * past the first screen — accepted, because the page continues and the
+ * overhang is what says so. The desktop hero still holds one screen exactly.
+ *
+ * The board then goes the other way. 31vh with a 268px ceiling is +8.4px at
+ * 390x844, and it buys the thing the shrink would have cost: minimum object
+ * clearance goes from 9.6px to 14.2px there, 15.9px at 430x932, and 13.8px at
+ * the narrowest viewport this query reaches. See `PHONE_AT` in hero.js — the
+ * anchors moved in the same measurement. */
+@media (max-width: 760px) and (min-height: 840px) {
+  :root { --pad-y: clamp(20px, 3.3vh, 58px); }
+
+  .canvas {
+    display: block;
+    /* The diagonal needs the height more than the desktop board does: two
+     * objects at opposite corners, and the taller of the two kinds (a reserved
+     * container) is 128px before the zoom. 26vh left it 4px over the edge; 30vh
+     * cleared the edge but only by 9.6px, which is under the 11px floor the
+     * rest of this board holds. */
+    height: clamp(180px, 31vh, 268px);
+  }
+}
+
+@media (max-width: 560px) {
+  /* A phone headline needs its own regime. The desktop clamp is bounded by
+   * `min(vw, vh)`, and on a phone the vw term collapses well under the floor —
+   * so every phone from 320 to 560 got the same 27px, which a 320px screen
+   * does not have the height for. Here it scales by width again. */
+  .claim { font-size: clamp(1.42rem, 6.6vw, 1.78rem); }
+
+  .hero__ident { gap: 14px; }
+  .hero__mark { width: 52px; }
+  .lockup--hero .lockup__name { font-size: 22px; }
+  .lockup--hero .lockup__sym { font-size: 13.5px; transform: translateY(4px); }
+
+  /* The command's control cannot share a 320px line with 34 characters of
+   * monospace, so it takes its own row inside the same rule. The wrap is
+   * FORCED rather than left to the flex algorithm: the target rolls between
+   * words of different lengths, and a control that fits beside `ledger-db` but
+   * not beside `billing-reconcile` would hop between rows every few seconds. */
+  .cmdrow { flex-wrap: wrap; row-gap: 0; }
+
+  .cmd { flex-basis: 100%; }
+
+  /* Pulled back toward the line it governs — on its own row it read as an
+   * unrelated object floating in the gap above the rule. Both offsets grew by
+   * 2px with the button, so the row it occupies is the same 18px it was at
+   * 28px: the target got bigger without the phone hero getting taller. */
+  .cyc {
+    margin-left: auto;
+    margin-top: -6px;
+    margin-bottom: -8px;
+  }
+
+  .note { font-size: 14.5px; }
+
+  .link { font-size: 14px; }
+
+  .cmd { font-size: .9rem; }
+
+}
+
+/* The command cannot wrap — it is one line of shell, and breaking it would be
+ * a lie about what you type. So on the narrowest screens it shrinks instead.
+ * The longest string the roll ever shows is `hermes-hg upgrade
+ * billing-reconcile`, 35 characters; at .78rem that clears a 320px viewport. */
+@media (max-width: 380px) {
+  .cmd { font-size: .78rem; }
+
+  /* The last 18px on a 320px screen. Tightening the paragraph's leading and
+   * the link row buys it back without taking any type below reading size. */
+  .note { font-size: 14px; line-height: 1.5; }
+
+  .links { gap: 6px 16px; }
+}
+
+/* ------------------------------------------------- no script, no empty box */
+
+/* Both of these boxes are drawn entirely by `hero.js` and have no static
+ * form. Left visible without scripting they are not degraded content, they
+ * are furniture for content that never arrives: a dotted panel still
+ * captioned "example fleet · illustration", and a 58x58 hole where the mark
+ * would be. The class is set by an inline script in <head>, so this applies
+ * before first paint and costs no layout shift.
+ *
+ * What a no-script reader keeps: the lockup, the eyebrow, the claim, a real
+ * static command, the paragraph, every section below the hero including the
+ * record, and the footer. That is the whole argument — which is the standard
+ * `hero.js` was already held to ("delete it and the page still renders and
+ * still makes its whole argument"); the board was the one place it failed. */
+html:not(.js) .canvas,
+html:not(.js) .hero__mark,
+html:not(.js) .about__mark,
+html:not(.js) .cta__mark { display: none; }
+
+/* ================================================ 3.10 below the hero ====
+ *
+ * ADR-127 made this page one screen and deleted nine sections. The reasoning
+ * was sound about the sections it deleted — they argued the product by claim,
+ * section by section, and a reader who was not already convinced never got to
+ * the one that would have convinced them.
+ *
+ * These three do not argue by claim. They show a real gate-backed record, the
+ * verified path it travels, and the named software that ends up on the
+ * cluster. There is no metric here, no count, and nothing that drifts when a
+ * gap is closed — which was the drift risk ADR-69 recorded and ADR-127 removed
+ * by removing the claims rather than by verifying them.
+ *
+ * The hero above is still exactly one screen. Everything here is below it.
+ */
+
+.sec {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(56px, 9vh, 104px) var(--gutter);
+  border-top: 1px solid var(--line);
+}
+
+/* The head is bounded well short of the shell. A measure this wide would
+ * otherwise run to 110 characters on a 1200px shell. */
+.sec__head { max-width: 62ch; }
+
+/* Three of these below the fold, plus the hero's — four accent labels whose
+ * whole job is to sit quietly above a heading. Weight and the space above the
+ * title carry the hierarchy; the colour was buying nothing. 5.02:1 / 4.52:1. */
+.sec__eyebrow {
+  margin-bottom: 14px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-6);
+}
+
+.sec__title {
+  font-family: var(--display);
+  font-size: clamp(26px, 3.4vw, 40px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -.025em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.sec__lede {
+  margin-top: 16px;
+  max-width: 60ch;
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: var(--ink-5);
+  text-wrap: pretty;
+}
+
+.sec__lede strong { font-weight: 600; color: var(--ink-3); }
+
+/* ---------------------------------------------------------------- the path */
+
+/* Three columns on a wide screen, one on a narrow one. Grid, not flex
+ * percentages — the steps have unequal copy and must still align. */
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(24px, 3vw, 44px);
+  margin-top: clamp(32px, 4.5vh, 52px);
+}
+
+/* A rule above each step, not a card around it. Same doctrine as the devlog
+ * index: a 1px rule says "these are peers" more honestly than a box does. */
+.step { border-top: 2px solid var(--line-2); padding-top: 16px; }
+
+.step__n {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  /* 01/02/03 are already `aria-hidden` — they are ornament for the sighted
+   * reader, and ornament does not get the accent. 5.02:1 / 4.52:1. */
+  color: var(--ink-6);
+}
+
+.step__t {
+  margin-top: 10px;
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  line-height: 1.25;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.step__b {
+  margin-top: 8px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink-5);
+  text-wrap: pretty;
+}
+
+/* ----------------------------------------------------------------- the end */
+
+.sec__cta {
+  display: flex;
+  align-items: center;
+  gap: 10px 26px;
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------- the primary act */
+
+/* The page's one button. There is no signup and nothing to buy, so the honest
+ * primary action is the documentation — it answers the operator's actual first
+ * question, which PRODUCT.md records as "what does this put on my cluster".
+ * It paints `--accent-ink`, not `--accent`: nothing clears 4.5:1 over the
+ * terracotta graphic value (pure black tops out at 5.03). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 20px;
+  border-radius: var(--r-pill);
+  background: var(--accent-ink);
+  color: var(--on-accent);
+  font-family: var(--display);
+  font-size: 14.5px;
+  font-weight: 600;
+  box-shadow: var(--sh-low);
+  transition: background .28s var(--ease), transform .14s var(--ease);
+}
+
+.btn:hover { background: var(--accent-lift); }
+.btn:active { transform: translateY(1px); }
+.btn svg { transition: transform .28s var(--ease); }
+.btn:hover svg { transform: translateX(3px); }
+
+/* ------------------------------------------------------------- the footer */
+
+.siteftr {
+  display: flex;
+  align-items: center;
+  gap: 14px clamp(24px, 4vw, 56px);
+  flex-wrap: wrap;
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(32px, 5vh, 48px) var(--gutter) clamp(40px, 6vh, 64px);
+  border-top: 1px solid var(--line);
+}
+
+.siteftr__id {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  color: var(--ink);
+}
+
+/* The hero lockup sets `Hg` in ink, not accent (§3.1). The footer was setting
+ * the same two letters in apricot, so the page contradicted itself about its
+ * own wordmark. Matched to the hero. 5.85:1 / 5.38:1. */
+.siteftr__sym {
+  font-size: .62em;
+  font-weight: 700;
+  color: var(--ink-5);
+}
+
+.siteftr__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px 24px;
+  flex-wrap: wrap;
+}
+
+.siteftr__note {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-6);
+}
+
+/* ------------------------------------------------- below-hero breakpoints */
+
+@media (max-width: 860px) {
+  .steps { grid-template-columns: 1fr; gap: 0; }
+  /* Stacked, the rules become a divided list and the top one would double the
+   * section's own border. Each step keeps its rule except the first. */
+  .step { border-top: none; border-bottom: 1px solid var(--line); padding: 18px 0; }
+  .step:last-child { border-bottom: none; }
+  .siteftr__note { margin-left: 0; width: 100%; }
+}
+
+/* ================================================ 3.11 the chrome (ADR-133)
+ *
+ * One sticky bar for every page — the site grew destinations (Features, Docs,
+ * Devlog, About, GitHub) and they must be reachable from any scroll position.
+ * The brand mark here is the hand-drawn 16px favicon the devlog masthead
+ * always used; the live mark stays on the page body.
+ *
+ * The translucent ground is 88% of --bg over a blur, which keeps every link
+ * on it at the same measured ratio it has on --bg itself to within noise —
+ * the bar never sits over anything darker than the page. */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.topbar__in {
+  display: flex;
+  align-items: center;
+  gap: 6px 24px;
+  flex-wrap: wrap;
+  max-width: var(--shell);
+  margin: 0 auto;
+  min-height: var(--topbar-h);
+  padding: 8px var(--gutter);
+}
+
+.topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: 6px;
+  transition: opacity .28s var(--ease);
+}
+
+.topbar__brand:hover { opacity: .72; }
+
+.topbar__brand img { display: block; }
+
+.topbar .lockup__name { font-size: 16px; }
+.topbar .lockup__sym { font-size: 10.5px; transform: translateY(3px); }
+
+.topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 4px 22px;
+  flex-wrap: wrap;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+/* 14 x 1.5 = 21px + 12 = 33px — the devlog masthead's target arithmetic,
+ * inherited by the bar that replaced it. */
+.topbar__nav > a,
+.dd__label { padding: 6px 0; color: inherit; transition: color .28s var(--ease); }
+
+.topbar__nav > a:hover { color: var(--ink); }
+
+.topbar__nav a[aria-current="page"] { color: var(--ink); }
+
+.topbar__gh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink-4);
+  transition: color .28s var(--ease);
+}
+
+.topbar__gh:hover { color: var(--ink); }
+
+/* The Features menu is a <details>: it opens on click and Enter, closes on
+ * Escape and outside-click (a hero.js enhancement), and without script it
+ * still opens and closes. A hover menu does none of that for a keyboard. */
+.dd { position: relative; }
+
+.dd__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dd__label::-webkit-details-marker { display: none; }
+
+/* The chevron is drawn, not typed: U+25BE is outside the vendored latin
+ * subset and would render in a fallback face. */
+.dd__label::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform .2s var(--ease);
+}
+
+.dd[open] .dd__label::after { transform: rotate(-135deg) translateY(-2px); }
+
+.dd__panel {
+  position: absolute;
+  left: -14px;
+  top: calc(100% + 8px);
+  min-width: 216px;
+  margin: 0;
+  padding: 8px;
+  list-style: none;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-lift);
+}
+
+.dd__panel a {
+  display: block;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  font-weight: 500;
+  color: var(--ink-3);
+  transition: color .2s var(--ease), background-color .2s var(--ease);
+}
+
+.dd__panel a:hover { background: var(--sunk); color: var(--ink); }
+
+@media (max-width: 640px) {
+  /* Icon-only brand: the wordmark costs ~90px a 360px bar cannot spare, and
+   * the favicon alone is the same mark the tab shows. */
+  .topbar__brand .lockup { display: none; }
+  .topbar__nav { font-size: 13.5px; gap: 4px 16px; }
+  .topbar__gh { font-size: 13.5px; }
+}
+
+/* ============================================= 3.12 the brochure (ADR-133)
+ *
+ * Three value sections in an alternating asymmetric rhythm — the visual takes
+ * a third, the copy takes the rest, and the sides swap each row. The visuals
+ * are the object system, hand-placed: the same grammar the hero's board
+ * draws, so the sections and the demonstration read as one product. */
+
+.feat {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  gap: clamp(28px, 4.5vw, 64px);
+  align-items: center;
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(64px, 10vh, 132px) var(--gutter);
+  border-top: 1px solid var(--line);
+}
+
+/* The flip swaps the COLUMNS, not the markup: the figure stays first in
+ * source so the reading order is stable, and `order` moves it visually. */
+.feat--flip { grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); }
+.feat--flip .feat__viz { order: 2; }
+
+.feat__viz { margin: 0; min-width: 0; }
+
+.feat__tag {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-6);
+}
+
+.feat__copy { min-width: 0; }
+
+.feat__list {
+  margin-top: 16px;
+  padding-left: 20px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 60ch;
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink-4);
+}
+
+.feat__list li::marker { color: var(--ink-6); }
+
+.feat__more { margin-top: 20px; }
+
+/* A forward link. The chevron is drawn for the same latin-subset reason as
+ * the menu's. */
+.link--fwd {
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.link--fwd::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-top: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform .28s var(--ease);
+}
+
+.link--fwd:hover { color: var(--accent-lift); }
+.link--fwd:hover::after { transform: rotate(45deg) translate(2px, -2px); }
+
+/* ------------------------------------------------ the section vignettes
+ * Static, hand-placed compositions in the board's own materials: dot field,
+ * panel ground, cards with the owner's bar, the blue-ringed person, paper.
+ * They are illustrations and say so in their tags. */
+
+.vizboard,
+.vizmap {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.vizboard { aspect-ratio: 5 / 4; }
+.vizmap { aspect-ratio: 4 / 3; }
+
+.vizboard::before,
+.vizmap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--grid) 1.2px, transparent 1.2px);
+  background-size: 24px 24px;
+  -webkit-mask-image: radial-gradient(122% 108% at 50% 50%, #000 40%, transparent 92%);
+  mask-image: radial-gradient(122% 108% at 50% 50%, #000 40%, transparent 92%);
+}
+
+.vizboard__wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.vizboard__wires line {
+  stroke: var(--line-4);
+  stroke-width: 1;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.vobj {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
+}
+
+.vcard {
+  width: 122px;
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 3px solid var(--accent);
+  border-radius: var(--r-xl);
+  background: var(--card);
+  box-shadow: var(--sh-lift);
+}
+
+.vcard__name {
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: -.015em;
+  color: var(--ink);
+}
+
+.vcard__meta { font-size: 10px; color: var(--ink-6); }
+
+.vplaque {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  padding: 8px 11px;
+  border-top: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-low);
+  font-family: var(--display);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.vdisc {
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--human);
+  color: var(--human);
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: var(--sh-low);
+}
+
+.vsticky {
+  width: 122px;
+  padding: 8px;
+  border-radius: var(--r-xs);
+  background: var(--paper);
+  color: var(--paper-ink);
+  font-size: 9.5px;
+  font-style: italic;
+  line-height: 1.45;
+  box-shadow: var(--sh-low);
+  transform: translate(-50%, -50%) rotate(2deg);
+}
+
+.vizmap svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.vizmap__wires { color: var(--line-4); }
+.vizmap__wires line { vector-effect: non-scaling-stroke; }
+
+.vizmap__node {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  transform: translate(-50%, -50%);
+  padding: 7px 13px;
+  border-radius: var(--r-pill);
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--sh-low);
+  font-family: var(--display);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+/* The hub is the page's one accent moment on this map — the pull request is
+ * the product. Accent-ink ground, like the button, because nothing legal
+ * carries text over the graphic terracotta. */
+.vizmap__node--hub {
+  background: var(--accent-ink);
+  border-color: var(--accent-ink);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  /* One column, copy before visual — comprehension outranks the desktop
+   * alternation, and the rhythm survives as spacing (spec §8). */
+  .feat,
+  .feat--flip { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .feat__viz,
+  .feat--flip .feat__viz { order: 2; max-width: 480px; }
+}
+
+/* ------------------------------------------------------ the close (ADR-133)
+ * A centered brand moment that breaks the alternating rhythm above it. The
+ * live mark at a size worth looking at, then the two destinations. */
+
+.sec--cta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(72px, 12vh, 150px) var(--gutter);
+  border-top: 1px solid var(--line);
+}
+
+.cta__mark {
+  width: clamp(150px, 24vw, 216px);
+  aspect-ratio: 1;
+  margin-bottom: clamp(20px, 3.5vh, 36px);
+}
+
+.sec--cta .sec__lede { margin-top: 14px; }
+
+.sec--cta .sec__cta { margin-top: 26px; justify-content: center; }
+
+/* ======================================== 3.13 the feature pages (ADR-133)
+ *
+ * One shell for /features, the five feature pages and /about: the shared
+ * topbar, a head, then .sec blocks. Deeper than the homepage, one level
+ * short of the docs. */
+
+.pagehead {
+  max-width: var(--shell);
+  margin: 0 auto;
+  /* The bottom matters as much as the top: the first section's rule sits
+   * right below this box, and at a 20-32px bottom the rule crowded the head
+   * (23px above it, ~78px below it — a boundary glued to the wrong side).
+   * Now both sides of the rule breathe alike. */
+  padding: clamp(48px, 8vh, 88px) var(--gutter) clamp(48px, 7vh, 76px);
+}
+
+.pagehead .sec__lede { margin-top: 14px; }
+
+/* A feature page's head is the homepage's grid, not a stacked column: copy
+ * takes the wide side, the vignette the narrow one, and the pair sits on the
+ * same asymmetric rhythm the value sections established. */
+.pagehead--split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(28px, 4.5vw, 64px);
+  align-items: center;
+}
+
+.pagehead__viz { margin: 0; min-width: 0; }
+
+/* About's head carries the live mark instead of a board vignette. */
+.pagehead__viz--mark { display: flex; justify-content: center; }
+.about__mark { width: clamp(150px, 18vw, 200px); aspect-ratio: 1; }
+
+@media (max-width: 860px) {
+  .pagehead--split { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .pagehead--split .pagehead__viz { order: 2; max-width: 460px; }
+}
+
+/* The why-section: prose on the measure, and the page's one pulled line on
+ * the right — the same rule-and-weight pull the devlog uses, so the empty
+ * half of the band carries the argument's sharpest sentence instead of air. */
+.why {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(28px, 5vw, 88px);
+  align-items: center;
+}
+
+.why__main { min-width: 0; }
+.why__main .sec__lede + .sec__lede { margin-top: 14px; }
+
+.why__aside { min-width: 0; max-width: 30ch; }
+
+@media (max-width: 860px) {
+  .why { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .why__aside { max-width: 44ch; }
+}
+
+/* A link inside running prose. Underlined, because position cannot mark it
+ * the way a stacked list marks its links — same doctrine as the devlog
+ * index's foot. */
+.sec__lede a {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color .28s var(--ease);
+}
+
+.sec__lede a:hover { color: var(--accent-lift); }
+
+/* The features overview: five capabilities as divided rows, not a card grid.
+ * Five cards in an auto-fit grid left an orphan on its own row, which is the
+ * generic feature grid this site already refuses — a 1px rule says "these
+ * are peers" more honestly than boxes do, and rows cannot go ragged. */
+.flist { display: flex; flex-direction: column; }
+
+.flist__row {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+  gap: 6px 32px;
+  align-items: baseline;
+  padding: 20px 0 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.flist__row:first-child { padding-top: 4px; }
+.flist__row:last-child { border-bottom: none; }
+
+.flist__t {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -.012em;
+  color: var(--ink);
+  transition: color .28s var(--ease);
+}
+
+.flist__t::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-top: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform .28s var(--ease);
+}
+
+.flist__row:hover .flist__t { color: var(--accent-ink); }
+.flist__row:hover .flist__t::after { transform: rotate(45deg) translate(2px, -2px); }
+
+.flist__d {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-5);
+  text-wrap: pretty;
+}
+
+@media (max-width: 640px) {
+  .flist__row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+
+
+/* ========================================================== 4. the devlog */
+
+/* A reading surface, sharing only the tokens. It keeps a small header,
+ * because unlike the hero it is a page you arrive at from somewhere.
+ *
+ * Everything here is set on paper and read in sentences: the body face is
+ * Nunito Sans, titles and names are Figtree, and monospace appears on `.mono`
+ * and nowhere else — a literal you would actually type. It used to appear on
+ * three labels as a texture, which said "machine readout" about a date.
+ *
+ * Nothing in this section declares elevation or a rounded corner, and that is
+ * an invariant rather than an accident: two comments below claim in words that
+ * the entries are rows and the pull quote is a rule, and the way to keep a
+ * claim true is to keep it checkable. Grepping this section for the two
+ * properties that would make either a lie must find nothing — which is why
+ * neither is spelled out here. */
+
+.reading {
+  /* 660, not 720: Nunito Sans has a taller x-height and a wider average
+   * advance than Figtree, so the same column holds fewer comfortable
+   * characters. 660 ÷ 17px ≈ 38.8em ≈ 75 characters — the top of the 60–75
+   * band. At 720/16.5 it was ≈89, over it. */
+  max-width: 660px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+/* The devlog's own masthead is gone (ADR-133): every page carries the shared
+ * `.topbar` now, which inherited its target arithmetic. */
+
+/* -------------------------------------------------------- 4.1 the entries */
+
+.post__head {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 64px 0 32px;
+}
+
+/* Was monospace, 11px, uppercase, .07em tracking — an industrial signal on a
+ * line that says a date, a subject and a decision number. It is a caption, so
+ * it is set as one: Figtree, sentence case, normal tracking, and large enough
+ * to read. */
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  font-family: var(--display);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-6);
+}
+
+/* On the dark ground apricot separated itself by luminance alone. On paper a
+ * terracotta word beside grey metadata is much closer in value, so the ADR
+ * takes a second axis — 600 against the line's 500 — or it stops reading as a
+ * distinct thing. It stays a coloured WORD: a chip would be a box, and it
+ * would out-weigh the title it sits above. */
+/* The ADR number on a devlog entry. Weight already separates it from the date
+ * beside it; the accent was a third signal for a two-signal job. 11.7 / 14.8. */
+.meta strong {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* The separator is a text character, so it takes a text-legal colour. It was
+ * --line-3, a hairline value, which on paper is under 2:1. Hierarchy on this
+ * line comes from the weight of the ADR beside it, not from a middot fading. */
+.meta .sep { color: var(--ink-6); }
+
+.post__title {
+  font-family: var(--display);
+  font-size: clamp(1.9rem, 3.6vw, 2.65rem);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -.03em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.post__standfirst {
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--ink-4);
+  text-wrap: pretty;
+}
+
+.post__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 30px 0 24px;
+  border-top: 1px solid var(--line);
+}
+
+.post__body p {
+  font-size: 17px;
+  /* 1.75 was tuned for Figtree. Nunito Sans's taller x-height reads tighter at
+   * the same multiplier, so the leading comes down as the size goes up. */
+  line-height: 1.7;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.post__body h2 {
+  margin-top: 14px;
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  color: var(--ink);
+}
+
+.post__body strong { font-weight: 700; color: var(--ink-2); }
+
+.post__body em { font-style: italic; color: var(--ink-2); }
+
+.post__body ul {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.post__body li {
+  font-size: 16.5px;
+  line-height: 1.65;
+  color: var(--ink-3);
+}
+
+/* Was --line-4, a hairline value. A marker is a glyph inside a text run, and a
+ * bullet that faint on paper reads as a printing fault rather than a list. */
+.post__body li::marker { color: var(--ink-6); }
+
+/* The only monospace left in the devlog, and the only one that earns it: these
+ * are literals — `sudo`, `curl | sh`, `versions.json`. .88em was sized against
+ * Figtree; JetBrains Mono sits smaller beside Nunito Sans's x-height. */
+.mono {
+  font-family: var(--mono);
+  font-size: .92em;
+  color: var(--ink-2);
+}
+
+/* A pull quote is a rule and a size change. No card, no background, no
+ * quotation marks — the elevation would communicate nothing. The rule is the
+ * one place the accent appears in this section as a GRAPHIC, which is the only
+ * job it may do: at 3:1 it is legal as a mark and it would not be as type. */
+.pull {
+  margin: 6px 0;
+  padding-left: 22px;
+  border-left: 2px solid var(--accent);
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.36;
+  letter-spacing: -.015em;
+  color: var(--ink);
+}
+
+.post__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+/* Was 10px monospace at .13em, uppercase — the widest tracking on the site, on
+ * one word. "Sources" is a heading for three links; it is set as one. */
+.post__foot .label {
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-5);
+}
+
+/* ADR-129: three stacked links, 23px tall and 7px apart, were the thinnest and
+ * closest targets on the site — and they are the ADR and the issue each entry
+ * is sourced from, the one thing a reader comes to the foot of an entry to
+ * tap. 15 x 1.5 = 22.5px + 10 = 32.5px, with the line-height set here rather
+ * than inherited so that figure is arithmetic. */
+.post__links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.post__links a {
+  padding: 5px 0;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--accent-ink);
+  transition: color .28s var(--ease);
+}
+
+.post__links a:hover { color: var(--accent-lift); }
+
+.post__nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 30px 0 72px;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink-5);
+}
+
+/* 15 x 1.5 = 22.5px + 10 = 32.5px. */
+.post__nav a {
+  padding: 5px 0;
+  transition: color .28s var(--ease);
+}
+
+.post__nav a:hover { color: var(--ink); }
+
+/* ---------------------------------------------------------- 4.2 the index */
+
+.index__head {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 64px 0 40px;
+}
+
+/* Divided rows, not cards. Nothing here needs elevation — the entries are a
+ * list, and a 1px rule says list more honestly than a box does. */
+.entries {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 24px;
+  padding: 26px 0 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Was monospace at 11px with .06em tracking. A date is not a readout. */
+.entry__when {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--display);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-6);
+}
+
+/* 600 against the column's 500 — the same second axis .meta strong takes, for
+ * the same reason: on paper the hue change alone is too weak to carry it. */
+.entry__tag {
+  color: var(--accent-ink);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.entry__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  transition: transform .32s var(--ease);
+}
+
+.entry:hover .entry__body { transform: translateX(5px); }
+
+.entry__title {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.22;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  text-wrap: balance;
+  transition: color .28s var(--ease);
+}
+
+.entry:hover .entry__title { color: var(--accent-ink); }
+
+.entry__hook {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--ink-5);
+  text-wrap: pretty;
+}
+
+.index__foot {
+  padding: 34px 0 72px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--ink-5);
+}
+
+/* Inline links inside a sentence. On the dark ground apricot on near-black
+ * separated itself by luminance alone; on paper a terracotta word in a grey
+ * sentence is a much weaker signal, so these carry a rule as well as a colour.
+ * .post__links does not — those are a stacked list of three, positionally
+ * unambiguous, and an underline there would just be noise. */
+/* `inline-block` + vertical padding because this is the last sub-30px tap
+ * target on the site. ADR-129 raised every devlog link to >=30px but reached
+ * only the ones inside `.entry`; this one sits in a prose sentence and was
+ * still 20px tall (WCAG 2.5.8 AA). */
+.index__foot a {
+  display: inline-block;
+  padding-block: 6px;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.index__foot a:hover { color: var(--accent-lift); }
+
+@media (max-width: 560px) {
+  .entry {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .entry__when { flex-direction: row; gap: 10px; }
+
+  .post__head, .index__head { padding-top: 40px; }
+}
+
+/* ================================================== 5. reduced motion */
+
+/* Everything above that moves is decoration over content that is already
+ * complete. Under this query the page is the same page, holding still. */
+@media (prefers-reduced-motion: reduce) {
+
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+
+  /* Duration alone is not enough for the lifts and slides: an element that
+   * teleports is worse than one that never moves. */
+  /* .cyc is here even though hero.js never builds the control under this
+   * query: the query is read once at load, so a reader who turns the setting
+   * on mid-visit keeps the cycle and the button they already have. */
+  /* `.btn` was missing here for as long as the list named `.link--lead` — the
+   * class the button replaced. The dead selector sat exactly where the live
+   * one belonged, so the one filled button teleported on hover and press. */
+  .link:active,
+  .cyc:active,
+  .btn:active,
+  .entry:hover .entry__body,
+  .flist__row:hover .flist__t::after,
+  .link--fwd:hover::after,
+  .btn:hover svg { transform: none; }
+
+  .cmd__caret { opacity: 1; }
+}

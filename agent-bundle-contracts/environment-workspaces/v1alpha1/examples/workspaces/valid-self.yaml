@@ -1,0 +1,18 @@
+# `source: self` - the bound profile's own distribution repository at the
+# deployed revision. The SRE inspects the operation source it was installed
+# from; installing the distribution still grants nothing until this binding
+# says so, and the revision is exactly the record's deployed spec.sha.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: operation-source
+    source: self
+    mount:
+      path: /workspaces/operation-source
+      access: read-only
+
+bindings:
+  - repository: operation-source
+    profiles: [marketing-sre]
+    purpose: operation-source

@@ -1,0 +1,18 @@
+# Valid: a providers.ingress=tailscale fleet's cluster-values with the
+# tailscale block - schema-legal in the canonical contract since issue #26
+# [G6] (paralleling G2's cloudflare precedent). Required-key enforcement for
+# the selected ingress provider lives in the chart's
+# hermes.tailscaleConfigGuard, not here.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: tailscale
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: latest
+tailscale:
+  authKey:
+    remoteSecretKey: hermes-gitops-tailscale-auth-key
+  tailscaleImage:
+    repository: tailscale/tailscale
+    tag: latest

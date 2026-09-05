@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-bundles/v1alpha3/bundles.schema.json",
+  "title": "Hermes profile bundle declarations",
+  "description": "Operator-authored grouping of installed profile records into shared Hermes runtime pods. Profile distributions remain independent harnesses; the bundle owns compute, the shared HERMES_HOME volume, and placement. v1alpha3 adds displayName (the human-facing Bundle title Nexus renders, #567) and retires the bundle-local repository fields (workspace repositories are profile capabilities declared in environment/workspaces.yaml since #365).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "bundles"],
+  "$defs": {
+    "secretName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+    },
+    "shortName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40
+    }
+  },
+  "properties": {
+    "version": { "const": 3 },
+    "bundles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "profiles"],
+        "properties": {
+          "name": { "$ref": "#/$defs/shortName" },
+          "displayName": {
+            "description": "Human-facing Bundle title (e.g. \"Marketing Team\"). Presentation only - never a join key; the machine identity stays `name`.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "profiles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name"],
+              "properties": {
+                "name": {
+                  "allOf": [
+                    { "$ref": "#/$defs/shortName" },
+                    { "not": { "const": "default" } }
+                  ]
+                },
+                "envSecretRef": { "$ref": "#/$defs/secretName" },
+                "gitAuthSecretRef": { "$ref": "#/$defs/secretName" },
+                "gatewayEnabled": { "type": "boolean", "default": true },
+                "apiServerPort": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "webhookPort": {
+                  "description": "The port this profile's Hermes gateway serves its declared webhook endpoints on. Required for a bundled profile that any communication route TARGETS: bundling retires the per-profile namespace and Service the router would otherwise address, so without this the edge has nowhere to send. Fail-closed - a route to a bundled profile with no webhookPort refuses to compile rather than silently resolving to a dead URL.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "terminalCwd": { "type": "string", "pattern": "^/" }
+              },
+              "allOf": [
+                {
+                  "if": { "required": ["apiServerPort"] },
+                  "then": {
+                    "required": ["envSecretRef"],
+                    "properties": {
+                      "gatewayEnabled": { "not": { "const": false } }
+                    }
+                  }
+                },
+                {
+                  "if": { "required": ["webhookPort"] },
+                  "then": {
+                    "required": ["envSecretRef"],
+                    "properties": {
+                      "gatewayEnabled": { "not": { "const": false } }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "placement": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "scope": { "type": "string", "minLength": 1, "default": "global" },
+              "target": { "type": "string", "minLength": 1, "default": "in-cluster" },
+              "argoDestination": { "type": "string", "minLength": 1, "default": "in-cluster" },
+              "namespace": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 63
+              },
+              "application": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 63
+              }
+            }
+          },
+          "deployment": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "baseImageTag": { "type": "string", "minLength": 1 },
+              "diskSizeGb": { "type": "integer", "minimum": 10, "default": 20 },
+              "workspaceSizeGb": { "type": "integer", "minimum": 1, "default": 20 }
+            }
+          },
+          "dashboard": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": { "type": "boolean", "default": false },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535,
+                "default": 9119
+              },
+              "envSecretRef": { "$ref": "#/$defs/secretName" }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": { "enabled": { "const": true } },
+                  "required": ["enabled"]
+                },
+                "then": { "required": ["envSecretRef"] }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

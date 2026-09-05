@@ -1,0 +1,8 @@
+# Invalid: spec.backup requires `schedule` (backup intent without a schedule
+# is meaningless — there is nothing for the platform to run).
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  backup:
+    retention: 7

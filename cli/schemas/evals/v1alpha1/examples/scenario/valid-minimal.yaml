@@ -1,0 +1,4 @@
+# Valid: the smallest legal scenario — evaluator-owned invocation, all defaults.
+name: heartbeat-recorded
+profile: persona-echo
+evaluate: evaluate.sh

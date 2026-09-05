@@ -1,0 +1,18 @@
+# A cluster with the PVC backup destination enabled: profiles that declare
+# spec.backup get a CronJob archiving their data volume into a per-instance
+# backups PVC. `providers.backup` is optional (default none) — see
+# cluster-values-local.yaml for the no-backup shape.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+  backup: pvc
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: latest
+backup:
+  pvc:
+    size: 5Gi
+secretBackend:
+  k8s:
+    namespace: hermes-gitops

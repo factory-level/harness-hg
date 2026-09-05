@@ -1,0 +1,92 @@
+# One of everything: a producer, an external input, an agent edge (queued
+# FIFO, keyed session) and a chatops edge, the recording connection, and
+# the redis-streams provider.
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  durableProvider:
+    plugin: redis-streams
+  chatopsConnections:
+    company_discord:
+      provider: recording
+  producers:
+    - id: platform-sre/monitoring#alerts
+      name: platform-sre/monitoring#alerts
+      profile: platform-sre
+      app: monitoring
+      appInstance: platform-sre/monitoring
+      output: alerts
+      event: observability.alert/v1
+      schema: events/observability-alert/v1.schema.json
+      ingestPath: /v1/events/platform-sre-monitoring-alerts
+      routes:
+        - operational-alerts
+  externalInputs:
+    - id: platform-sre/demo-alert-source
+      profile: platform-sre
+      name: demo-alert-source
+      event: source.demo.alert/v1
+      verification:
+        type: hmac-sha256
+        secretRef:
+          name: demo-alert-source-webhook
+          key: secret
+      hookPath: /v1/hooks/platform-sre-demo-alert-source
+      routes:
+        - external-triage
+  edges:
+    - id: platform-sre/operational-alerts@global->0:agent:platform-sre
+      route: operational-alerts
+      profile: platform-sre
+      from:
+        producer: platform-sre/monitoring#alerts
+      event: observability.alert/v1
+      kind: agent
+      agent:
+        profile: platform-sre
+        handler: alerts
+        instance: platform-sre
+        namespace: hermes-platform-sre
+        service: hermes-platform-sre
+        port: 8644
+        path: /webhooks/alerts
+        url: http://hermes-platform-sre.hermes-platform-sre.svc.cluster.local:8644/webhooks/alerts
+        signature: hmac-sha256
+        secretName: hermes-platform-sre-env
+        session:
+          mode: keyed
+          key: subject
+      delivery:
+        mode: queued
+        retry:
+          maxAttempts: 5
+          backoff: exponential
+        deadLetter:
+          enabled: true
+          retention: 14d
+        ordering:
+          mode: fifo
+          key: subject
+          onFailure: dead-letter-and-continue
+    - id: platform-sre/operational-alerts@global->1:chatops:company_discord-channel-1
+      route: operational-alerts
+      profile: platform-sre
+      from:
+        producer: platform-sre/monitoring#alerts
+      event: observability.alert/v1
+      kind: chatops
+      chatops:
+        space: company_discord#channel-1
+        alias: company_discord
+        destination: channel-1
+        provider: recording
+      delivery:
+        mode: direct
+        retry:
+          maxAttempts: 5
+          backoff: exponential
+        deadLetter:
+          enabled: false

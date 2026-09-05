@@ -1,0 +1,6 @@
+{
+  "incident": "incident/dns-degraded",
+  "severity": "warning",
+  "summary": "Upstream DNS resolution degraded",
+  "detail": "The demo alert source observed elevated resolution latency for 10 minutes."
+}

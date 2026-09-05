@@ -1,0 +1,13 @@
+# INVALID: `errored` is not one of the five run statuses. The enum mirrors
+# the runner's own RunStatus exactly; a status nobody knows would render
+# as nothing, and the whole point of persisting a result is that it can
+# be read back and believed.
+apiVersion: hermes.dev/eval-result/v1alpha1
+records:
+  - runId: run-1
+    componentId: marketing-sre
+    suite: sre-behaviour
+    scenario: acknowledges-alert
+    status: errored
+    harness: local-harness
+    ranAt: "2026-08-01T07:00:00Z"

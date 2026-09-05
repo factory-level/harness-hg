@@ -1,0 +1,13 @@
+spec:
+  id: x/monitoring@y
+  profile: x
+  app: monitoring
+  scope: y
+  target: y-a
+  argoDestination: y-a
+  namespace: hermes-x
+  application: hermes-x-monitoring
+  pairedAgent: x@y
+  source:
+    repo: local
+    path: charts/monitoring

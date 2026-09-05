@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-16T00:00:00Z",
+  "title": "Design System: Hermes Nexus",
+  "extensions": {
+    "colorMeta": {
+      "copper": { "role": "primary", "displayName": "Copper", "canonical": "#b36a33", "dark": "#f5b98c", "tonalRamp": ["#2e1b0d", "#4a2c15", "#6b3f1e", "#8c5227", "#b36a33", "#cd8b55", "#e0ac7f", "#f3d4b8"] },
+      "comm": { "role": "secondary", "displayName": "Communication Blue", "canonical": "#2f6fe0", "dark": "#8fb0f5", "tonalRamp": ["#0b1a38", "#132c5e", "#1c4088", "#2557b4", "#2f6fe0", "#5c8de8", "#8fb0f5", "#c5d6fa"] },
+      "canvas": { "role": "neutral", "displayName": "Canvas", "canonical": "#eeeff4", "dark": "#0b0d14" },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#fbfaf7", "dark": "#0e1017" },
+      "surface": { "role": "neutral", "displayName": "Card Surface", "canonical": "#ffffff", "dark": "#141824" },
+      "surface-2": { "role": "neutral", "displayName": "Inset Surface", "canonical": "#f7f8fb", "dark": "#10141e" },
+      "surface-3": { "role": "neutral", "displayName": "Well Surface", "canonical": "#eaecf3", "dark": "#1c2233" },
+      "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#141824", "dark": "#ebeaf4", "tonalRamp": ["#141824", "#3e4256", "#6d7188", "#8a8ca6", "#afb0c8", "#cfd0e0", "#e5e6ef", "#f6f7fa"] },
+      "ink-2": { "role": "neutral", "displayName": "Secondary Ink", "canonical": "#3e4256", "dark": "#afb0c8" },
+      "muted": { "role": "neutral", "displayName": "Muted Ink", "canonical": "#6d7188", "dark": "#8a8ca6" },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "rgba(20, 24, 36, 0.11)", "dark": "rgba(175, 176, 200, 0.13)" },
+      "marker": { "role": "neutral", "displayName": "Pencil Marker", "canonical": "rgba(20, 24, 36, 0.46)", "dark": "rgba(200, 202, 224, 0.5)" },
+      "healthy": { "role": "status", "displayName": "Healthy Green", "canonical": "#3e8a6b", "dark": "#a9dcc4", "tonalRamp": ["#0f261d", "#1c4030", "#2a5f49", "#3e8a6b", "#61a686", "#87c1a5", "#aedcc6", "#d8f0e5"] },
+      "degraded": { "role": "status", "displayName": "Degraded Ochre", "canonical": "#8a6a18", "dark": "#efd9a0", "tonalRamp": ["#241b06", "#40310b", "#614a10", "#8a6a18", "#ad8a35", "#ccab5e", "#e5cd90", "#f6ecce"] },
+      "unhealthy": { "role": "status", "displayName": "Unhealthy Rust", "canonical": "#b8543a", "dark": "#f0a98f", "tonalRamp": ["#2e150e", "#4f2318", "#763424", "#9c452f", "#b8543a", "#d07a5f", "#e5a68f", "#f5d5c8"] },
+      "unknown": { "role": "status", "displayName": "Unknown Grey", "canonical": "#6d7188", "dark": "#8a8ca6" },
+      "paused": { "role": "status", "displayName": "Paused Slate Blue", "canonical": "#4a5c8a", "dark": "#9fb6f0" },
+      "kind-person": { "role": "kind", "displayName": "Person Sky", "canonical": "#8ab8d9" },
+      "kind-group": { "role": "kind", "displayName": "Group Rose", "canonical": "#d98a8a" },
+      "kind-agent": { "role": "kind", "displayName": "Agent Peach", "canonical": "#e8a662" },
+      "kind-tool": { "role": "kind", "displayName": "Tool Wheat", "canonical": "#d9c37a" },
+      "kind-external-tool": { "role": "kind", "displayName": "External Tool Azure", "canonical": "#62b8e8" },
+      "kind-comm-in": { "role": "kind", "displayName": "Inbound Mint", "canonical": "#8fd9c9" },
+      "kind-comm-out": { "role": "kind", "displayName": "Outbound Sky", "canonical": "#7ac9f0" },
+      "sticky": { "role": "annotation", "displayName": "Sticky Note", "canonical": "#f7e6b8", "dark": "#efd9a0" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "View titles in Figtree; a rare 34px hero on the welcome surface only." },
+      "headline": { "displayName": "Headline", "purpose": "Card, drawer and section names — Figtree 700." },
+      "body": { "displayName": "Body", "purpose": "Nunito Sans workhorse band, 11.5–12.5px." },
+      "label": { "displayName": "Label", "purpose": "Uppercase tracked eyebrows on panels, column heads, provenance lines." },
+      "micro": { "displayName": "Micro", "purpose": "Beads, chips, timestamps — bolder as it gets smaller." }
+    },
+    "shadows": [
+      { "name": "lift", "value": "0 4px 12px rgba(20, 24, 36, 0.07)", "purpose": "Cards and small chips at rest (--shl)." },
+      { "name": "float", "value": "0 10px 26px rgba(20, 24, 36, 0.1)", "purpose": "Popovers, panels, hover surfaces (--sh)." },
+      { "name": "loom", "value": "0 24px 56px rgba(20, 24, 36, 0.18)", "purpose": "Modals and the highest summoned surfaces (--shx)." }
+    ],
+    "motion": [
+      { "name": "ease-quick", "value": "120ms ease", "purpose": "Background and position shifts on controls." },
+      { "name": "ease-standard", "value": "0.14s–0.18s ease / ease-out", "purpose": "Border, transform, opacity and stroke transitions; nothing slower than 200ms except the live mark." }
+    ],
+    "layering": {
+      "scale": ["world:0", "world-content:1", "object:2", "object-active:3", "fixture:4", "badge:5", "panel:6", "chrome:7", "hover:8", "menu:9", "modal:10"],
+      "appRoot": 60,
+      "note": "Hover outranks chrome; panels stay below chrome; only -1/0/auto literals allowed; enforced by style-system.test.ts."
+    },
+    "measures": [
+      { "name": "nx-measure", "value": "920px" },
+      { "name": "nx-measure-narrow", "value": "860px" },
+      { "name": "nx-measure-wide", "value": "1200px" },
+      { "name": "nx-measure-prose", "value": "520px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Button",
+      "kind": "button",
+      "refersTo": "button",
+      "description": "The quiet pill button; hover shifts the border to copper.",
+      "html": "<button class=\"ds-btn\">Deploy</button>",
+      "css": ".ds-btn { padding: 6px 12px; border: 1px solid rgba(20, 24, 36, 0.11); border-radius: 999px; background: #ffffff; color: #141824; font-family: 'Nunito Sans', system-ui, sans-serif; font-size: 11.5px; cursor: pointer; transition: border-color 140ms ease; } .ds-btn:hover { border-color: #b36a33; } .ds-btn:focus-visible { outline: 2px solid #b36a33; outline-offset: 2px; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Emphasis is copper border + copper 600-weight text — never a solid fill.",
+      "html": "<button class=\"ds-btn-primary\">Install profile</button>",
+      "css": ".ds-btn-primary { padding: 6px 12px; border: 1px solid #b36a33; border-radius: 999px; background: #ffffff; color: #b36a33; font-family: 'Nunito Sans', system-ui, sans-serif; font-size: 11.5px; font-weight: 600; cursor: pointer; transition: border-color 140ms ease; } .ds-btn-primary:focus-visible { outline: 2px solid #b36a33; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Pill",
+      "kind": "chip",
+      "refersTo": "pill-status",
+      "description": "Health wash + matching ink; the only status voice on a surface.",
+      "html": "<span class=\"ds-pill ds-pill-healthy\">Healthy</span> <span class=\"ds-pill ds-pill-degraded\">Degraded</span> <span class=\"ds-pill ds-pill-unhealthy\">Unhealthy</span> <span class=\"ds-pill ds-pill-unknown\">Unknown</span>",
+      "css": ".ds-pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-family: 'Nunito Sans', system-ui, sans-serif; font-size: 10.5px; font-weight: 700; white-space: nowrap; margin-right: 6px; } .ds-pill-healthy { background: #e4f2eb; color: #3e8a6b; } .ds-pill-degraded { background: #f7efdb; color: #8a6a18; } .ds-pill-unhealthy { background: #fae7e1; color: #b8543a; } .ds-pill-unknown { background: #eceef3; color: #6d7188; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "White bubbly card with monogram tile and Figtree name over Nunito body.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-tile\">MR</div><div><div class=\"ds-card-name\">marketing-sre</div><div class=\"ds-card-sub\">Watches the fleet it does not share a pod with.</div></div></div>",
+      "css": ".ds-card { display: flex; gap: 12px; align-items: center; background: #ffffff; border: 1px solid rgba(20, 24, 36, 0.11); border-radius: 14px; padding: 14px 16px; box-shadow: 0 4px 12px rgba(20, 24, 36, 0.07); } .ds-card-tile { width: 36px; height: 36px; border-radius: 10px; background: color-mix(in srgb, #e8a662 14%, #ffffff); color: #e8a662; border-top: 3px solid #e8a662; display: flex; align-items: center; justify-content: center; font-family: 'Figtree', system-ui, sans-serif; font-weight: 700; font-size: 12px; } .ds-card-name { font-family: 'Figtree', system-ui, sans-serif; font-weight: 700; font-size: 14.5px; color: #141824; } .ds-card-sub { font-family: 'Nunito Sans', system-ui, sans-serif; font-size: 11.5px; color: #6d7188; }"
+    },
+    {
+      "name": "Filter Chip",
+      "kind": "chip",
+      "refersTo": "button",
+      "description": "Pill filter; selected state fills with the accent wash.",
+      "html": "<button class=\"ds-chip\">All</button> <button class=\"ds-chip ds-chip-on\">Agents</button>",
+      "css": ".ds-chip { padding: 4px 11px; border: 1px solid rgba(20, 24, 36, 0.11); border-radius: 999px; background: #f7f8fb; color: #3e4256; font-family: 'Nunito Sans', system-ui, sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 6px; transition: border-color 140ms ease; } .ds-chip:hover { border-color: #b36a33; } .ds-chip:focus-visible { outline: 2px solid #b36a33; outline-offset: 2px; } .ds-chip-on { background: #fbebdf; border-color: #b36a33; color: #b36a33; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "button",
+      "description": "Hairline field on quiet surface; copper focus outline like everything else.",
+      "html": "<input class=\"ds-input\" type=\"search\" placeholder=\"Search the fleet\" />",
+      "css": ".ds-input { padding: 6px 12px; border: 1px solid rgba(20, 24, 36, 0.11); border-radius: 8px; background: #f7f8fb; color: #141824; font-family: 'Nunito Sans', system-ui, sans-serif; font-size: 12px; } .ds-input::placeholder { color: #6d7188; } .ds-input:focus-visible { outline: 2px solid #b36a33; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Dot",
+      "kind": "custom",
+      "refersTo": "pill-status",
+      "description": "9px health circle; degraded/unhealthy pulse. Colors declared once at the canonical mapping.",
+      "html": "<span class=\"ds-dot ds-dot-healthy\"></span> <span class=\"ds-dot ds-dot-degraded\"></span> <span class=\"ds-dot ds-dot-unhealthy\"></span> <span class=\"ds-dot ds-dot-unknown\"></span>",
+      "css": ".ds-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; } .ds-dot-healthy { background: #3e8a6b; } .ds-dot-degraded { background: #8a6a18; } .ds-dot-unhealthy { background: #b8543a; } .ds-dot-unknown { background: #6d7188; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm-Paper Whiteboard",
+    "overview": "Nexus is a light, pastel operations canvas with its own visual identity: warm paper grounds, bubbly rounded white cards, soft pastel clusters, and animated routing marks. It deliberately does not inherit the host dashboard's dark chrome — it owns the whole viewport and retints everything from one token block. Color carries exactly two meanings and never mixes them: pastel hue encodes kind, muted at rest and saturated only on hover or open; the five health colors are the only status voice on any screen. Density is high and confident but the composition is centred, padded, and pill-shaped, so it reads friendly rather than cramped. A full dark theme exists as a token-for-token override.",
+    "keyCharacteristics": [
+      "Warm paper + white card surfaces; the accent is a single copper (#b36a33) used sparingly",
+      "Pastel hue = kind; ink/wash pairs = health; those are the only two color languages",
+      "Dense small type (Figtree names/headings, Nunito Sans body), heavy weights (600–700)",
+      "Pill-first form language; soft ambient shadows; no hard edges, no gloss, no gradients",
+      "One ordered layering scale, one centred content measure, one scrollbar treatment"
+    ],
+    "rules": [
+      { "name": "The Kind-Is-Hue Rule", "body": "Pastel hue means kind and nothing else; health keeps the only status colors. A component may not use a kind pastel to signal state or a health color to decorate.", "section": "colors" },
+      { "name": "The Paper Knockout Rule", "body": "--paper must match the board background exactly — every bead and badge halo knocks out against it, and any drift reads as a rendering fault.", "section": "colors" },
+      { "name": "The Muted-Until-Summoned Rule", "body": "Kind and capability hues sit at low alpha at rest and reach full strength only on hover, selection, or an open detail.", "section": "colors" },
+      { "name": "The Two-Faces Rule", "body": "Figtree names things; Nunito Sans explains things. No third face, no system display font, no monospace ramp.", "section": "typography" },
+      { "name": "The Heavy-Small Rule", "body": "As type gets smaller it gets bolder and more tracked — never lighter. 700 at 10.5px is normal; 400 below 11px is not.", "section": "typography" },
+      { "name": "The One-Scale Rule", "body": "A component never picks its own z-index; it names a layer. That is how badges once ended up above status popovers, and the test now forbids it.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do take every color, radius, shadow, and z-index from the .nx-root token block; the dark theme only works because rules never hardcode palette values.",
+      "Do pair every status ink with its wash (--ok/--oksf etc.) and keep the five health pairs as the only status colors on screen.",
+      "Do centre page content with a --nx-measure* width + margin-inline: auto, and give every interactive element the 2px copper focus-visible outline.",
+      "Do keep motion quick and quiet: 120–200ms eases on borders, opacity, and transforms; the only sustained animation is the live Hermes mark and health pulses.",
+      "Do render truth: an object with absent sources reads unknown (grey), never green."
+    ],
+    "donts": [
+      "Don't use a kind pastel for state or a health color for decoration — the two color languages never mix.",
+      "Don't give the mark (or anything else) gloss, gradients, or photographic shading; the world is flat ink, wash, and contour line.",
+      "Don't pick a literal z-index (beyond -1/0/auto) or restate a per-view content width; the layering scale and the measure tokens are the only sources.",
+      "Don't put vendor names on a primary surface; they belong inside the detail slide-over's evidence panel.",
+      "Don't fill buttons solid or introduce sharp corners; emphasis is a copper border and heavier text on a pill."
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/agent-team/v1alpha1/backup.schema.json",
+  "title": "Agent backup (agents/<harness>/<name>/harness-hg/backup.yaml)",
+  "description": "`agents/<harness>/<name>/harness-hg/backup.yaml` - the agent's archive intent: schedule and retention only; the destination is the platform's. Written by the team. Read by the emitter into the record's `spec.backup` and realized as the instance's backup CronJob; `hg backup verify` and `hg platform backup prove` discover it from there. Absent: nothing of this agent's data volume is backed up, and the backup proofs say so.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "schedule"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/agent-team/v1alpha1",
+      "description": "Pins the agent-team contract this document is read under; the CLI refuses versions it does not implement."
+    },
+    "kind": {
+      "const": "Backup",
+      "description": "Document kind - always Backup."
+    },
+    "schedule": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Cron expression for the CronJob that archives the instance's data volume."
+    },
+    "retention": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many of the newest archives are kept; older ones are pruned. Default when absent: 7."
+    }
+  }
+}

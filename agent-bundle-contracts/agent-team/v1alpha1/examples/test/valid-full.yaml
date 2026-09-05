@@ -1,0 +1,18 @@
+# Local-loop placeholders and two smoke checks.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: AgentTest
+appValues:
+  monitoring:
+    alert: {siteVisits5m: {threshold: 5}}
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+  WEBHOOK_SECRET: local-dev-hmac-0123456789abcdef
+smoke:
+  - service: hermes-marketing-manager
+    port: 8642
+    path: /health
+    expect_contains: '"status": "ok"'
+reset:
+  delete_pvcs: [hermes-marketing-manager-content-kanban-backups]
+  wipe_namespaces: []
+  preserve: []

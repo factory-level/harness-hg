@@ -1,0 +1,18 @@
+# A ChatOps output must be <connection-alias>#<opaque-destination>. A bare
+# alias with no destination is not a space.
+contractVersion: 5
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        event: observability.alert/v1
+communication:
+  routes:
+    - name: operational-alerts
+      from:
+        app: monitoring
+        output: alerts
+      outputs:
+        - chatops: company_discord

@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-bundles/v1alpha4/bundles.schema.json",
+  "title": "Hermes profile bundle declarations",
+  "description": "Operator-authored grouping of installed profile records into shared Hermes runtime pods. Profile distributions remain independent harnesses; the bundle owns compute, the shared HERMES_HOME volume, and placement. v1alpha4 adds the top-level `distribution` identity - the installed distribution this repository IS, the category every operational surface groups by beside the Harness Hg control plane - and makes `bundles` optional (a per-profile topology declares only its distribution). v1alpha3 added per-bundle displayName; the #365 repository-field retirement carries forward. In an agent-team repository this file lives at `harness-hg/bundles.yaml`; the legacy path stays readable for repositories not yet migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "$defs": {
+    "secretName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+    },
+    "shortName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40
+    }
+  },
+  "properties": {
+    "version": {
+      "description": "Environment bundles contract version. A document names its own version and is validated against exactly that contract; this schema pins version 4.",
+      "const": 4
+    },
+    "bundles": {
+      "description": "Shared-pod bundle declarations. Optional since v4: a per-profile topology declares only its distribution identity and ships no bundles.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "profiles"
+        ],
+        "properties": {
+          "name": {
+            "description": "The bundle's machine identity - the join key everywhere, and the stem of its default namespace and Application names (hermes-<name>).",
+            "$ref": "#/$defs/shortName"
+          },
+          "displayName": {
+            "description": "Human-facing Bundle title (e.g. \"Marketing Team\"). Presentation only - never a join key; the machine identity stays `name`.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "profiles": {
+            "description": "The installed profile records sharing this bundle's pod. Each stays an independent Hermes harness; a profile may belong to at most one bundle.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "description": "Name of an installed profile record (profiles/<name>/profile.yaml). default is reserved by Hermes and refused.",
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/shortName"
+                    },
+                    {
+                      "not": {
+                        "const": "default"
+                      }
+                    }
+                  ]
+                },
+                "envSecretRef": {
+                  "description": "Kubernetes Secret in the bundle's namespace carrying this profile's environment variables. The compiler requires it when the record declares envRequires - the old per-profile Secret cannot be mounted across namespaces.",
+                  "$ref": "#/$defs/secretName"
+                },
+                "gitAuthSecretRef": {
+                  "description": "Kubernetes Secret in the bundle's namespace carrying the Git credential for this profile's private distribution - the record's gitAuthSecretRef Secret copied into the bundle namespace.",
+                  "$ref": "#/$defs/secretName"
+                },
+                "gatewayEnabled": {
+                  "description": "Whether the bundle pod runs this profile's Hermes gateway container. The compiler requires at least one enabled gateway or the shared dashboard per bundle.",
+                  "type": "boolean",
+                  "default": true
+                },
+                "apiServerPort": {
+                  "description": "Port this profile's Hermes API server listens on inside the shared pod, published through the bundle Service. Setting it enables the API server at boot and requires an envSecretRef carrying API_SERVER_KEY; ports must be unique across the bundle.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "webhookPort": {
+                  "description": "The port this profile's Hermes gateway serves its declared webhook endpoints on. Required for a bundled profile that any communication route TARGETS: bundling retires the per-profile namespace and Service the router would otherwise address, so without this the edge has nowhere to send. Fail-closed - a route to a bundled profile with no webhookPort refuses to compile rather than silently resolving to a dead URL.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "terminalCwd": {
+                  "description": "Absolute working directory the profile's terminal opens in, applied at boot via hermes config set terminal.cwd.",
+                  "type": "string",
+                  "pattern": "^/"
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "required": [
+                      "apiServerPort"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "envSecretRef"
+                    ],
+                    "properties": {
+                      "gatewayEnabled": {
+                        "not": {
+                          "const": false
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "webhookPort"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "envSecretRef"
+                    ],
+                    "properties": {
+                      "gatewayEnabled": {
+                        "not": {
+                          "const": false
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "placement": {
+            "description": "Where the bundle deploys. Every field defaults to the single-cluster case; a non-global scope yields the instance id <name>@<scope>.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "scope": {
+                "description": "Placement scope of the bundle instance; global (the default) yields the bare bundle name as its id.",
+                "type": "string",
+                "minLength": 1,
+                "default": "global"
+              },
+              "target": {
+                "description": "Declared topology target the bundle lands on.",
+                "type": "string",
+                "minLength": 1,
+                "default": "in-cluster"
+              },
+              "argoDestination": {
+                "description": "Name of the registered Argo CD cluster the bundle's Application deploys to (in-cluster for the control-plane cluster).",
+                "type": "string",
+                "minLength": 1,
+                "default": "in-cluster"
+              },
+              "namespace": {
+                "description": "Namespace the bundle pod and its Secrets live in. Defaults to hermes-<name>.",
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 63
+              },
+              "application": {
+                "description": "Name of the bundle's Argo CD Application. Defaults to hermes-<name>.",
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 63
+              }
+            }
+          },
+          "deployment": {
+            "description": "Compute and storage sizing for the shared bundle pod.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "baseImageTag": {
+                "description": "Overrides the platform's Hermes agent image tag for this bundle's pod.",
+                "type": "string",
+                "minLength": 1
+              },
+              "diskSizeGb": {
+                "description": "Size in GiB of the bundle's shared HERMES_HOME volume claim.",
+                "type": "integer",
+                "minimum": 10,
+                "default": 20
+              },
+              "workspaceSizeGb": {
+                "description": "Size in GiB of the bundle's shared workspaces volume claim.",
+                "type": "integer",
+                "minimum": 1,
+                "default": 20
+              }
+            }
+          },
+          "dashboard": {
+            "description": "The optional shared web dashboard container served from the bundle pod.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "enabled": {
+                "description": "Whether the bundle pod runs the shared dashboard container.",
+                "type": "boolean",
+                "default": false
+              },
+              "port": {
+                "description": "Port the dashboard listens on inside the pod, published through the bundle Service.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535,
+                "default": 9119
+              },
+              "envSecretRef": {
+                "description": "Kubernetes Secret in the bundle's namespace carrying the dashboard's environment, including its authentication provider's credentials. Required when enabled.",
+                "$ref": "#/$defs/secretName"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "envSecretRef"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "distribution": {
+      "description": "The installed distribution's identity (the \"agent bundle distribution bootstrap contract\"): the ONE category this repository's agents, backups, alarms and event routes group under on operational surfaces, beside the Harness Hg control plane. `name` is the stable machine id (defaults to the repository stem); `displayName` is the human-facing title (\"Marketing Team\"). Compiled into every agent deployment record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayName"
+      ],
+      "properties": {
+        "name": {
+          "description": "Stable machine id of the distribution. Defaults to the repository stem when absent.",
+          "$ref": "#/$defs/shortName"
+        },
+        "displayName": {
+          "description": "Human-facing distribution title (e.g. Marketing Team). Presentation only - grouping joins on name.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "\\S"
+        }
+      }
+    }
+  }
+}

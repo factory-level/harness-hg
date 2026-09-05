@@ -1,0 +1,23 @@
+hermes-profile: {{ include "hermes.fullname" . }}
+Namespace: {{ .Release.Namespace }}
+
+{{- if eq .Values.providers.compute "pod" }}
+
+StatefulSet {{ include "hermes.fullname" . }} manages one pod running the
+persona "{{ .Values.spec.persona }}" (source {{ .Values.spec.source }}@{{ .Values.spec.sha }}).
+
+Check rollout status:
+  kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "hermes.fullname" . }}
+
+Check health (unauthenticated):
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "hermes.fullname" . }} 8642:8642
+  curl -s http://127.0.0.1:8642/health
+
+{{- if .Values.spec.apps }}
+
+Helm apps (one Argo CD Application each, in the argocd namespace):
+{{- range .Values.spec.apps }}
+  - {{ include "hermes.appName" (dict "root" $ "app" .name) }} ({{ if eq .repo "local" }}local chart {{ .chart }}{{ else }}{{ .chart }}@{{ .version }} from {{ .repo }}{{ end }})
+{{- end }}
+{{- end }}
+{{- end }}

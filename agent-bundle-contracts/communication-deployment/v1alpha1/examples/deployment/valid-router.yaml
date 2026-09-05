@@ -1,0 +1,8 @@
+spec:
+  id: router
+  scope: global
+  target: in-cluster
+  argoDestination: in-cluster
+  namespace: hermes-system
+  application: hermes-event-router
+  service: hermes-event-router

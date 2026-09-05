@@ -1,0 +1,254 @@
+{{- /*
+The profile's Grafana dashboard, delivered as a ConfigMap: the platform
+Grafana's dashboards sidecar (bootstrap/monitoring-grafana.yaml, label
+grafana_dashboard: "1", all namespaces) loads it. Seven panels: site
+visits over time (with the alert threshold drawn as a line), visits in
+the trailing 5 minutes, agent ready pods, and unavailable agent-app
+replicas — the same three queries the alert rules evaluate
+(configmap-alerts.yaml), so what fires is what you see — plus a second
+row of observer-metrics panels: MTD estimated spend, token usage by
+type, and estimated cost rate. Those query the hermes_* series the
+in-pod observer plugin emits; the `profile` label there equals
+monitoring.persona by construction (both are the namespace minus its
+"hermes-" prefix), which is the joint where this dashboard and the
+fleet budget dashboard (charts/fleet-dashboard) meet. The spend panels
+are empty-but-harmless until the observer emits, exactly like a profile
+with no traffic shows 0 visits; budget thresholds are deliberately NOT
+drawn here — budgets live fleet-side (bootstrap/fleet-dashboard.yaml),
+one source of truth.
+*/ -}}
+{{- if .Values.dashboard.enabled }}
+{{- $uid := include "monitoring.uidbase" . -}}
+{{- $persona := include "monitoring.persona" . -}}
+{{- $ds := printf "{\"type\":\"prometheus\",\"uid\":%s}" (.Values.datasourceUid | toJson) -}}
+{{- $visitsExpr := printf "sum(increase(traefik_service_requests_total{service=~%q}[5m])) or vector(0)" (include "monitoring.serviceRegex" .) | toJson -}}
+{{- $agentExpr := printf "sum(kube_statefulset_status_replicas_ready{namespace=%q,statefulset=%q}) or vector(0)" .Release.Namespace (include "monitoring.agentStatefulSet" .) | toJson -}}
+{{- $appsExpr := printf "sum(kube_deployment_status_replicas_unavailable{namespace=%q}) or vector(0)" .Release.Namespace | toJson -}}
+{{- $mtdExpr := printf "max(hermes_cost_usd_mtd{profile=%q}) or vector(0)" $persona | toJson -}}
+{{- $tokExpr := printf "sum by (type) (rate(hermes_usage_tokens_total{profile=%q}[1h])) * 3600" $persona | toJson -}}
+{{- $burnExpr := printf "sum(rate(hermes_estimated_cost_usd_total{profile=%q}[1h])) * 3600 or vector(0)" $persona | toJson -}}
+{{- $freshExpr := printf "time() - max(hermes_observer_last_event_timestamp_seconds{profile=%q})" $persona | toJson -}}
+{{- $uptimeExpr := printf "sum by (name) (rate(gatus_results_total{group=~\".*%s.*\", success=\"true\"}[10m])) / sum by (name) (rate(gatus_results_total{group=~\".*%s.*\"}[10m]))" $persona $persona | toJson -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: monitoring
+    grafana_dashboard: "1"
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    grafana_folder: Workloads
+data:
+  {{ .Release.Name }}-dashboard.json: |
+    {
+      "uid": {{ printf "%s-dash" $uid | toJson }},
+      "title": {{ printf "Hermes — %s" $persona | toJson }},
+      "schemaVersion": 39,
+      "version": 1,
+      "editable": true,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "Site visits (trailing 5m window)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "thresholdsStyle": { "mode": "line" } },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": {{ .Values.alert.siteVisits5m.threshold | float64 }} }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": {{ $visitsExpr }},
+              "legendFormat": "visits / 5m"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Visits (last 5m)",
+          "gridPos": { "x": 12, "y": 0, "w": 4, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": {{ .Values.alert.siteVisits5m.threshold | float64 }} }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $visitsExpr }}, "instant": true }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "Agent ready pods",
+          "gridPos": { "x": 16, "y": 0, "w": 4, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $agentExpr }}, "instant": true }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "App unavailable replicas",
+          "gridPos": { "x": 20, "y": 0, "w": 4, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $appsExpr }}, "instant": true }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "MTD estimated spend (USD)",
+          "gridPos": { "x": 0, "y": 8, "w": 6, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "currencyUSD",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [ { "color": "green", "value": null } ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $mtdExpr }}, "instant": true }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Token usage by type (tokens/h)",
+          "gridPos": { "x": 6, "y": 8, "w": 10, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": {
+              "custom": { "stacking": { "mode": "normal" } }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": {{ $tokExpr }},
+              "legendFormat": {{ `{{type}}` | toJson }}
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Estimated cost rate (USD/h)",
+          "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": { "unit": "currencyUSD" },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "expr": {{ $burnExpr }}, "legendFormat": "USD/h" }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "stat",
+          "title": "Agent freshness (s since last observer event)",
+          "description": "The in-pod observer's heartbeat. A climbing number means the agent runtime stopped emitting - the same fact the Nexus overlay levels.",
+          "gridPos": { "x": 0, "y": 16, "w": 6, "h": 8 },
+          "datasource": {{ $ds }},
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "orange", "value": 900 },
+                  { "color": "red", "value": 3600 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            { "refId": "A", "datasource": {{ $ds }}, "instant": true,
+              "expr": {{ $freshExpr }} }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Uptime probe success ratio (10m)",
+          "description": "External Gatus probes for this persona's group, scraped into Prometheus (ADR-55). Empty until the uptime workload's /metrics is scraped - absence here matches the overlay's uptime source saying not configured.",
+          "gridPos": { "x": 6, "y": 16, "w": 18, "h": 8 },
+          "datasource": {{ $ds }},
+          "fieldConfig": {
+            "defaults": { "unit": "percentunit", "min": 0, "max": 1 },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {{ $ds }},
+              "expr": {{ $uptimeExpr }},
+              "legendFormat": {{ `{{name}}` | toJson }}
+            }
+          ]
+        }
+      ]
+    }
+{{- end }}

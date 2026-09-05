@@ -1,0 +1,12 @@
+# Two bindings, one regional: the eu queue satisfies same-region
+# requirements from eu consumers only; the feed satisfies any locality
+# except same-target (an environment binding is never target-local).
+version: 1
+bindings:
+  sentiment-feed:
+    implementation: external-sentiment-api
+    url: https://sentiment.example.net/v1
+  work-queue:
+    implementation: managed-redis
+    url: http://redis.eu-platform.svc.cluster.local:6379
+    region: eu

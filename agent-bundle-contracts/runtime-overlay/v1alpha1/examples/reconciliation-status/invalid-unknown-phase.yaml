@@ -1,0 +1,10 @@
+# INVALID: `rolling-back` is not a phase this reconciler has. Automatic
+# destructive rollback is an explicit MVP cut, and the phase list is the
+# contract the overlay maps to a severity level - an unmapped phase would
+# fall through to a default, and the only safe default is "unknown", which
+# is worse than refusing the document.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: ReconciliationStatus
+observedAt: "2026-07-31T09:20:00Z"
+phase: rolling-back
+appliedSha: 4f2c1ab9d7e3c5b1a0f8e6d4c2b0a9f8e7d6c5b4

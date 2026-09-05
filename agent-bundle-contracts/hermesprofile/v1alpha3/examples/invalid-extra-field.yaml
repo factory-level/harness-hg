@@ -1,0 +1,6 @@
+# Invalid: spec.unknownField is not part of the schema (additionalProperties: false under spec).
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  unknownField: this-should-not-be-here

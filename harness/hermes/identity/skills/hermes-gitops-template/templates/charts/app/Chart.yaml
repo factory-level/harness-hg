@@ -1,0 +1,16 @@
+apiVersion: v2
+# Rename this to match the directory (charts/<PERSONA>-app) and the `chart:`
+# field in hermes-gitops.yaml. The chart is name-agnostic otherwise — its
+# templates key off .Chart.Name and .Release.Name, so this and the directory
+# name are the only two edits a rename needs.
+name: <PERSONA>-app
+description: >
+  The <PERSONA> agent-application: a small HTTP status page served by nginx.
+  The seed workload — proof the whole loop works and a place to grow the real
+  app. Referenced from hermes-gitops.yaml as a remote chart; publish it
+  (helm push ... oci://ghcr.io/<ORG>/charts) before deploying.
+type: application
+# Bump this on every change and match it in hermes-gitops.yaml's apps[].version
+# — registries reject re-pushing the same version.
+version: 0.1.0
+appVersion: "1.0"

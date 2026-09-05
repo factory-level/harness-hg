@@ -1,0 +1,127 @@
+# hermes-gitops-profiles ApplicationSet — the load-bearing file of the app-of-apps
+# scaffold. One Argo CD Application per `profiles/<name>/profile.yaml` file
+# committed to this GitOps repo. The record is PLAIN HELM VALUES (a single
+# top-level spec: block, no apiVersion/kind/metadata — there is no
+# HermesProfile CRD); its identity is its directory name, read as
+# `{{.path.basename}}`.
+#
+# Token syntax: this file mixes two substitution languages that MUST NOT
+# collide:
+#   - `__DOUBLE_UNDERSCORE__` tokens are scaffold placeholders, substituted
+#     ONCE by the emitter's scaffold step (see infra/gitops-template/README.md)
+#     when it renders this template into a real GitOps repo. They never
+#     reach Argo CD.
+#   - `{{ .foo }}` (Go template, dot-prefixed) is Argo CD ApplicationSet
+#     templating (spec.goTemplate: true below), evaluated per-generated-item
+#     at reconcile time. It is left untouched by the scaffold step.
+# Because the scaffold token alphabet (`__UPPER_SNAKE__`, no braces) shares
+# no characters with Go template delimiters (`{{ }}` / `{{- -}}`), a naive
+# string-replace scaffold step cannot accidentally corrupt the Go template
+# side, and vice versa.
+#
+# Validated against Argo CD v3.4.5 (chart argo-cd 10.1.4, argo-helm) docs:
+#   - Generators-Git.md (git "files" generator, goTemplate path.basename)
+#   - GoTemplate.md (goTemplate: true, goTemplateOptions)
+#   - multiple_sources.md (helm valueFiles referencing a second source via
+#     `ref:` / `$<ref>/path`; confirmed by an Argo CD maintainer as a
+#     supported pattern in ApplicationSets, not just plain Applications —
+#     see infra/gitops-template/README.md "ArgoCD validation evidence")
+# See infra/gitops-template/README.md for the full evidence trail.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-profiles
+  namespace: argocd
+spec:
+  # STAGED, NOT PROMOTED: the root Application excludes this file from its
+  # recursive bootstrap sync (see infra/src/components/root-app). If a live
+  # copy is ever deleted or pruned anyway, leave the generated Applications
+  # standing (no owner-reference cascade): the 2026-08-28 accidental
+  # promotion showed a pruned AppSet cascade-deletes its Applications AND
+  # their workloads/PVCs. (This is the AppSet-level syncPolicy - distinct
+  # from the generated Applications' template.spec.syncPolicy.)
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+  # An operator (or `hg backup restore`'s quiesce) may pause a generated
+  # Application's sync policy; without this the controller reverts the
+  # patch within seconds and selfHeal resurrects the workload MID-RESTORE
+  # (found live: a scale-to-0 quiesce lost to the AppSet on the first
+  # real-cluster verify-restore). Ownership of syncPolicy is ceded to
+  # whoever holds the pause; everything else stays controller-enforced.
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "profiles/*/profile.yaml"
+  template:
+    metadata:
+      # ADR-149/151: a record under profiles/ may be an Eve agent
+      # (spec.runtime: eve). Its instance is ag-eve-<name> on the eve-agent
+      # chart; a Hermes record (no runtime key) keeps hermes-<name> on
+      # hermes-profile. `dig`, not `default`: under missingkey=error a
+      # missing key fails before `default` runs, while sprig's dig returns
+      # the fallback.
+      name: '{{ if eq (dig "runtime" "hermes" .spec) "eve" }}ag-eve-{{ else }}hermes-{{ end }}{{.path.basename}}'
+      labels:
+        hermes-gitops.factorylevel.dev/persona: "{{.spec.persona}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        # Source 1: the versioned Helm chart that renders one HermesProfile
+        # (agent StatefulSet + one Argo CD Application per spec.apps[] helm
+        # app). Lives in the harness-hg repo, not the GitOps repo.
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          path: '{{ if eq (dig "runtime" "hermes" .spec) "eve" }}harness/eve/charts/eve-agent{{ else }}harness/hermes/charts/hermes-profile{{ end }}'
+          helm:
+            releaseName: '{{ if eq (dig "runtime" "hermes" .spec) "eve" }}ag-eve-{{ else }}hermes-{{ end }}{{.path.basename}}'
+            # For the workspace values file below - every other file in
+            # this list always exists.
+            ignoreMissingValueFiles: true
+            valueFiles:
+              # $gitops resolves against source 2 below (ref: gitops).
+              # Layering: cluster-wide defaults first, then this profile's
+              # own instance record (which doubles as a Helm values
+              # override — every field under `spec:` in profile.yaml is
+              # also a valid chart value).
+              - $gitops/bootstrap/values/cluster-values.yaml
+              - $gitops/profiles/{{.path.basename}}/profile.yaml
+              # Workspace repository mounts (#362) - present only for
+              # profiles a WorkspaceBindings declaration binds.
+              - $gitops/deployments/workspaces/profiles/{{.path.basename}}.yaml
+              - $gitops/deployments/connections/profiles/{{.path.basename}}.yaml
+        # Source 2: this GitOps repo itself, referenced only for its files
+        # (no `path`, so nothing is rendered directly from it) — it exists
+        # purely to give source 1's valueFiles a `$gitops/...` root.
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        # v1 is single-cluster: every profile lands on the control-plane
+        # cluster. "in-cluster" is Argo CD's built-in NAME for the local
+        # cluster (server https://kubernetes.default.svc); the record-level
+        # spec.targetCluster placement field was removed with the helm-apps
+        # contract (multi-cluster placement is out of scope for v1).
+        name: in-cluster
+        namespace: '{{ if eq (dig "runtime" "hermes" .spec) "eve" }}ag-eve-{{ else }}hermes-{{ end }}{{.path.basename}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

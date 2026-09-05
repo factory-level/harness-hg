@@ -1,0 +1,24 @@
+# After the rehearsal replayed this backup onto a rebuilt cluster. `restoredAt`
+# and `durationSeconds` are what an RPO/RTO number is allowed to derive from -
+# `createdAt` alone never is.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: PlatformBackupStatus
+observedAt: "2026-08-01T05:02:19Z"
+backupId: hg-2026-08-01T03-11-52z
+createdAt: "2026-08-01T03:11:52Z"
+environment: marketing-sre,nexus
+destinationClass: local-directory
+verification:
+  state: restorable
+  restoredAt: "2026-08-01T04:58:40Z"
+  durationSeconds: 219
+components:
+  - name: volume/nexus/nexus-state-backup
+    kind: volume-archive
+    profile: nexus
+    routine: nexus-state-backup
+    sizeKB: 412
+    checksum: 9f3a1c7e2b45
+    consistency: fresh routine invocation, exported and checksummed
+summary: restored 1 archive and verified 6 declarative components
+version: v0.4.1

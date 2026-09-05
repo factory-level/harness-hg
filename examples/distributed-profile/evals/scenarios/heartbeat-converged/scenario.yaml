@@ -1,0 +1,11 @@
+# Evaluator-owned invocation (no `prompt:`), so this scenario spends no
+# model call - it asserts on the runtime's own machine-readable state.
+name: heartbeat-converged
+profile: persona-echo
+description: >
+  The distribution's declared cron job (cron/echo-heartbeat.yaml) is
+  converged into the running agent's job store - the same claim the chart's
+  boot script makes at startup, proved from outside via `cron sync
+  --dry-run --json`.
+evaluate: evaluate.sh
+timeout: 120

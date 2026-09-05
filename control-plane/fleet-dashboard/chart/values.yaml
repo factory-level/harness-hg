@@ -1,0 +1,41 @@
+# Fleet budgets and alert receivers. The canonical editing surface is
+# bootstrap/fleet-dashboard.yaml's helm.valuesObject (a normal GitOps
+# change) - these are the chart-side defaults and their documentation.
+
+# Grafana datasource uid the dashboard + alert rules query. Must match
+# the FIXED uid provisioned by bootstrap/monitoring-grafana.yaml.
+datasourceUid: prometheus
+
+# persona -> monthly USD budget. Keys are personas (the profile
+# namespace minus its "hermes-" prefix, which is exactly the observer
+# plugin's `profile` metric label). Each entry yields a row in the
+# budget panels AND a BudgetExceeded alert rule. Empty map = the
+# dashboard renders with fleet-total panels only, no budget rows and no
+# rules.
+#   budgets:
+#     social-media: 25
+#     event-manager: 100
+budgets: {}
+
+dashboard:
+  enabled: true
+
+alert:
+  # Master switch for the BudgetExceeded rules (the dashboard stays
+  # useful without any receiver configured).
+  enabled: true
+  # Where notifications go. If any rule would render (alert.enabled and
+  # budgets non-empty, or fleetBudgetUsd > 0) at least one must be set -
+  # the render fails loudly otherwise (an alert with no receiver is a
+  # silent no-op, and silent is worse than loud).
+  webhookUrl: ""
+  discordUrl: ""
+  # How often Grafana evaluates the rule group. MTD spend moves slowly;
+  # 5m is plenty.
+  evaluationInterval: 5m
+  # MTD spend only ever rises within a month - no flap-damping needed,
+  # fire on the first breaching evaluation.
+  pendingFor: 0s
+  # Optional fleet-total rule: fires when the SUM of every profile's
+  # MTD estimated spend exceeds this. 0 = rule off.
+  fleetBudgetUsd: 0

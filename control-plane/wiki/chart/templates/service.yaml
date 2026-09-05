@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wiki
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: wiki
+    app.kubernetes.io/name: wiki
+spec:
+  selector:
+    app.kubernetes.io/name: wiki
+  ports:
+    - {name: http, port: 80, targetPort: http}

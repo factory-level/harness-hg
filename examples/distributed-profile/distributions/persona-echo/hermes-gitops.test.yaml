@@ -1,0 +1,41 @@
+# Test config for the hermes-gitops local testing CLI (spec §27) — read
+# by `hermes-gitops test` and friends, versioned with the profile. See
+# _docs/wiki/reference/cli/index.md.
+version: 1
+profile: .
+
+# Values the CLI merges into the rendered record (the platform's normal
+# appValues channel). The CLI auto-fills monitoring.alert.webhookUrl with
+# its own local alert sink; this override just tightens the visit
+# threshold so local traffic can trip the alert while testing.
+appValues:
+  monitoring:
+    alert:
+      siteVisits5m:
+        threshold: 5
+
+# env_requires declared by distribution.yaml, satisfied with LOCAL DEV
+# values (never production credentials) - `hg up` writes these into the
+# profile's env Secret the same way the fleet's agentSecrets channel
+# would.
+secrets:
+  ANTHROPIC_API_KEY: local-dev-placeholder-key
+
+# Deterministic smoke checks: fetched through a port-forward to the named
+# Service; the response must contain the marker.
+smoke:
+  - service: hermes-persona-echo-test-page-test-page
+    port: 80
+    path: /
+    expect_contains: "Hermes GitOps test page"
+
+# Behavioural coverage lives in an OPTIONAL evals/ directory, run with
+# `hg eval --dir <repo>` (see ../../evals/ and _docs/wiki/platform/nexus.md).
+# The old behavioral:/pyeval: keys here are deprecated.
+
+# Profile-owned reset: nothing stateful beyond the generic prune for this
+# example - the block is here (empty) as the discoverable convention.
+reset:
+  delete_pvcs: []
+  wipe_namespaces: []
+  preserve: []

@@ -1,0 +1,12 @@
+# INVALID: the v1alpha1 apiVersion. A reader that accepted both would
+# have to guess whether `destinationClass: gcs` came from a producer that
+# knew about emulation or one that did not - the version is what makes
+# that unambiguous.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: PlatformBackupStatus
+observedAt: "2026-08-02T03:14:07Z"
+backupId: hg-x
+createdAt: "2026-08-02T03:11:52Z"
+destinationClass: gcs
+verification:
+  state: available

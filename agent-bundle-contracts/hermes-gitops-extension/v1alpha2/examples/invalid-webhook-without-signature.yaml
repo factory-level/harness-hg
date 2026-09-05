@@ -1,0 +1,8 @@
+# A webhook endpoint with no signature declaration: an unverifiable webhook
+# is rejected at the schema, before the compiler's TOPO013 ever runs.
+contractVersion: 2
+endpoints:
+  - name: hooks
+    port: 8644
+    path: /webhooks/alerts
+    type: webhook

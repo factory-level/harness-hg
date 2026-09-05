@@ -1,0 +1,17 @@
+# The smallest honest manifest: a standalone Eve agent with nothing bound.
+# Empty lists are PRESENT, never omitted - "no workspaces" and "the producer
+# forgot workspaces" must not look the same to a reader.
+contract: agent-runtime/v1alpha1
+spec:
+  name: echo
+  engine: eve
+  instance: ag-eve-echo
+  namespace: ag-eve-echo
+  runtimeImage: ghcr.io/example/eve-runtime:0.42.0
+  source:
+    repository: https://github.com/factorylevel/eve-agents.git
+    revision: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  workspaces: []
+  requiredSecrets: []
+  connections: []
+  apps: []

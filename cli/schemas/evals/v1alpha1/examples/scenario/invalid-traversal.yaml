@@ -1,0 +1,4 @@
+# Invalid: `..` traversal out of the scenario directory is rejected.
+name: escape-traversal
+profile: persona-echo
+evaluate: ../../outside/evil.sh

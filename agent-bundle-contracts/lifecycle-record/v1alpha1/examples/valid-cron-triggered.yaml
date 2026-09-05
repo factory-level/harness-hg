@@ -1,0 +1,15 @@
+# A scheduled trigger with no human behind it - `testRun` absent is what
+# makes it autonomous, which is half of #349's exit proof.
+version: 1
+recordId: 4f8c1a2e-3b7d-4c9e-8a1f-0b2c3d4e5f60
+traceId: 9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d
+plane: cron
+type: cron.triggered
+occurredAt: "2026-08-12T02:00:00Z"
+recordedAt: "2026-08-12T02:00:00.412Z"
+correlationId: communication-proof
+deploymentRevision: "b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5"
+profile: manager
+redactedTarget:
+  kind: job
+  ref: communication-proof

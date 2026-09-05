@@ -1,0 +1,15 @@
+# Profile isolation: the event reaches platform-sre and NOTHING reaches
+# unrelated-sre - asserted from the receipts, where every delivery is
+# accounted for.
+name: isolation
+profile: platform-sre
+invoke:
+  event:
+    name: observability.alert
+    from: platform-sre/monitoring#alerts
+    payload: fixtures/alert-firing.json
+expect:
+  outputs:
+    - agent:
+        profile: platform-sre
+evaluate: evaluate.py

@@ -1,0 +1,60 @@
+# A repository-level contribution shaped like the social-media operation:
+# one agent, one owned application, the operator, a department, and edges.
+apiVersion: dashboard.hermes-gitops/v1alpha2
+kind: NexusContribution
+metadata:
+  id: factorylevel-social-media
+  title: Factory Level Social Media
+  description: Agentic social-media operation
+spec:
+  components:
+    - id: marketing-manager
+      kind: agent
+      title: Marketing Manager
+      description: Coordinates planning, drafting, approval, and publishing.
+      bind:
+        profile: marketing-manager
+      display:
+        icon: user-cog
+        providerBadge: true
+      details:
+        showCrons: true
+        showConfigSummary: true
+        showAccessors: true
+      observability:
+        grafanaDashboard: hermes-agent-overview
+    - id: content-kanban
+      kind: application
+      title: Content Kanban
+      description: Shared operational board for content production.
+      bind:
+        profile: marketing-manager
+        app: content-kanban
+      details:
+        showArgoCd: true
+        endpointNames:
+          - ui
+      observability:
+        grafanaDashboard: kanban-app-overview
+  people:
+    - id: calvin
+      displayName: Calvin
+      title: Operator
+      cohorts:
+        - marketing
+      accessors:
+        - marketing-manager
+        - content-kanban
+  groups:
+    - id: marketing
+      title: Marketing
+      kind: department
+  relationships:
+    - id: manager-controls-board
+      from: marketing-manager
+      to: content-kanban
+      label: manages
+    - id: calvin-operates-marketing
+      from: calvin
+      to: marketing
+      label: operates

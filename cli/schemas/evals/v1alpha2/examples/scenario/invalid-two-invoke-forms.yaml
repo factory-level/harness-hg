@@ -1,0 +1,14 @@
+# Exactly one invocation form.
+name: two-forms
+profile: platform-sre
+invoke:
+  event:
+    name: observability.alert
+    payload: fixtures/alert-firing.json
+  externalWebhook:
+    binding: demo-alert-source
+    payload: fixtures/external-alert.json
+expect:
+  outputs:
+    - agent:
+        profile: platform-sre

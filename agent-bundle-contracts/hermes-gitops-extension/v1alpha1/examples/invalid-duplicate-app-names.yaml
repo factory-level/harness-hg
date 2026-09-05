@@ -1,0 +1,13 @@
+# Invalid: apps[].name must be unique within the file. The schema's
+# uniqueItems rejects these byte-identical duplicate entries; same-name
+# entries that differ elsewhere are rejected by the emitter
+# (render.resolve_apps) before any manifest is generated.
+apps:
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm
+    version: 1.9.1
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm
+    version: 1.9.1

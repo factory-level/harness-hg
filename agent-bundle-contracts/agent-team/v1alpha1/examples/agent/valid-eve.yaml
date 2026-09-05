@@ -1,0 +1,14 @@
+# An Eve agent: envRequires is the whole environment contract.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Agent
+harness: eve
+envRequires:
+  - name: ANTHROPIC_API_KEY
+    description: Anthropic API key; agent.ts calls the provider directly.
+  - SLACK_BOT_TOKEN
+topology:
+  supportedLayouts: [single, hub-spoke]
+  agent: {multiplicity: per-region, dataBoundary: region}
+deployment:
+  diskSizeGb: 10
+gitAuthSecretRef: hermes-marketing-manager-eve-git-auth

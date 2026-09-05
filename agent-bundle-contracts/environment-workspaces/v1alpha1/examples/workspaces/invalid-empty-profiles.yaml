@@ -1,0 +1,21 @@
+# A binding must name at least one profile - a repository bound to no
+# profile is dead configuration, not a default grant.
+apiVersion: hermes.gitops/v1alpha1
+kind: WorkspaceBindings
+
+repositories:
+  - name: strategy-context
+    source:
+      url: git@github.com:organization/strategy-context.git
+      revision:
+        mode: pinned
+        sha: 0123456789abcdef0123456789abcdef01234567
+      authSecretRef: hermes-strategy-context-git
+    mount:
+      path: /workspaces/strategy-context
+      access: read-only
+
+bindings:
+  - repository: strategy-context
+    profiles: []
+    purpose: strategy-context

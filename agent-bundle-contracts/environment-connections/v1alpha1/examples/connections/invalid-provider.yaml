@@ -1,0 +1,7 @@
+apiVersion: hermes.gitops/v1alpha1
+kind: Connections
+connections:
+  - name: chat
+    provider: slack
+    bindings:
+      - profile: echo

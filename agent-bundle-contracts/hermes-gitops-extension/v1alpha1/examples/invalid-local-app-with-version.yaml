@@ -1,0 +1,8 @@
+# Invalid: `version` is FORBIDDEN when repo is the reserved word `local` -
+# local charts ship with the platform/GitOps repo and version with the
+# platform revision, so a per-app version pin is meaningless here.
+apps:
+  - name: docs-site
+    chart: charts/test-page
+    repo: local
+    version: 1.0.0

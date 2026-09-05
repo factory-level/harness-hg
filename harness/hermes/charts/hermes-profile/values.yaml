@@ -1,0 +1,240 @@
+# Default values for hermes-profile.
+#
+# In real use this chart is rendered by the hermes-gitops-profiles
+# ApplicationSet (infra/gitops-template/bootstrap/applicationset.yaml) with two
+# value files layered on top of these defaults, in this order:
+#   1. bootstrap/values/cluster-values.yaml - providers/image/platformRepo/
+#      appProject/secretBackend (schemas/cluster-values/v1alpha1/
+#      cluster-values.schema.json)
+#   2. profiles/<name>/profile.yaml - the HermesProfile record itself. Its
+#      apiVersion/kind/metadata/spec keys become .Values.apiVersion, .Values.kind,
+#      .Values.metadata, .Values.spec verbatim (every field under `spec:` in
+#      profile.yaml doubles as a Helm value override).
+#
+# The placeholder metadata/spec values below are schema-valid (see
+# values.schema.json) so `helm lint`/`helm template` work on this chart
+# alone, without either value file, for quick iteration. Real installs
+# always override them via the two files above.
+
+# -- providers: which backend implements each concern for this cluster.
+# compute: pod (this chart's StatefulSet) is the only compute provider -
+# see templates/_helpers.tpl's hermes.computeGuard.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+  # backup: which backend implements spec.backup intent. "pvc" archives the
+  # instance's data volume into a per-instance backups PVC on the declared
+  # schedule (templates/pod/backup.yaml); "none" means the platform offers no
+  # backup destination - a profile declaring spec.backup then fails the
+  # render loudly (hermes.backupGuard) instead of silently skipping backups.
+  backup: none
+
+# -- image: the Hermes agent container image, used by both the bootstrap
+# initContainer and the main container (spec.deployment.baseImageTag, if
+# set on the profile, overrides image.tag - see templates/pod/statefulset.yaml).
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# -- platformRepo: the repo + revision Argo CD renders THIS chart from (the
+# profiles ApplicationSet's chart source - the hermes-gitops-plugin repo,
+# pinned at the operator's chart revision). Threaded through cluster-values
+# (__HERMES_GITOPS_REPO_URL__/__CHART_REVISION__ scaffold tokens) and reused
+# by templates/apps.yaml as the Application source for spec.apps[] entries
+# with `repo: local`: local charts ship inside this repo (`chart` is the
+# path into it) and version with it - no per-app version field.
+platformRepo:
+  url: https://github.com/factory-level/harness-hg.git
+  revision: main
+
+# -- appProject: the Argo CD AppProject child Applications
+# (templates/apps.yaml) are created in, plus the platform's remote helm
+# repo allowlist. sourceRepos lists the https://:// or oci:// helm repos
+# profiles may pull remote spec.apps[] charts from; a remote repo NOT
+# listed here fails the render loudly (hermes.appsGuard) instead of
+# rendering an Application the AppProject would refuse to sync. Must be
+# kept in sync with the sourceRepos of bootstrap/project.yaml in the
+# scaffolded GitOps repo - that AppProject is the server-side enforcement
+# of the same allowlist. `repo: local` apps need no entry (the platform
+# repo is always allowed).
+appProject:
+  name: hermes-gitops
+  sourceRepos: []
+
+# -- appsManagedExternally: suppress templates/apps.yaml entirely. Set (via
+# valuesObject on the agents ApplicationSet's chart source) when the
+# hermes-gitops-apps ApplicationSet owns one Application per
+# deployments/apps/ record - rendering the chart's own children too would
+# be a two-controller fight over the same names (#498). CHART-ONLY value:
+# it is not part of the frozen cluster-values schema and never appears in
+# a record; the appsGuard allowlist check moves to the compiler (TOPO008)
+# when suppressed. Default false: standalone chart renders keep their
+# children.
+appsManagedExternally: false
+
+# -- secretBackend: per-provider secret backend configuration. Only the
+# `k8s` shape is consumed directly by this chart (via the ClusterSecretStore
+# named "hermes-gitops" that bootstrap stage 3 creates - see
+# infra/src/components/secret-store). The namespace field
+# here is carried through for schema parity with cluster-values but is not
+# read by this chart: ClusterSecretStore "hermes-gitops" is cluster-scoped
+# and already pins its own remoteNamespace server-side.
+secretBackend:
+  k8s:
+    namespace: hermes-secrets
+
+# -- spec: the HermesProfile instance record — PLAIN HELM VALUES (no
+# apiVersion/kind/metadata wrapper; there is no HermesProfile CRD). Real
+# values come from profiles/<name>/profile.yaml; the record's identity is
+# its directory name, delivered to this chart via the Helm release name
+# ("hermes-<name>" — see _helpers.tpl's hermes.name). These are
+# placeholder-but-schema-valid defaults for standalone
+# `helm lint`/`helm template`.
+spec:
+  persona: unset
+  source: example.invalid/unset/unset
+  sha: "0000000000000000000000000000000000000000"
+
+# -- ingress: chart-owned knobs not covered by cluster-values.
+ingress:
+  baseDomain: hermes.local
+
+# -- networkPolicy: opt-in NetworkPolicy restricting ingress to this
+# instance's pod. Off by default so a fresh cluster without a CNI that
+# enforces NetworkPolicy doesn't silently look broken.
+networkPolicy:
+  enabled: false
+
+# -- cloudflare: the Cloudflare Tunnel ingress configuration
+# (templates/tunnel/stack-cloudflare.yaml, templates/tunnel/
+# cf-tunnel-token-secret.yaml, templates/pod/statefulset.yaml's cloudflared
+# sidecar - all providers.ingress == "cloudflare"). Schema-legal in the
+# CANONICAL cluster-values schema since issue #20 [G2]
+# (schemas/cluster-values/v1alpha1's `cloudflare` block); the chart's own
+# values.schema.json mirrors it (superset-consistency asserted by
+# tests/test_values_schema_subset.py).
+cloudflare:
+  # Cloudflare account + zone every hermes-<name>-tunnel Stack in this
+  # cluster provisions its tunnel/DNS/Access resources under. No safe
+  # default - hermes.cloudflareConfigGuard (_helpers.tpl) fails loudly at
+  # helm-template time when providers.ingress=cloudflare and any of these
+  # three is unset.
+  accountId: ""
+  zoneId: ""
+  zoneName: ""
+  # cloudflared sidecar image (templates/pod/statefulset.yaml, pod compute
+  # + providers.ingress=cloudflare only - see that file's inline comment).
+  cloudflaredImage:
+    repository: cloudflare/cloudflared
+    tag: latest
+  # Access application/policy config for spec.expose.access.policy values
+  # "idp"/"mixed" (schemas/hermesprofile/v1alpha2's expose.access.policy
+  # enum).
+  access:
+    # ID of an EXISTING Cloudflare Access Identity Provider integration
+    # (created out of band in the Cloudflare Zero Trust dashboard - this
+    # program never creates one, see _docs/wiki/platform/tunneling.md). Required only
+    # when at least one installed instance's spec.expose.access.policy is
+    # "idp" or "mixed" - hermes.cloudflareConfigGuard enforces that
+    # per-instance, not here (this key may stay empty for a fleet that
+    # only ever uses "service-token").
+    idpId: ""
+  # Cloudflare API token every tunnel Stack's workspace pod authenticates
+  # to the Cloudflare API with (CLOUDFLARE_API_TOKEN envRef -
+  # pulumi_cloudflare's own documented config surface, see
+  # _docs/wiki/platform/tunneling.md's "API token scopes" section for exactly which
+  # scopes it needs). Fleet-wide, SHARED remote key (same "seed once,
+  # every instance's ExternalSecret reads it" pattern as
+  # pulumiBackend.*.remote*Key below), NOT a per-instance one - see
+  # templates/tunnel/pulumi-backend-cloudflare.yaml.
+  apiToken:
+    remoteSecretKey: hermes-gitops-cloudflare-api-token
+  # Git identity for the infra/pulumi/programs/cloudflare-tunnel program the
+  # rendered tunnel Stack CR points at. Defaults to this chart's own repo,
+  # mirroring infra/src/control-flow/config.ts's
+  # hermesGitopsRepoUrl/chartRevision defaults - override only if you
+  # vendor infra/pulumi/programs/cloudflare-tunnel elsewhere.
+  tunnel:
+    projectRepo: https://github.com/factory-level/harness-hg.git
+    # commit takes precedence over branch when both are set (mutually
+    # exclusive on the Stack CRD - see templates/tunnel/stack-cloudflare.yaml).
+    commit: ""
+    branch: main
+    # Kubernetes ServiceAccount the tunnel Stack CR's workspace pod runs
+    # as (Stack spec.serviceAccountName). Expected to already exist, with
+    # enough Cloudflare API credentials (envRefs, not modeled here - a
+    # real fleet injects CLOUDFLARE_API_TOKEN via the SAME
+    # ClusterSecretStore mechanism pulumiBackend below uses, or via the
+    # workspace pod's own env - see _docs/wiki/platform/tunneling.md) and, for
+    # providers.secret=k8s, RBAC to write Secrets into hermes-secrets (see
+    # _docs/wiki/platform/tunneling.md's "Kubernetes RBAC for the workspace pod"
+    # section) - this chart does not create either. Empty string defaults
+    # to this instance's own pod ServiceAccount name (hermes.fullname),
+    # which templates/serviceaccount.yaml always creates for the pod
+    # workload.
+    workspaceServiceAccountName: ""
+  # Pulumi state backend for the tunnel Stack CR's workspace,
+  # config-switched between Pulumi Cloud (a PULUMI_ACCESS_TOKEN Secret)
+  # and a self-managed backend (PULUMI_BACKEND_URL + a passphrase Secret)
+  # - see templates/tunnel/stack-cloudflare.yaml and
+  # templates/tunnel/pulumi-backend-cloudflare.yaml.
+  pulumiBackend:
+    mode: self-managed
+    pulumiCloud:
+      remoteSecretKey: hermes-gitops-pulumi-backend-token
+    selfManaged:
+      backendUrl: ""
+      remotePassphraseKey: hermes-gitops-pulumi-backend-passphrase
+
+# -- backup: platform-side configuration for the providers.backup=pvc
+# destination (templates/pod/backup.yaml). The application side only ever
+# declares intent (spec.backup: schedule + retention); everything here is a
+# cluster concern, layered in via cluster-values.yaml.
+backup:
+  # Image the archive CronJob runs (tar + sh are all it needs).
+  image:
+    repository: python
+    tag: "3.12-slim"
+  # The per-instance backups PVC (hermes-<name>-backups).
+  pvc:
+    size: 5Gi
+    # storageClassName: unset -> the cluster default StorageClass.
+    storageClassName: ""
+
+# -- metrics: the hermes.observer.v1 in-pod Prometheus exporter (the
+# observer-metrics directory plugin this chart ships via
+# templates/pod/configmap-plugins.yaml + boot.sh's copy/enable step).
+# Default ON: it is chart-owned trusted code, fail-open by design, and
+# the port is cluster-internal only (no ingress provider ever routes
+# it; the platform Prometheus scrapes it via the pod's prometheus.io/*
+# annotations). Per-profile opt-out without chart changes: set
+# HERMES_OBSERVER_METRICS_DISABLED=1 in the profile's env Secret
+# (spec.envRequires).
+metrics:
+  enabled: true
+  port: 9464
+
+# -- observability.observerUrl: where the agent's lifecycle records go
+# (hermes-gitops #476). Rendered as HERMES_OBSERVER_URL on the agent
+# container; the fork's hermes_lifecycle module POSTs metadata-only
+# records (cron/agent/tool/gateway planes) there, fire-and-forget.
+# Empty (the default) means the module is a no-op - observability is
+# opt-in per environment, and a dead observer never touches a run.
+observability:
+  observerUrl: ""
+
+# -- probes: startup/liveness/readiness tuning for the main container's
+# GET /health:8642 (unauthenticated - gateway/platforms/api_server.py in
+# the hermes-agent-gitops fork, ~line 1836).
+probes:
+  startup:
+    failureThreshold: 60
+    periodSeconds: 5
+  liveness:
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    periodSeconds: 10
+    failureThreshold: 3

@@ -1,0 +1,37 @@
+# Operational knobs only. `spec` is the compiled routing configuration
+# (deployments/communication/<id>/values.yaml, byte-for-byte); everything
+# a route needs is IN it, and nothing outside it can add a destination.
+
+image: oven/bun:1-alpine
+
+# The environment name every envelope and session key carries.
+environment: local
+
+# Where the recording ChatOps provider posts captured messages (the local
+# sink). Required whenever any connection binds provider: recording.
+recordingBase: ""
+
+# The Secret (in the router's namespace) holding per-target signing
+# secrets: one key per agent edge secretName. Values are provisioned by
+# the platform (locally: hg up), NEVER by this chart.
+secretsName: hermes-event-router-secrets
+
+port: 8080
+
+# The compiled record. REQUIRED - the chart refuses to render without it
+# (an event router with no routing table is a misconfiguration, not a
+# default).
+spec: {}
+
+# -- backup: the dead-letter archive (#303). Dead letters are the record
+# of what failed and the only input `hg event dlq replay` has; in-flight
+# stream entries and consumer offsets are deliberately NOT archived,
+# because restoring those would replay deliveries that already succeeded.
+# Rendered only when spec.durableProvider is declared: dead letters live in
+# the broker, and without one there is nothing to archive or restore into.
+backup:
+  dlq:
+    enabled: true
+    schedule: "20 3 * * *"
+    retention: 7
+    size: 1Gi

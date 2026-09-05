@@ -1,0 +1,7 @@
+# Where THIS repo's emitted records go (bundle-destination/v1alpha1).
+# `hg topology emit` uses it as the default destination when no --output
+# names one. A URL, never a local path.
+apiVersion: hermes-gitops.factorylevel.dev/bundle-destination/v1alpha1
+gitops:
+  repoUrl: https://github.com/<org>/agent-team.gitops.git
+  branch: main

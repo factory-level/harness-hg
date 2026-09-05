@@ -1,0 +1,13 @@
+# REJECTED: an empty image is a misconfiguration, not a default - omit the
+# key entirely to use the chart default.
+image: ""
+spec:
+  router:
+    id: router
+    scope: global
+    namespace: hermes-system
+    service: hermes-event-router
+  chatopsConnections: {}
+  producers: []
+  externalInputs: []
+  edges: []

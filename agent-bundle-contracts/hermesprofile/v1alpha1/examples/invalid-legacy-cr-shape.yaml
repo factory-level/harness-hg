@@ -1,0 +1,12 @@
+# Invalid: the legacy custom-resource wrapper (apiVersion/kind/metadata) is no
+# longer part of the record contract — records are PLAIN HELM VALUES with a
+# single top-level spec: block; identity is the record's directory name.
+# additionalProperties: false at the root rejects all three legacy keys.
+apiVersion: hermes-gitops.factorylevel.dev/v1alpha1
+kind: HermesProfile
+metadata:
+  name: support-agent
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d

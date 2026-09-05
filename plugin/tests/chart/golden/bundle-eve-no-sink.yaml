@@ -1,0 +1,882 @@
+---
+# Source: eve-bundle/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ag-eve-team
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+---
+# Source: eve-bundle/templates/configmap-boot.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ag-eve-team-boot
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+data:
+  channel-eve.ts: |
+    // The platform's route policy for a self-hosted Eve agent (ADR-149).
+    //
+    // Eve fails closed in production: without an authenticator that accepts the
+    // caller, every session route answers 401. The eve-agent chart mints a
+    // per-instance credential (Secret ag-eve-<name>-route-auth), mounts its
+    // password at ROUTE_AUTH_BASIC_PASSWORD_FILE and names the user in
+    // ROUTE_AUTH_BASIC_USERNAME; `hg test` and `hg agent prove` authenticate with
+    // the same pair.
+    //
+    // ONE credential, TWO header schemes. Basic is what hg and browsers send;
+    // Bearer <password> is what `eve eval --url` sends when EVE_EVAL_AUTH_TOKEN is
+    // set (eve's own evals authenticate with a bearer, never Basic), so the
+    // agent's evals can run against its deployment with the same minted secret.
+    //
+    // The password is read from the file ON EVERY REQUEST, not captured at
+    // module load: a re-minted Secret (ESO re-running its generator after a
+    // chart-label bump) propagates through the mounted volume and takes effect
+    // without a pod restart. A plain httpBasic({username, password}) would keep
+    // verifying the old value until the process restarted.
+    //
+    // This file is the authored form. When an agent ships NO agent/channels/eve.ts
+    // the chart's boot script writes exactly this one, so a persona only authors
+    // the file to add a stricter or different policy (OIDC, a custom AuthFn).
+    // localDev() stays in the walk: it authenticates only under `eve dev`.
+    import { readFileSync } from "node:fs";
+    import { timingSafeEqual } from "node:crypto";
+    import {
+      type AuthFn,
+      extractBearerToken,
+      localDev,
+      verifyHttpBasic,
+      withAuthChallenges,
+    } from "eve/channels/auth";
+    import { eveChannel } from "eve/channels/eve";
+    
+    const username = process.env.ROUTE_AUTH_BASIC_USERNAME ?? "";
+    const passwordFile = process.env.ROUTE_AUTH_BASIC_PASSWORD_FILE ?? "";
+    
+    function currentPassword(): string {
+      if (passwordFile) {
+        try {
+          return readFileSync(passwordFile, "utf8").trim();
+        } catch {
+          return "";
+        }
+      }
+      return process.env.ROUTE_AUTH_BASIC_PASSWORD ?? "";
+    }
+    
+    function sameSecret(a: string, b: string): boolean {
+      const x = Buffer.from(a, "utf8");
+      const y = Buffer.from(b, "utf8");
+      return x.length === y.length && timingSafeEqual(x, y);
+    }
+    
+    const platformCredential: AuthFn<Request> = withAuthChallenges(
+      (request) => {
+        const password = currentPassword();
+        if (!username || !password) return null;
+        const header = request.headers.get("authorization");
+        const basic = verifyHttpBasic(header, { username, password });
+        if (basic.ok) return basic.sessionAuth;
+        // Bearer <password>: the same secret, re-verified through the Basic
+        // verifier so both schemes yield the identical principal.
+        const bearer = extractBearerToken(header);
+        if (bearer && sameSecret(bearer, password)) {
+          const asBasic = "Basic " + Buffer.from(`${username}:${password}`, "utf8").toString("base64");
+          const viaBasic = verifyHttpBasic(asBasic, { username, password });
+          return viaBasic.ok ? viaBasic.sessionAuth : null;
+        }
+        return null;
+      },
+      [
+        { scheme: "Basic", parameters: { realm: "agent", charset: "UTF-8" } },
+        { scheme: "Bearer", parameters: { realm: "agent" } },
+      ],
+    );
+    
+    export default eveChannel({
+      auth: [platformCredential, localDev()],
+    });
+    
+  boot.sh: |
+    #!/bin/sh
+    # harness/eve/charts/eve-agent/files/boot.sh - the build-agent initContainer's
+    # script (ADR-149/150). harness/eve/charts/eve-bundle/files/boot.sh is a byte-
+    # identical copy (render-test cmp-gates it); edit this one and copy.
+    set -eu
+    
+    # Roots. The eve-agent chart mounts its data claim at /app; the eve-bundle
+    # chart shares one claim between members and gives each its own root
+    # (/app/members/<name>) plus a bundle-wide workspaces claim.
+    DATA_ROOT="${EVE_DATA_ROOT:-/app}"
+    STAMP_DIR="$DATA_ROOT/.hermes-gitops"
+    STAMP_FILE="$STAMP_DIR/installed_sha"
+    SRC_DIR="$DATA_ROOT/src"
+    PROJECT_DIR="$SRC_DIR${EVE_DIST_SUBDIR:+/$EVE_DIST_SUBDIR}"
+    STATE_DIR="$DATA_ROOT/state"
+    WORKSPACES_DIR="${EVE_WORKSPACES_DIR:-$DATA_ROOT/workspaces}"
+    # EVE_BOOT_MODE: "agent" (default) builds the project and syncs bindings;
+    # "workspaces" only syncs bindings (the bundle's shared-claim init).
+    BOOT_MODE="${EVE_BOOT_MODE:-agent}"
+    export HOME="$DATA_ROOT/home"
+    export npm_config_cache="$DATA_ROOT/.npm"
+    mkdir -p "$HOME" "$npm_config_cache"
+    if [ "$BOOT_MODE" = "agent" ]; then
+    mkdir -p "$STAMP_DIR" "$STATE_DIR/workflow-data" "$STATE_DIR/sandbox-cache"
+    
+    CURRENT_SHA=""
+    if [ -f "$STAMP_FILE" ]; then
+      CURRENT_SHA="$(cat "$STAMP_FILE")"
+    fi
+    
+    if [ "$CURRENT_SHA" != "$EVE_DIST_SHA" ] || [ ! -d "$PROJECT_DIR/.output" ]; then
+      echo "[build-agent] installed_sha ('$CURRENT_SHA') != spec.sha ('$EVE_DIST_SHA') - (re)building the agent"
+      rm -rf "$SRC_DIR"
+    
+      # ---- clone, with private-source auth kept off the data claim --------
+      # spec.gitAuthSecretRef is mounted at /git-auth; username+password
+      # become a ~/.netrc, ssh-privatekey an identity - both under a
+      # throwaway HOME in the container's own /tmp, removed by the trap on
+      # ANY exit (a failed clone included).
+      GIT_HOME="$(mktemp -d /tmp/git-auth.XXXXXX)"
+      trap 'rm -rf "$GIT_HOME"' EXIT
+      if [ -d /git-auth ]; then
+        case "$EVE_DIST_SOURCE" in
+          https://*)
+            if [ -f /git-auth/username ] && [ -f /git-auth/password ]; then
+              DIST_HOST="$(printf '%s' "$EVE_DIST_SOURCE" | sed -E 's#^https://([^/]+)/.*#\1#')"
+              printf 'machine %s\nlogin %s\npassword %s\n' \
+                "$DIST_HOST" "$(cat /git-auth/username)" "$(cat /git-auth/password)" > "$GIT_HOME/.netrc"
+              chmod 600 "$GIT_HOME/.netrc"
+              echo "[build-agent] git auth: using HTTPS credentials from gitAuthSecretRef for $DIST_HOST"
+            else
+              echo "[build-agent] git auth: /git-auth mounted but username/password keys missing for an https source" >&2
+              exit 1
+            fi
+            ;;
+          git@*|ssh://*)
+            if [ -f /git-auth/ssh-privatekey ]; then
+              mkdir -p "$GIT_HOME/.ssh"
+              cp /git-auth/ssh-privatekey "$GIT_HOME/.ssh/git-auth-key"
+              chmod 600 "$GIT_HOME/.ssh/git-auth-key"
+              export GIT_SSH_COMMAND="ssh -i $GIT_HOME/.ssh/git-auth-key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$GIT_HOME/.ssh/known_hosts"
+              echo "[build-agent] git auth: using SSH deploy key from gitAuthSecretRef"
+            else
+              echo "[build-agent] git auth: /git-auth mounted but ssh-privatekey key missing for an ssh source" >&2
+              exit 1
+            fi
+            ;;
+        esac
+      fi
+      HOME="$GIT_HOME" git clone "$EVE_DIST_SOURCE" "$SRC_DIR"
+      HOME="$GIT_HOME" git -C "$SRC_DIR" checkout --detach "$EVE_DIST_SHA"
+      unset GIT_SSH_COMMAND || true
+      rm -rf "$GIT_HOME"
+      trap - EXIT
+      rm -rf "$SRC_DIR/.git"
+    
+      if [ ! -f "$PROJECT_DIR/package.json" ] || [ ! -d "$PROJECT_DIR/agent" ]; then
+        echo "[build-agent] $PROJECT_DIR is not an Eve project (package.json + agent/ required)${EVE_DIST_SUBDIR:+ - check spec.sourceSubdir}" >&2
+        exit 1
+      fi
+      if [ ! -f "$PROJECT_DIR/package-lock.json" ]; then
+        echo "[build-agent] $PROJECT_DIR has no package-lock.json - commit one (npm install --package-lock-only) so the build is reproducible from spec.sha" >&2
+        exit 1
+      fi
+      cd "$PROJECT_DIR"
+    
+      # ---- route auth default ---------------------------------------------
+      if [ ! -f agent/channels/eve.ts ] && [ ! -f agent/channels/eve.js ] && [ ! -f agent/channels/eve.mjs ]; then
+        echo "[build-agent] no agent/channels/eve.ts authored - installing the platform default (Basic auth from the mounted route-auth credential)"
+        mkdir -p agent/channels
+        cp /scripts/channel-eve.ts agent/channels/eve.ts
+      fi
+    
+      # ---- dependencies + the platform's runtime pin ----------------------
+      npm ci --no-audit --no-fund
+      PROJECT_EVE="$(node -p "require('./node_modules/eve/package.json').version" 2>/dev/null || echo missing)"
+      if [ "$PROJECT_EVE" != "$EVE_VERSION" ]; then
+        echo "[build-agent] the project resolves eve@$PROJECT_EVE but the platform runtime is eve@$EVE_VERSION - pin \"eve\": \"$EVE_VERSION\" in package.json (and refresh package-lock.json), or set spec.deployment.runtimeImageTag to a platform image that ships $PROJECT_EVE" >&2
+        exit 1
+      fi
+    
+      # ---- build ----------------------------------------------------------
+      # The project's own eve (== the image's, checked above) compiles the
+      # agent and writes the Nitro server under .output/. A failed build
+      # leaves no stamp, so the next pod start retries from the clone.
+      ./node_modules/.bin/eve build --skip-sandbox-prewarm
+      test -d .output || { echo "[build-agent] eve build produced no .output/ directory" >&2; exit 1; }
+      echo "$EVE_DIST_SHA" > "$STAMP_FILE"
+      echo "[build-agent] built $EVE_DIST_SHA with eve@$EVE_VERSION"
+    else
+      echo "[build-agent] installed_sha matches spec.sha ('$EVE_DIST_SHA') - skipping rebuild"
+    fi
+    
+    # ---- durable state outside the checkout --------------------------------
+    # Idempotent: a fresh checkout has no .eve/.workflow-data; an old-layout
+    # volume (state inside the project, pre-ADR-150) is migrated once.
+    mkdir -p "$PROJECT_DIR/.eve"
+    for pair in ".workflow-data:workflow-data" "sandbox-cache:sandbox-cache"; do
+      link="$PROJECT_DIR/.eve/${pair%%:*}"
+      target="$STATE_DIR/${pair##*:}"
+      if [ -d "$link" ] && [ ! -L "$link" ]; then
+        echo "[build-agent] migrating $link into $target"
+        cp -a "$link/." "$target/" && rm -rf "$link"
+      fi
+      if [ ! -L "$link" ]; then
+        rm -rf "$link"
+        ln -s "$target" "$link"
+      fi
+    done
+    
+    fi # BOOT_MODE=agent
+    
+    # ---- workspace bindings --------------------------------------------------
+    mkdir -p "$WORKSPACES_DIR/.stamps"
+    WS_KEEP=""
+    workspace_clone() {
+      ws_name="$1"; ws_source="$2"; ws_sha="$3"; ws_access="$4"
+      ws_dir="$WORKSPACES_DIR/$ws_name"
+      ws_stamp="$WORKSPACES_DIR/.stamps/$ws_name"
+      WS_KEEP="$WS_KEEP $ws_name"
+      if [ -f "$ws_stamp" ] && [ "$(cat "$ws_stamp")" = "$ws_sha" ] && [ -d "$ws_dir" ]; then
+        echo "[build-agent] workspace $ws_name already at $ws_sha"
+        return 0
+      fi
+      # A read-only checkout (chmod -R a-w) cannot be removed until its
+      # directories are writable again - a re-pin of a read-only binding
+      # failed every boot before this line (found live).
+      [ -d "$ws_dir" ] && chmod -R u+w "$ws_dir" 2>/dev/null || true
+      rm -rf "$ws_dir" "$ws_stamp" "$ws_stamp.unavailable"
+      WS_HOME="$(mktemp -d /tmp/ws-auth.XXXXXX)"
+      ws_cred="/run/secrets/repositories/$ws_name/git"
+      if [ -d "$ws_cred" ]; then
+        case "$ws_source" in
+          https://*)
+            if [ -f "$ws_cred/username" ] && [ -f "$ws_cred/password" ]; then
+              ws_host="$(printf '%s' "$ws_source" | sed -E 's#^https://([^/]+)/.*#\1#')"
+              printf 'machine %s\nlogin %s\npassword %s\n' "$ws_host" "$(cat "$ws_cred/username")" "$(cat "$ws_cred/password")" > "$WS_HOME/.netrc"
+              chmod 600 "$WS_HOME/.netrc"
+            fi
+            ;;
+          git@*|ssh://*)
+            if [ -f "$ws_cred/ssh-privatekey" ]; then
+              mkdir -p "$WS_HOME/.ssh"
+              cp "$ws_cred/ssh-privatekey" "$WS_HOME/.ssh/key"
+              chmod 600 "$WS_HOME/.ssh/key"
+              export GIT_SSH_COMMAND="ssh -i $WS_HOME/.ssh/key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$WS_HOME/.ssh/known_hosts"
+            fi
+            ;;
+        esac
+      fi
+      if HOME="$WS_HOME" git clone --quiet "$ws_source" "$ws_dir" && HOME="$WS_HOME" git -C "$ws_dir" checkout --quiet --detach "$ws_sha"; then
+        [ "$ws_access" = "read-only" ] && chmod -R a-w "$ws_dir" || true
+        echo "$ws_sha" > "$ws_stamp"
+        echo "[build-agent] workspace $ws_name: $ws_source @ $ws_sha ($ws_access)"
+      else
+        rm -rf "$ws_dir"
+        : > "$ws_stamp.unavailable"
+        echo "[build-agent] WARNING workspace $ws_name could not be cloned from $ws_source @ $ws_sha - the agent starts WITHOUT it (degraded); fix the binding or the credential" >&2
+      fi
+      unset GIT_SSH_COMMAND || true
+      rm -rf "$WS_HOME"
+    }
+    # EVE_WORKSPACE_BINDINGS: one binding per line, "name source sha access",
+    # rendered by the chart from spec.workspace.repositories (eve-agent) or
+    # spec.repositories (eve-bundle). Empty = no bindings.
+    if [ -n "${EVE_WORKSPACE_BINDINGS:-}" ]; then
+      printf '%s\n' "$EVE_WORKSPACE_BINDINGS" | while read -r ws_n ws_s ws_h ws_a; do
+        [ -n "$ws_n" ] || continue
+        WS_KEEP="$WS_KEEP $ws_n"
+        printf '%s\n' "$ws_n" >> "$WORKSPACES_DIR/.stamps/.keep.$$"
+        workspace_clone "$ws_n" "$ws_s" "$ws_h" "$ws_a"
+      done
+    fi
+    # WS_KEEP was set in a subshell (the pipe); re-read it from the keep list.
+    WS_KEEP=" $(cat "$WORKSPACES_DIR/.stamps/.keep.$$" 2>/dev/null | tr '\n' ' ')"
+    rm -f "$WORKSPACES_DIR/.stamps/.keep.$$"
+    # Unbound workspaces are removed: a binding that disappeared from Git
+    # must not linger as a checkout the agent can still read.
+    for d in "$WORKSPACES_DIR"/*/; do
+      [ -d "$d" ] || continue
+      n="$(basename "$d")"
+      case " $WS_KEEP " in *" $n "*) ;; *) echo "[build-agent] removing unbound workspace $n"; chmod -R u+w "$d" 2>/dev/null || true; rm -rf "$d" "$WORKSPACES_DIR/.stamps/$n" "$WORKSPACES_DIR/.stamps/$n.unavailable" ;; esac
+    done
+---
+# Source: eve-bundle/templates/configmap-runtime-manifest.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ag-eve-team-echo-runtime-manifest
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+    hermes-gitops.factorylevel.dev/member: "echo"
+data:
+  runtime-manifest.json: "{\"contract\":\"agent-runtime/v1alpha1\",\"spec\":{\"apps\":[],\"bundle\":\"team\",\"connections\":[],\"engine\":\"eve\",\"instance\":\"ag-eve-team-echo\",\"name\":\"echo\",\"namespace\":\"ag-eve-team\",\"requiredSecrets\":[],\"runtimeImage\":\"us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0\",\"source\":{\"repository\":\"https://example.invalid/eve-agents.git\",\"revision\":\"1111111111111111111111111111111111111111\",\"subdir\":\"agents/echo\"},\"workspaces\":[{\"access\":\"read-only\",\"name\":\"brand\",\"path\":\"/workspaces/brand\",\"repository\":\"https://example.invalid/vision-manager.git\",\"revision\":\"2222222222222222222222222222222222222222\"}]}}"
+---
+# Source: eve-bundle/templates/configmap-runtime-manifest.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ag-eve-team-greeter-runtime-manifest
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+    hermes-gitops.factorylevel.dev/member: "greeter"
+data:
+  runtime-manifest.json: "{\"contract\":\"agent-runtime/v1alpha1\",\"spec\":{\"apps\":[],\"bundle\":\"team\",\"connections\":[],\"engine\":\"eve\",\"instance\":\"ag-eve-team-greeter\",\"name\":\"greeter\",\"namespace\":\"ag-eve-team\",\"requiredSecrets\":[],\"runtimeImage\":\"us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0\",\"source\":{\"repository\":\"https://example.invalid/eve-agents.git\",\"revision\":\"1111111111111111111111111111111111111111\",\"subdir\":\"agents/greeter\"},\"workspaces\":[]}}"
+---
+# Source: eve-bundle/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ag-eve-team
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+  ports:
+    - name: echo
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+      appProtocol: http
+    - name: greeter
+      port: 3100
+      targetPort: 3100
+      protocol: TCP
+      appProtocol: http
+---
+# Source: eve-bundle/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ag-eve-team
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  # One replica: every member's local Workflow world is single-process
+  # (eve-agent/templates/statefulset.yaml says why).
+  replicas: 1
+  serviceName: ag-eve-team
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eve-bundle
+      app.kubernetes.io/instance: ag-eve-team
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    # The shared data claim: /app/members/<name>/{src,state,home,.npm,
+    # .hermes-gitops} per member - each member's world store is its own.
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: eve-bundle
+          app.kubernetes.io/instance: ag-eve-team
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+    # The bundle's workspaces claim (always rendered, like hermes-bundle's,
+    # so adding a first repository never hits ADR-76's immutable-template
+    # rule).
+    - metadata:
+        name: workspaces
+        labels:
+          app.kubernetes.io/name: eve-bundle
+          app.kubernetes.io/instance: ag-eve-team
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eve-bundle
+        app.kubernetes.io/instance: ag-eve-team
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/version: "0.42.0"
+        helm.sh/chart: "eve-bundle-0.1.0"
+        hermes-gitops.factorylevel.dev/bundle: "team"
+        hermes-gitops.factorylevel.dev/runtime: eve
+        hermes-gitops.factorylevel.dev/managed: "true"
+      annotations:
+        checksum/spec: d30d90fb51bf844bacc1cad6596e8ea28fc9f463a1fabc93b6d9b298bd153405
+        checksum/boot: 73483ce74b51be117dbfe96fbf7b8defaef797b775d21949ce6350e079d8d66a
+    spec:
+      serviceAccountName: ag-eve-team
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: build-echo
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_DATA_ROOT
+              value: /app/members/echo
+            - name: EVE_DIST_SOURCE
+              value: "https://example.invalid/eve-agents.git"
+            - name: EVE_DIST_SHA
+              value: "1111111111111111111111111111111111111111"
+            - name: EVE_DIST_SUBDIR
+              value: "agents/echo"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+        - name: build-greeter
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_DATA_ROOT
+              value: /app/members/greeter
+            - name: EVE_DIST_SOURCE
+              value: "https://example.invalid/eve-agents.git"
+            - name: EVE_DIST_SHA
+              value: "1111111111111111111111111111111111111111"
+            - name: EVE_DIST_SUBDIR
+              value: "agents/greeter"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: member-greeter-git
+              mountPath: /git-auth
+              readOnly: true
+        - name: workspaces
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_BOOT_MODE
+              value: workspaces
+            - name: EVE_DATA_ROOT
+              value: /app/bundle
+            - name: EVE_WORKSPACES_DIR
+              value: /workspaces
+            - name: EVE_WORKSPACE_BINDINGS
+              value: "brand https://example.invalid/vision-manager.git 2222222222222222222222222222222222222222 read-only"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: workspaces
+              mountPath: /workspaces
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+      containers:
+        - name: echo
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          workingDir: /app/members/echo/src/agents/echo
+          command: ["./node_modules/.bin/eve"]
+          args: ["start", "--host", "0.0.0.0"]
+          env:
+            - name: HOME
+              value: /app/members/echo/home
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: production
+            - name: EVE_PROJECT_DIR
+              value: "/app/members/echo/src/agents/echo"
+            - name: ROUTE_AUTH_BASIC_USERNAME
+              value: "agent"
+            - name: ROUTE_AUTH_BASIC_PASSWORD_FILE
+              value: /run/secrets/route-auth/password
+            - name: ROUTE_AUTH_BASIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ag-eve-team-echo-route-auth
+                  key: password
+            - name: EVE_WORKSPACES_ROOT
+              value: /workspaces
+            - name: EVE_WORKSPACE_BRAND
+              value: /workspaces/brand
+          envFrom:
+            - secretRef:
+                name: ag-eve-team-echo-env
+          ports:
+            - name: echo
+              containerPort: 3000
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            failureThreshold: 60
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            # The sync stamps (.stamps/<name> = converged sha, <name>.unavailable
+            # = degraded), read-only, so `hg workspace verify` can read the
+            # routine's own verdict from inside the member container.
+            - name: workspaces
+              mountPath: /workspaces/.stamps
+              subPath: .stamps
+              readOnly: true
+            - name: workspaces
+              mountPath: /workspaces/brand
+              subPath: brand
+              readOnly: true
+            # /hg: what the platform resolved for THIS member (ADR-153).
+            # Read-only and outside /app deliberately - it describes the
+            # deployment, it is not part of it.
+            - name: runtime-manifest-echo
+              mountPath: /hg
+              readOnly: true
+            - name: route-auth-echo
+              mountPath: /run/secrets/route-auth
+              readOnly: true
+        - name: greeter
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          workingDir: /app/members/greeter/src/agents/greeter
+          command: ["./node_modules/.bin/eve"]
+          args: ["start", "--host", "0.0.0.0"]
+          env:
+            - name: HOME
+              value: /app/members/greeter/home
+            - name: PORT
+              value: "3100"
+            - name: NODE_ENV
+              value: production
+            - name: EVE_PROJECT_DIR
+              value: "/app/members/greeter/src/agents/greeter"
+            - name: ROUTE_AUTH_BASIC_USERNAME
+              value: "agent"
+            - name: ROUTE_AUTH_BASIC_PASSWORD_FILE
+              value: /run/secrets/route-auth/password
+            - name: ROUTE_AUTH_BASIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ag-eve-team-greeter-route-auth
+                  key: password
+          ports:
+            - name: greeter
+              containerPort: 3100
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3100
+            failureThreshold: 60
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3100
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3100
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            # /hg: what the platform resolved for THIS member (ADR-153).
+            # Read-only and outside /app deliberately - it describes the
+            # deployment, it is not part of it.
+            - name: runtime-manifest-greeter
+              mountPath: /hg
+              readOnly: true
+            - name: route-auth-greeter
+              mountPath: /run/secrets/route-auth
+              readOnly: true
+      volumes:
+        - name: boot-script
+          configMap:
+            name: ag-eve-team-boot
+            defaultMode: 0755
+        - name: runtime-manifest-echo
+          configMap:
+            name: ag-eve-team-echo-runtime-manifest
+        - name: route-auth-echo
+          secret:
+            secretName: ag-eve-team-echo-route-auth
+            defaultMode: 0440
+        - name: runtime-manifest-greeter
+          configMap:
+            name: ag-eve-team-greeter-runtime-manifest
+        - name: route-auth-greeter
+          secret:
+            secretName: ag-eve-team-greeter-route-auth
+            defaultMode: 0440
+        - name: member-greeter-git
+          secret:
+            secretName: ag-eve-team-greeter-git
+            defaultMode: 0440
+---
+# Source: eve-bundle/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ag-eve-team
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  rules:
+    - host: echo.hermes.local
+      http:
+        paths:
+          - path: /eve/
+            pathType: Prefix
+            backend:
+              service:
+                name: ag-eve-team
+                port:
+                  number: 3000
+          - path: /.well-known/workflow/
+            pathType: Prefix
+            backend:
+              service:
+                name: ag-eve-team
+                port:
+                  number: 3000
+    - host: greeter.hermes.local
+      http:
+        paths:
+          - path: /eve/
+            pathType: Prefix
+            backend:
+              service:
+                name: ag-eve-team
+                port:
+                  number: 3100
+          - path: /.well-known/workflow/
+            pathType: Prefix
+            backend:
+              service:
+                name: ag-eve-team
+                port:
+                  number: 3100
+---
+# Source: eve-bundle/templates/route-auth-secrets.yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ag-eve-team-echo-route-auth
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  refreshInterval: "0"
+  target:
+    name: ag-eve-team-echo-route-auth
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: ag-eve-team-echo-route-auth-gen
+---
+# Source: eve-bundle/templates/route-auth-secrets.yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ag-eve-team-greeter-route-auth
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  refreshInterval: "0"
+  target:
+    name: ag-eve-team-greeter-route-auth
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: ag-eve-team-greeter-route-auth-gen
+---
+# Source: eve-bundle/templates/route-auth-secrets.yaml
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: ag-eve-team-echo-route-auth-gen
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  length: 32
+  digits: 8
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+# Source: eve-bundle/templates/route-auth-secrets.yaml
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: ag-eve-team-greeter-route-auth-gen
+  namespace: ag-eve-team
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    app.kubernetes.io/name: eve-bundle
+    app.kubernetes.io/instance: ag-eve-team
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: "eve-bundle-0.1.0"
+    hermes-gitops.factorylevel.dev/bundle: "team"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  length: 32
+  digits: 8
+  symbols: 0
+  noUpper: false
+  allowRepeat: true

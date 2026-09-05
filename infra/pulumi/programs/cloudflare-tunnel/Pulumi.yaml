@@ -1,0 +1,19 @@
+name: hermes-cloudflare-tunnel
+description: >-
+  Provisions one Hermes agent instance's Cloudflare Tunnel ingress path: a
+  ZeroTrustTunnelCloudflared connector + per-service ingress rules (plus a
+  mandatory catch-all), a DNS CNAME publishing the tunnel's public hostname,
+  a Zero Trust Access application + policy gating it (service-token / idp /
+  mixed), a per-instance Access service token, and delivery of the tunnel
+  connector token + service-token credentials into the fleet's configured
+  secret backend (a k8s Secret - the only supported provider; Vault/GSM/SOPS
+  were removed in #30). Config-driven only, no
+  stack files committed (see README.md). Invoked by the Pulumi Kubernetes
+  Operator via the Stack CR
+  charts/hermes-profile/templates/tunnel/stack-cloudflare.yaml renders
+  (repoDir: pulumi/programs/cloudflare-tunnel).
+runtime:
+  name: python
+  options:
+    toolchain: uv
+    virtualenv: .venv

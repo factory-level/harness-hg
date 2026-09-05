@@ -1,0 +1,42 @@
+# All values may be overridden from hermes-gitops.yaml's apps[].values
+# (author), the fleet defaults' appValues, or per-instance appValues
+# overrides (pulumi config set --path
+# 'agents[<i>].overrides.appValues.secret-tester.<dot.path>' <value>).
+
+image: python:3.12-alpine
+
+# sha256 hex digest of the expected secret VALUE. THE CHECKSUM LIVES IN
+# GIT, never the secret itself — the operator supplies it alongside the
+# real secret:
+#   pulumi config set --secret --path 'agentSecrets.<name>.<VAR>' <value>
+#   pulumi config set --path \
+#     'agents[<i>].overrides.appValues.secret-tester.expectedSha256' \
+#     "$(printf %s '<value>' | sha256sum | cut -d' ' -f1)"
+# The persona's hermes-gitops.yaml marks this valuesRequired, so an
+# install without it fails fast BEFORE any manifest is generated.
+expectedSha256: ""
+
+# The second test payload: a checksum that must NOT match. A verifier
+# that reports MATCH for both payloads is broken, and the page (and the
+# smoke e2e) treats that as failure.
+controlSha256: "0000000000000000000000000000000000000000000000000000000000000000"
+
+secret:
+  # Env var to test, and the Secret carrying it. Empty secretName = the
+  # platform convention "<namespace>-env" (agent-secrets writes
+  # hermes-<persona>-env, the same Secret the agent pod envFrom-mounts).
+  key: SMOKE_DEMO_SECRET
+  secretName: ""
+
+service:
+  port: 8081
+
+# Served on the profile's conventional hostname under its own path — a
+# separate page from the wiki site (which owns /).
+ingress:
+  enabled: true
+  baseDomain: hermes.local
+  host: ""
+  path: /secret-tester
+
+resources: {}

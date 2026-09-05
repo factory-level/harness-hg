@@ -1,0 +1,5 @@
+# The version marker is required - emitted documents are markerless, but
+# this is an AUTHORED file.
+chatopsConnections:
+  company_discord:
+    provider: recording

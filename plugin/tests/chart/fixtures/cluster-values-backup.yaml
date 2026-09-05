@@ -1,0 +1,18 @@
+# Standalone cluster-values fixture with the PVC backup destination enabled
+# (providers.backup: pvc) — the backup-path counterpart of
+# cluster-values-cloudflare.yaml. Used by render-test.sh's valid-backup
+# golden and the backup positive/negative assertions.
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+  backup: pvc
+image:
+  repository: ghcr.io/dummy/hermes-agent
+  tag: latest
+backup:
+  pvc:
+    size: 5Gi
+secretBackend:
+  k8s:
+    namespace: hermes-gitops

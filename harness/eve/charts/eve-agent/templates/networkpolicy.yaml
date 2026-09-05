@@ -1,0 +1,23 @@
+{{- include "eve.runtimeGuard" . -}}
+{{- include "eve.computeGuard" . -}}
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "eve.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    {{- include "eve.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "eve.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 3000
+          protocol: TCP
+{{- end }}

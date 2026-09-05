@@ -1,0 +1,19 @@
+# Bundle declaration (environment-bundles v1alpha4, ADR-28 / ADR-150): echo
+# and greeter share one pod, one data volume and one backup routine. Both
+# records carry runtime: eve, so `hg bundle` compiles this to
+# deployments/bundles/team/ with chart: eve-bundle. Each member keeps its
+# own port (3000, 3001 - declaration order), its own route-auth credential
+# (ag-eve-team-<member>-route-auth) and its own env Secret, named here
+# because the per-profile Secret cannot be mounted across namespaces.
+#
+# Onboarding THIS directory deploys the bundle; onboarding agents/echo alone
+# (a root Eve project) deploys echo standalone - both are proven loops.
+version: 4
+bundles:
+  - name: team
+    displayName: Example team
+    profiles:
+      - name: echo
+        envSecretRef: ag-eve-team-echo-env
+      - name: greeter
+        envSecretRef: ag-eve-team-greeter-env

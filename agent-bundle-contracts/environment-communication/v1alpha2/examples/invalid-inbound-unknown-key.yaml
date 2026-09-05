@@ -1,0 +1,14 @@
+# `inbound` is additionalProperties: false. A typo'd `approvedUser:`
+# (singular) that validated would silently authorize nobody while
+# appearing to authorize someone - the failure mode an authorization
+# contract exists to prevent.
+version: 1
+chatopsConnections:
+  manager:
+    provider: discord
+    credentialRef:
+      name: hermes-manager-chatops
+      key: DISCORD_BOT_TOKEN
+    inbound:
+      approvedUser:
+        - "289374650192837465"

@@ -1,0 +1,27 @@
+# A scheduled task <PERSONA> runs on its own. Rename this file (and `name`)
+# or delete it — an empty cron/ directory is a perfectly good answer.
+#
+# `hermes profile install` copies this onto the agent's volume, and the
+# chart's boot script then runs `hermes cron sync` to turn it into a real
+# scheduled job. That step matters: the scheduler only ever reads
+# cron/jobs.json, so a declaration on its own is inert.
+#
+# The job arrives PAUSED. Sync owns the definition below; you own whether it
+# runs, so a resume is a decision that survives every redeploy rather than
+# being re-armed on the next boot:
+#
+#   hg agent show  --profile <persona>
+#   hg agent apply --profile <persona>
+#   hg agent exec  --profile <persona> -- cron resume example-heartbeat
+#
+# `name` is the identity across syncs — rename it and sync retires the old
+# job and creates a new one.
+name: example-heartbeat
+schedule: "every 1d"          # 'every 2h', '0 6 * * 1', '30m', ISO timestamp
+deliver: local                # a scheduled run has no conversation to reply into
+# skills:                     # optional: loaded before the prompt
+#   - my-skill
+prompt: |
+  Say what you checked and what you found, in three lines. This runs
+  unattended, so the prompt has to stand on its own — there is no chat
+  history behind it.

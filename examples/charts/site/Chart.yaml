@@ -1,0 +1,14 @@
+apiVersion: v2
+name: site
+description: >
+  REFERENCE EXAMPLE (declared status — #134): an application-shaped chart
+  kept under examples/ as authoring reference, deployed only by this repo's
+  own e2e test persona (.hermes-dist/distribution-agent) — real application
+  charts belong in their persona repo, published as OCI.
+  The project's documentation site, built in-container from a source repo
+  (clone -> mkdocs build -> serve). Referenced from hermes-gitops.yaml as
+  {chart: examples/charts/site, repo: local} — local charts version with the
+  platform revision, so this chart's version is informational only.
+type: application
+version: 0.1.0
+appVersion: "1.0"

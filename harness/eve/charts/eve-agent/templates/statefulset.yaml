@@ -1,0 +1,296 @@
+{{- include "eve.runtimeGuard" . -}}
+{{- include "eve.computeGuard" . -}}
+{{- include "eve.shaGuard" . -}}
+{{- include "eve.subdirGuard" . -}}
+{{- include "eve.envGuard" . -}}
+{{- include "eve.workspaceGuard" . -}}
+{{- $repo := .Values.runtimeImage.repository -}}
+{{- $tag := .Values.runtimeImage.tag -}}
+{{- if and .Values.spec.deployment .Values.spec.deployment.runtimeImageTag -}}
+{{- $tag = .Values.spec.deployment.runtimeImageTag -}}
+{{- end -}}
+{{- $image := printf "%s:%s" $repo $tag -}}
+{{- $diskSizeGb := 10 -}}
+{{- if and .Values.spec.deployment .Values.spec.deployment.diskSizeGb -}}
+{{- $diskSizeGb = .Values.spec.deployment.diskSizeGb -}}
+{{- end -}}
+{{- $gitURL := include "eve.gitCloneURL" . -}}
+{{- $subdir := .Values.spec.sourceSubdir | default "" -}}
+{{- $projectDir := printf "/app/src%s" (ternary (printf "/%s" $subdir) "" (ne $subdir "")) -}}
+{{- $workspace := .Values.spec.workspace | default dict -}}
+{{- $wsRepos := $workspace.repositories | default list -}}
+{{- $wsSizeGb := $workspace.sizeGb | default 20 -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "eve.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    {{- include "eve.labels" . | nindent 4 }}
+spec:
+  # One replica, one volume: the default Workflow world persists run state
+  # under <project>/.eve/.workflow-data on the data claim (eve's self-hosting
+  # guide requires it on persistent storage), and that local world is
+  # single-process. Scaling beyond 1 needs a shared Workflow world package
+  # selected in agent.ts - a later arc, not a knob here.
+  replicas: 1
+  serviceName: {{ include "eve.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "eve.selectorLabels" . | nindent 6 }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "eve.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ $diskSizeGb }}Gi
+    {{- if $wsRepos }}
+    # Workspace bindings (ADR-150, the hermes-profile shape): the bound
+    # repositories' checkouts, separate from the data claim so re-pinning a
+    # workspace never touches the agent's state. volumeClaimTemplates are
+    # immutable on a live StatefulSet (ADR-76): binding a FIRST workspace to
+    # an existing instance needs a one-time
+    #   kubectl delete statefulset <name> --cascade=orphan
+    # before Argo CD recreates it - the data claim survives (Retain).
+    - metadata:
+        name: workspaces
+        labels:
+          {{- include "eve.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ $wsSizeGb }}Gi
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "eve.labels" . | nindent 8 }}
+      annotations:
+        # Rolls the pod whenever the record changes (new sha, envRequires,
+        # ...) even though none of this chart's template bytes changed.
+        checksum/record: {{ include "eve.recordChecksum" . }}
+        # Rolls the pod when the boot script or the default channel file
+        # change (a chart upgrade that fixes the build path must re-run the
+        # initContainer on the existing instance, not wait for a new sha).
+        checksum/boot: {{ include (print $.Template.BasePath "/configmap-boot.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "eve.fullname" . }}
+      # eve stops every open sandbox on SIGTERM and an in-flight step must
+      # reach its durable checkpoint; the default 30s turns a rolling
+      # restart into re-run steps (values.yaml shutdown.gracePeriodSeconds).
+      terminationGracePeriodSeconds: {{ .Values.shutdown.gracePeriodSeconds }}
+      # fsGroup = the image's `node` user so both containers share the data
+      # claim; each container pins its own UID below.
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: build-agent
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_DIST_SOURCE
+              value: {{ $gitURL | quote }}
+            - name: EVE_DIST_SHA
+              value: {{ .Values.spec.sha | quote }}
+            - name: EVE_DIST_SUBDIR
+              value: {{ $subdir | quote }}
+            {{- if $wsRepos }}
+            # Workspace bindings for boot.sh: "name source sha access" per
+            # line (the script is a plain file, files/boot.sh, so the
+            # bundle chart can ship the same bytes).
+            - name: EVE_WORKSPACE_BINDINGS
+              value: {{ include "eve.workspaceBindings" $wsRepos | quote }}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            {{- if $wsRepos }}
+            - name: workspaces
+              mountPath: /app/workspaces
+            {{- end }}
+            {{- range $wsRepos }}
+            {{- if .gitAuthSecretRef }}
+            - name: ws-git-{{ .name }}
+              mountPath: /run/secrets/repositories/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- if .Values.spec.gitAuthSecretRef }}
+            # Private spec.source credential - consumed by boot.sh, scheme-
+            # dependent. Non-optional: a referenced-but-absent Secret is a
+            # clear CreateContainerConfigError, not an anonymous-clone
+            # mystery.
+            - name: git-auth
+              mountPath: /git-auth
+              readOnly: true
+            {{- end }}
+      containers:
+        - name: eve-agent
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          workingDir: {{ $projectDir }}
+          # The project's own eve (the build step proved it equals the
+          # image's pin) serves the Nitro output under .output/. PORT is
+          # eve's own port variable; --host binds every interface so the
+          # Service can reach it.
+          command: ["./node_modules/.bin/eve"]
+          args: ["start", "--host", "0.0.0.0"]
+          env:
+            - name: HOME
+              value: /app/home
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: production
+            - name: EVE_PROJECT_DIR
+              value: {{ $projectDir | quote }}
+            {{- if .Values.routePrefix }}
+            - name: EVE_PUBLIC_ROUTE_PREFIX
+              value: {{ .Values.routePrefix | quote }}
+            {{- end }}
+            {{- if $wsRepos }}
+            # Workspace bindings: one variable per bound repository naming
+            # its checkout (boot.sh clones it at the pinned sha; a failed
+            # clone leaves the variable pointing at a missing directory -
+            # degraded, the agent decides what that means).
+            - name: EVE_WORKSPACES_ROOT
+              value: /app/workspaces
+            {{- range $wsRepos }}
+            - name: {{ include "eve.workspaceEnvName" .name }}
+              value: /app/workspaces/{{ .name }}
+            {{- end }}
+            {{- end }}
+            # Route auth: the minted Basic credential the default
+            # agent/channels/eve.ts verifies (templates/route-auth-secret.yaml).
+            # The default channel reads the PASSWORD FILE per request, so a
+            # re-minted Secret propagates through the volume without a
+            # restart. The env form is provided for authored channels that
+            # prefer httpBasic({username, password}); it is captured at
+            # process start and goes stale on a re-mint - authors choosing
+            # it accept that.
+            - name: ROUTE_AUTH_BASIC_USERNAME
+              value: {{ .Values.routeAuth.username | quote }}
+            - name: ROUTE_AUTH_BASIC_PASSWORD_FILE
+              value: /run/secrets/route-auth/password
+            - name: ROUTE_AUTH_BASIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "eve.routeAuthSecretName" . }}
+                  key: password
+            {{- range $k, $v := (.Values.spec.env | default dict) }}
+            # The compiled per-instance overlay (ADR-97): resolved
+            # capability values. eve.envGuard proved none shadow a
+            # chart-owned variable.
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- if or .Values.spec.envRequires .Values.spec.connections }}
+          envFrom:
+            {{- if .Values.spec.envRequires }}
+            - secretRef:
+                name: {{ include "eve.envSecretName" . }}
+            {{- end }}
+            {{- range .Values.spec.connections | default list }}
+            # A projected connection (ADR-152, templates/connections.yaml).
+            - secretRef:
+                name: {{ include "eve.fullname" $ }}-connection-{{ .name }}
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # GET /eve/v1/health is public by design (route auth never covers
+          # it), so probes need no credentials.
+          startupProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            {{- if $wsRepos }}
+            - name: workspaces
+              mountPath: /app/workspaces
+            {{- end }}
+            # /hg: what the platform resolved for this agent (ADR-153).
+            # Read-only and outside /app deliberately - it describes the
+            # deployment, it is not part of it.
+            - name: runtime-manifest
+              mountPath: /hg
+              readOnly: true
+            - name: route-auth
+              mountPath: /run/secrets/route-auth
+              readOnly: true
+      volumes:
+        - name: boot-script
+          configMap:
+            name: {{ include "eve.fullname" . }}-boot
+            defaultMode: 0755
+        - name: runtime-manifest
+          configMap:
+            name: {{ include "eve.fullname" . }}-runtime-manifest
+        # 0440, not 0400: Secret volumes are owned by root with fsGroup as
+        # the group, and the process runs as uid 1000 - group-read is what
+        # lets it read the file.
+        - name: route-auth
+          secret:
+            secretName: {{ include "eve.routeAuthSecretName" . }}
+            defaultMode: 0440
+        {{- if .Values.spec.gitAuthSecretRef }}
+        - name: git-auth
+          secret:
+            secretName: {{ .Values.spec.gitAuthSecretRef }}
+            defaultMode: 0440
+        {{- end }}
+        {{- range $wsRepos }}
+        {{- if .gitAuthSecretRef }}
+        - name: ws-git-{{ .name }}
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}

@@ -1,0 +1,20 @@
+providers:
+  compute: pod
+  secret: k8s
+  ingress: ingress
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: latest
+platformRepo:
+  url: https://github.com/factory-level/hermes-gitops-plugin.git
+  revision: main
+appProject:
+  name: hermes-gitops
+  # Remote helm repos profiles may pull spec.apps[] charts from. Declared
+  # once here; the scaffold renders them into bootstrap/project.yaml's
+  # sourceRepos in the GitOps repo. `repo: local` apps need no entry.
+  sourceRepos:
+    - https://qdrant.github.io/qdrant-helm
+secretBackend:
+  k8s:
+    namespace: hermes-gitops

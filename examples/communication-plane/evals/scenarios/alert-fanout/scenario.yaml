@@ -1,0 +1,17 @@
+# One event, three independent deliveries: the agent's own gateway
+# handler and both ChatOps spaces. Runner-checked - the receipts ARE the
+# assertion.
+name: alert-fanout
+profile: platform-sre
+description: "observability.alert/v1 fans out to platform-sre + two Discord spaces"
+invoke:
+  event:
+    name: observability.alert
+    from: platform-sre/monitoring#alerts
+    payload: fixtures/alert-firing.json
+expect:
+  outputs:
+    - agent:
+        profile: platform-sre
+    - chatops: company_discord#channel-1
+    - chatops: company_discord#channel-2

@@ -1,0 +1,57 @@
+# A fresh installation with no adapters reachable and no plan components.
+# The point of this fixture: the document is still complete. Every source
+# kind is present and says what it is, the rollups exist and read `unknown`,
+# and nothing anywhere is green. An overlay that omitted its unconfigured
+# sources would be indistinguishable from a healthy one.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: RuntimeOverlay
+observedAt: "2026-07-31T09:14:00Z"
+stale: false
+sources:
+  argocd:
+    kind: argocd
+    status: not configured
+    level: unknown
+    summary: argo adapter disabled
+  grafana:
+    kind: grafana
+    status: not configured
+    level: unknown
+    summary: no Prometheus base URL configured
+  uptime:
+    kind: uptime
+    status: not configured
+    level: unknown
+    summary: no external probe series in Prometheus
+  eval:
+    kind: eval
+    status: not configured
+    level: unknown
+    summary: eval results are not persisted
+  backup:
+    kind: backup
+    status: not configured
+    level: unknown
+    summary: no labelled backup routines
+  communication:
+    kind: communication
+    status: not configured
+    level: unknown
+    summary: no router metrics target
+  reconciliation:
+    kind: reconciliation
+    status: not configured
+    level: unknown
+    summary: no reconciliation record published
+components: {}
+instances: {}
+rollups:
+  # Quoted: the key itself contains a colon.
+  "kind:agent":
+    level: unknown
+    summary: no agents
+    members: []
+  "kind:application":
+    level: unknown
+    summary: no applications
+    members: []

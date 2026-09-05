@@ -1,0 +1,214 @@
+/* Alert Routing - tokens only. The #579 color contract: Alarms wears the
+   red family ALWAYS - muted at rest, materially vibrant when firing;
+   Events wears routing blue; words carry state, color reinforces. The
+   dossier sizes to its rows - it never stretches to fill the view. */
+.nx-comm { max-inline-size: var(--nx-measure-wide); margin-inline: auto; display: flex; flex-direction: column; }
+.nx-comm-ro { color: var(--mut); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 1px 8px; font-size: var(--fs-xs); }
+.nx-comm-prov { color: var(--mut); margin-inline-start: auto; }
+.nx-comm-dossiers { display: flex; gap: 6px; flex: none; }
+.nx-dtab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  border: 1px solid var(--line);
+  border-block-end: none;
+  border-start-start-radius: var(--radius);
+  border-start-end-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-4);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--nx-display);
+  font-weight: 650;
+  background: var(--sf2);
+  color: var(--ink2);
+}
+.nx-dtab[aria-selected="true"] { background: var(--paper); color: var(--ink); }
+.nx-dtab-alarms.nx-dtab-rest { color: color-mix(in srgb, var(--crit) 55%, var(--mut)); }
+.nx-dtab-alarms.nx-dtab-firing { color: var(--crit); background: var(--critsf); }
+.nx-dtab-alarms.nx-dtab-firing[aria-selected="true"] { background: var(--paper); }
+.nx-dtab-events { color: var(--comm); }
+.nx-dtab-state { font-family: var(--nx-body); font-weight: 400; color: var(--mut); }
+.nx-dossier {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 0 var(--radius) var(--radius) var(--radius);
+  box-shadow: var(--shl);
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+}
+.nx-comm-secthead { margin: 0 0 6px; }
+.nx-comm-partial { color: var(--warn); font-weight: 400; }
+.nx-alert-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  inline-size: 100%;
+  background: none;
+  border: none;
+  border-block-start: 1px solid var(--line2);
+  color: var(--ink);
+  padding: var(--sp-2) var(--sp-1);
+  cursor: pointer;
+  text-align: start;
+  font: inherit;
+}
+.nx-alert-row:hover { background: var(--pophov); }
+.nx-alert-dir { color: var(--mut); display: inline-flex; }
+.nx-alert-name { font-weight: 650; }
+.nx-alert-since { margin-inline-start: auto; }
+/* Disclosures: a real control with a chevron, not a bold line. */
+.nx-comm-disclose {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: none;
+  border: none;
+  color: var(--ink2);
+  padding: var(--sp-2) var(--sp-1);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+}
+.nx-comm-disclose:hover { color: var(--ink); }
+.nx-comm-disclose.nx-eyebrow { font-family: var(--nx-display); font-size: var(--fs-xs); font-weight: 700; letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--mut); }
+.nx-comm-bucket { margin-block-start: var(--sp-3); }
+.nx-comm-buckethead { display: flex; align-items: center; gap: 6px; font-family: var(--nx-display); font-size: var(--fs-base); font-weight: 650; margin: 0 0 var(--sp-1); color: var(--ink2); }
+.nx-src-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  border-block-start: 1px solid var(--line2);
+  padding: var(--sp-2) var(--sp-1);
+  color: var(--ink);
+  text-decoration: none;
+}
+.nx-src-row:hover { background: var(--pophov); }
+.nx-src-static { cursor: default; }
+.nx-src-name { font-weight: 650; display: inline-flex; align-items: center; gap: var(--sp-1); }
+.nx-src-dests { display: inline-flex; gap: var(--sp-1); align-items: center; margin-inline-start: auto; }
+.nx-comm-mut { color: var(--mut); }
+.nx-comm-label { display: inline-block; background: var(--sf2); border-radius: var(--radius-sm); padding: 0 6px; margin: 2px 4px 0 0; color: var(--ink2); }
+.nx-comm-link { color: var(--acc); display: inline-flex; align-items: center; gap: var(--sp-1); }
+
+/* The patch-bay switchboard (ADR 0180). Geometry contract: every zone
+   row is exactly var(--nx-patch-row) tall (set inline from PATCH_ROW_H),
+   zone stacks are top-aligned, and the cable cells stretch to the board
+   row - so the SVG's index math meets the rendered rows exactly. */
+.nx-switch-board {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 72px auto 72px minmax(240px, 1.3fr);
+  grid-template-rows: auto 1fr;
+  column-gap: 0;
+  row-gap: var(--sp-2);
+  background: var(--paper);
+  border: 1px solid var(--commline);
+  border-radius: var(--radius);
+  box-shadow: var(--shl);
+  padding: var(--sp-4);
+  align-items: start;
+}
+.nx-switch-eyebrow {
+  font-family: var(--nx-display);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  grid-row: 1;
+}
+.nx-switch-eyebrow-in { grid-column: 1; color: var(--kind-comm-in); }
+.nx-switch-eyebrow-router { grid-column: 3; color: var(--mut); justify-self: center; }
+.nx-switch-eyebrow-out { grid-column: 5; color: var(--kind-comm-out); }
+.nx-switch-zone { grid-row: 2; display: flex; flex-direction: column; }
+.nx-switch-zone-in { grid-column: 1; }
+.nx-switch-zone-out { grid-column: 5; }
+.nx-switch-row {
+  block-size: var(--nx-patch-row);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding-inline: var(--sp-3);
+  background: var(--sf2);
+  min-inline-size: 0;
+}
+.nx-switch-row-synthetic { border-style: dashed; background: none; }
+.nx-switch-jack {
+  inline-size: 10px;
+  block-size: 10px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--comm);
+  background: var(--paper);
+}
+.nx-switch-jack[data-level="unhealthy"] { border-color: var(--crit); }
+.nx-switch-jack[data-level="degraded"] { border-color: var(--warn); }
+.nx-switch-jack[data-level="unknown"] { border-color: var(--mut); }
+.nx-switch-rowbody { display: flex; flex-direction: column; min-inline-size: 0; flex: 1; }
+.nx-switch-rowname {
+  font-weight: 650;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nx-switch-rowname .nx-icon { vertical-align: -2px; margin-inline-end: 2px; }
+.nx-switch-rowdetail { color: var(--mut); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-switch-outcome { font-size: var(--fs-xs); font-weight: 650; flex: none; }
+.nx-switch-outcome-delivered { color: var(--ok); }
+.nx-switch-outcome-failed { color: var(--crit); }
+.nx-switch-outcome-pending { color: var(--mut); }
+/* The cable canvas is exactly the row grid tall - never stretched to
+   the grid row - so the SVG's index math meets the rendered rows. */
+.nx-switch-cables { grid-row: 2; inline-size: 100%; block-size: calc(var(--nx-patch-row) * var(--nx-patch-rows)); }
+.nx-switch-spinecell { grid-column: 3; grid-row: 2; align-self: start; display: flex; align-items: center; block-size: calc(var(--nx-patch-row) * var(--nx-patch-rows)); }
+.nx-switch-cable { stroke-width: 2; }
+.nx-switch-cable-live { stroke: var(--comm); }
+.nx-switch-cable-degraded { stroke: var(--warn); }
+.nx-switch-cable-failed { stroke: var(--crit); }
+.nx-switch-cable-declared { stroke: var(--mut); stroke-dasharray: 4 4; }
+.nx-switch-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--commsf);
+  border: 1px solid var(--commline);
+  border-radius: var(--radius);
+  padding: var(--sp-3) var(--sp-4);
+  text-align: center;
+}
+.nx-switch-spinename { font-family: var(--nx-display); font-weight: 650; }
+.nx-switch-spinecounts { color: var(--mut); font-size: var(--fs-xs); white-space: nowrap; }
+.nx-switch-spineexec { color: var(--ink2); font-size: var(--fs-xs); max-inline-size: 160px; }
+
+/* Recent activity: the pulse strip + receipts trail. */
+.nx-switch-activity { margin-block-start: var(--sp-4); }
+.nx-switch-activityhead { display: flex; align-items: baseline; gap: var(--sp-3); }
+.nx-switch-windows { display: inline-flex; gap: var(--sp-1); margin-inline-start: auto; }
+.nx-switch-window {
+  font: inherit;
+  font-size: var(--fs-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--mut);
+  padding: 1px 10px;
+  cursor: pointer;
+}
+.nx-switch-window[aria-pressed="true"] { color: var(--comm); border-color: var(--commline); background: var(--commsf); }
+.nx-switch-pulse { inline-size: 100%; block-size: 48px; display: block; margin-block: var(--sp-2); }
+.nx-switch-bar-delivered { fill: var(--comm); }
+.nx-switch-bar-failed { fill: var(--crit); }
+.nx-switch-receiptshead { font-family: var(--nx-display); font-size: var(--fs-base); font-weight: 650; margin: var(--sp-3) 0 var(--sp-1); color: var(--ink2); }
+.nx-switch-receiptgroup { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); border-block-start: 1px solid var(--line2); padding-block: var(--sp-1); }
+.nx-switch-corr { font-size: var(--fs-xs); color: var(--mut); max-inline-size: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-switch-receipt { font-size: var(--fs-xs); color: var(--ink2); }
+.nx-switch-receipt-failed { color: var(--crit); }
+
+/* Narrow viewports: stack the zones, drop the drawn cables (the rows
+   still carry every fact the cables encode). */
+@media (max-width: 760px) {
+  .nx-switch-board { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .nx-switch-cables { display: none; }
+  .nx-switch-eyebrow-router { display: none; }
+}

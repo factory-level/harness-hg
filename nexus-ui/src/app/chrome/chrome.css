@@ -1,0 +1,87 @@
+/* Chrome styles - tokens only. Islands are the custom signature (simpler
+   than the old pixel-tuned corner curls - the spec keeps the identity,
+   the review keeps the look honest). Controls are Astryx components
+   themed by the tokens.json astryxBridge; only the signature pieces
+   (islands, brand, ops pill, corner lockup) keep bespoke rules. */
+.nx-root {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--nx-body);
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
+}
+/* The header's height is a TOKEN (--nx-header-h): the contextual bar
+   pins beneath it (primitives.css .nx-pin-top-center) and must never
+   learn the number twice. */
+.nx-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4) 0;
+  block-size: var(--nx-header-h);
+  box-sizing: border-box;
+  flex: none;
+}
+.nx-isl { padding: 5px 12px; }
+.nx-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink);
+  text-decoration: none;
+  font-family: var(--nx-display);
+  font-weight: 650;
+  font-size: var(--fs-md);
+}
+/* The corner mark always wins its corner (chrome tier; pointer-events
+   none in the pin class, so it never blocks a click) - nothing paints
+   over the logo. */
+.nx-corner-lockup { opacity: 0.85; z-index: var(--nx-z-chrome); }
+/* --- The warm-paper dress code for Astryx controls -----------------
+   Astryx provides the behavior; these rules keep the PRE-refactor
+   look: pill tabs with the copper wash (never an underline), pill
+   buttons, and the quiet warm demo badge. Scoped under .nx-root so
+   the two-class specificity beats StyleX's atomic classes. */
+.nx-root .astryx-tab {
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  min-block-size: 0;
+  block-size: auto;
+  color: var(--ink2);
+  font-family: var(--nx-display);
+}
+.nx-root .astryx-tab:hover { color: var(--ink); }
+.nx-root .astryx-tab.selected { color: var(--acc); background: var(--accsf); }
+.nx-root .astryx-tab-indicator { display: none; }
+.nx-root .astryx-button { border-radius: var(--radius-pill); }
+.nx-root .astryx-badge.warning { background: var(--warnsf); color: var(--warn); }
+.nx-view {
+  flex: 1;
+  min-block-size: 0;
+  overflow: auto;
+  padding: var(--sp-4);
+}
+.nx-ops-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--sf);
+  color: var(--ink);
+  padding: 3px 10px;
+  cursor: pointer;
+  font: inherit;
+  line-height: var(--lh-snug);
+}
+.nx-ops-pill.nx-ops-lv-attention { color: var(--crit); background: var(--critsf); }
+.nx-ops-pill.nx-ops-lv-unknown { color: var(--unkc); background: var(--unksf); }
+.nx-ops-reason { color: var(--mut); margin: 0 0 var(--sp-2); }
+/* Unavailable / error / empty shells keep geometry (#412 rule class). */
+.nx-empty {
+  margin: 18vh auto 0;
+  max-inline-size: var(--nx-measure-prose);
+  text-align: center;
+  color: var(--ink2);
+}

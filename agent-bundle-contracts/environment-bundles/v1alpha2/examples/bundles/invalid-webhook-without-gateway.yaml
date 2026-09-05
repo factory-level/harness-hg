@@ -1,0 +1,12 @@
+# INVALID: a webhook port on a profile whose gateway is switched off.
+# The gateway IS the thing that serves /webhooks/<handler>; a port
+# without it is an address that answers nothing, which is worse than no
+# address at all because the route would compile and then fail live.
+version: 2
+bundles:
+  - name: marketing-core
+    profiles:
+      - name: manager
+        envSecretRef: hermes-marketing-manager-env
+        gatewayEnabled: false
+        webhookPort: 8644

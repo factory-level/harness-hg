@@ -1,0 +1,72 @@
+# ApplicationSet "hermes-gitops-profiles" — the factory. It watches
+# profiles/*/profile.yaml in this repo and generates one Argo CD Application
+# per profile it finds. There are no committed child Application manifests
+# to hand-edit.
+#
+# The profile record is PLAIN HELM VALUES (a single top-level `spec:` block,
+# no apiVersion/kind/metadata — there is no HermesProfile CRD). Its identity
+# is its directory name, read as {{.path.basename}}.
+#
+# v1 is SINGLE CLUSTER (tech spec, section 16). Every generated Application
+# lands on the same cluster Argo CD runs in, via Argo CD's built-in
+# in-cluster server (https://kubernetes.default.svc). No cluster
+# registration Secrets, no placement routing.
+#
+# Token syntax: `__UPPER_SNAKE__` tokens are scaffold placeholders, replaced
+# once by the plugin when it initializes the repo. `{{ .foo }}` is Argo CD
+# Go templating (goTemplate: true), evaluated at reconcile time. The two
+# alphabets share no characters, so a plain string replace cannot corrupt
+# the Go templates.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: hermes-gitops-profiles
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: __GITOPS_REPO_URL__
+        revision: __GITOPS_BRANCH__
+        files:
+          - path: "profiles/*/profile.yaml"
+  template:
+    metadata:
+      name: "hermes-{{.path.basename}}"
+      labels:
+        hermes-gitops.factorylevel.dev/persona: "{{.spec.persona}}"
+        hermes-gitops.factorylevel.dev/managed: "true"
+    spec:
+      project: hermes-gitops
+      sources:
+        # Source 1: the versioned Helm chart that renders one profile's
+        # workloads. It lives in the harness-hg repo, not here.
+        - repoURL: __HERMES_GITOPS_REPO_URL__
+          targetRevision: __CHART_REVISION__
+          path: harness/hermes/charts/hermes-profile
+          helm:
+            releaseName: "hermes-{{.path.basename}}"
+            valueFiles:                    # general -> specific, last wins
+              - $gitops/values/defaults.yaml
+              - $gitops/clusters/local/values.yaml
+              - $gitops/profiles/{{.path.basename}}/profile.yaml
+        # Source 2: this GitOps repo itself, referenced only for its files
+        # (no `path`, so nothing renders from it directly). It exists to
+        # give source 1's valueFiles their `$gitops/...` root.
+        - repoURL: __GITOPS_REPO_URL__
+          targetRevision: __GITOPS_BRANCH__
+          ref: gitops
+      destination:
+        # v1: always the cluster Argo CD itself runs in.
+        server: https://kubernetes.default.svc
+        namespace: "hermes-{{.path.basename}}"
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        syncOptions: ["CreateNamespace=true", "ServerSideApply=true"]
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m

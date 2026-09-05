@@ -1,0 +1,6 @@
+# INVALID: gateway.kind is a closed enum.
+contract: harness-declaration/v1alpha1
+spec:
+  name: eve
+  gateway:
+    kind: sidecar

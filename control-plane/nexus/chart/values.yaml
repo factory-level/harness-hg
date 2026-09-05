@@ -1,0 +1,175 @@
+# The Nexus UI host image (#845): python + fastapi + uvicorn + git, built
+# from control-plane/nexus/image. The pin lives in versions.json ("nexus")
+# and this default must equal it (cli/tests/versions.test.ts). A hosted
+# environment may override it with an image it publishes itself.
+image:
+  repository: ghcr.io/factory-level/harness-hg-nexus
+  tag: 0.0.0-dev
+
+# The GitOps repository the plan is read from (deployments/dashboard/
+# nexus-plan.json). Cloned by an initContainer, re-pulled by the sync
+# sidecar on this cadence.
+gitopsUrl: ""
+gitopsBranch: main
+syncSeconds: 60
+
+# Credentials for a PRIVATE GitOps repo. Empty = anonymous clone, which is
+# what the local loop does against the host's git:// daemon. Set
+# secretName to a Secret in THIS namespace with `username` and `token`
+# keys; the platform provisions it (ADR-53), never this chart, and the
+# token reaches git through a credential helper rather than the URL.
+gitopsAuth:
+  secretName: ""
+
+# The ConfigMap carrying the UI bundles (index.js, standalone.js,
+# style.css), mounted at /app/dist. Provisioned OUTSIDE this release - by
+# the Pulumi bootstrap or `hg up` - because embedding ~800KB of bundles in
+# chart files put the Helm release Secret over its 1MiB cap (#804/#807).
+# Named nexus-ui-dist, not nexus-dist: the pre-fix release owned a
+# ConfigMap by the old name, and an external object cannot take it over.
+dist:
+  configMapName: nexus-ui-dist
+
+# Who installed this release. Empty means the CLI (`hg up`) owns it, which
+# is the local loop. The Pulumi bootstrap sets "pulumi", and `hg up` reads
+# this back to see it is NOT the owner and stand down to port-forwarding
+# instead of fighting over the release (ADR-53).
+owner: ""
+
+# Link bases surfaced by the UI (never proxied - links only, ADR-44).
+# The CLI passes host port-forward URLs for the local loop; the bootstrap
+# passes the real published hostnames (ADR-53).
+argocdBaseUrl: ""
+grafanaBaseUrl: ""
+# Optional server-side probe base for the embed-health check (#556): set
+# it to the in-cluster Grafana Service when grafanaBaseUrl sits behind an
+# edge Access gate the backend carries no identity for. Never used to
+# build embed URLs or the CSP - the browser only ever sees grafanaBaseUrl.
+grafanaProbeBaseUrl: ""
+
+# External tool URLs (#469, spec §23): <System-view inventory id>: <https
+# URL>. The title of a workload with an entry here behaves like a link.
+# Rendered whole (like `capabilities` below) so an id the chart does not
+# know about still reaches the backend, which https-gates every value and
+# drops anything that fails (_safe_https_url via _links(cfg)).
+toolUrls: {}
+
+# The in-cluster Prometheus the alert and uptime sources READ (ADR-55) -
+# not a link base. Prometheus rather than Grafana because it is
+# unauthenticated in-cluster, so these adapters need no credential, no
+# rotation and no secret mount to learn what is firing. Empty means both
+# sources report `not configured`, which is honest and never green.
+prometheusBaseUrl: "http://monitoring-prometheus.hermes-monitoring.svc:9090"
+
+# The communication router's in-cluster address, READ for the latest
+# fan-out execution (#278) - correlation id and per-consumer outcome.
+# Empty disables the join; nothing else depends on it. Receipts live in
+# the router's memory, so this answers "what happened just now", not
+# "what happened last week".
+routerBaseUrl: "http://hermes-event-router.hermes-system.svc"
+
+# A backup routine with no successful run inside this window reads
+# degraded. Staleness is the failure signal because the source reads
+# CronJob status only (see plugin_api.backup_source).
+backupStaleHours: 48
+
+# Published eval results older than this read `stale` rather than staying
+# green - a passing suite nobody has run for a week is not evidence that
+# the agent still behaves (#280, ADR-58). A week by default: evals are
+# run by an operator, not on a timer.
+evalStaleHours: 168
+
+# Workspace write authorization (#274, ADR-56). Empty ownerEmails =
+# single-operator mode (any authenticated caller writes). Non-empty =
+# only callers whose identityHeader value is listed may PUT/DELETE the
+# workspace - the 403 is the enforcement, hiding the Save button is
+# courtesy. The header is trusted because the edge is the only ingress
+# (ADR-48); ADR-50's OIDC replaces this with verified claims.
+workspace:
+  ownerEmails: []
+  identityHeader: Cf-Access-Authenticated-User-Email
+
+# The OIDC issuer every operator surface trusts (ADR-50, #284). With
+# `issuer` set, Nexus VERIFIES an id_token signature and reads its claims;
+# with it empty, the identityHeader path above stays in force. Those are
+# genuinely different security postures, so `GET /nexus/health` reports
+# which one is live rather than letting a proof assume.
+#
+# The client secret is a REFERENCE, never a value: the platform creates
+# the Secret (ADR-53), this chart only names it.
+oidc:
+  issuer: ""
+  clientId: nexus
+  clientSecretRef:
+    name: nexus-oidc
+    key: client-secret
+  # Which claim carries the role, and how its values map onto the
+  # canonical vocabulary. Dex's password DB has no groups (ADR-50 Cost),
+  # so the local loop maps on `email`; a real connector maps on `groups`.
+  roleClaim: email
+  roles:
+    owner: []
+    operator: []
+    viewer: []
+
+# Backend tuning. These were hardcoded in the ConfigMap template until
+# ADR-53 made the bootstrap the configuring authority - a value the
+# operator cannot set is a value the bootstrap cannot own.
+cacheSeconds: 15
+staleAfterSeconds: 90
+# Empty = in-cluster (the ServiceAccount token path); a named context is
+# only meaningful when the backend runs outside the cluster.
+kubeContext: ""
+# Optional: sha256 of the projected files/ payload, supplied by a caller
+# that cannot otherwise see a local chart's contents change (Pulumi's
+# Release diff). Empty = hash at render time from .Files instead.
+codeChecksum: ""
+adapters:
+  argo:
+    enabled: true
+  gateway:
+    enabled: false
+
+# What this DEPLOYMENT is allowed to do (ADR-84, #403/#409) - distinct
+# from the operator feature overlay, which is state on the volume and is
+# switchable from the browser and `hg nexus features`. Those flags say
+# "has this shipped"; these say "may this environment use it at all", so
+# they live only here, have no API that writes them, and no in-app toggle
+# can reach them. A destructive action guarded by something a browser can
+# flip is not guarded.
+capabilities:
+  # Reset-workspace destroys every operator-authored sheet, note, shape
+  # and position, with no trash and no undo - the only recovery is the
+  # nightly PVC backup or a prior export. It therefore FAILS CLOSED:
+  # absent or non-boolean means unavailable, and a deployment that wants
+  # it must say so.
+  #
+  # How to opt in, per install path - because they are NOT the same:
+  #   local loop   `hg nexus set capabilities.workspaceReset=true`, then
+  #                `hg up`. The CLI coerces "true" to a real boolean.
+  #   bootstrap    `pulumi config set --path
+  #                nexusCapabilities.workspaceReset true`. `hg nexus set`
+  #                does NOT reach a Pulumi-owned release - `hg up` stands
+  #                down when the bootstrap owns it (ADR-53).
+  # Staging and production leave it alone.
+  workspaceReset: false
+  # Top-level views that may be withheld while they are still finishing.
+  # These fail OPEN - a required launch view must not vanish because a key
+  # was misspelled or a values file was trimmed - so withholding one is
+  # always an explicit `false`, never an omission. Disabled means absent
+  # from navigation AND 404 on its route; hiding a tab alone is not it.
+  # Same two opt-in paths as above; the bootstrap key is
+  # `nexusCapabilities.views.<name>`.
+  views:
+    system: true
+    communication: true
+    agents: true
+    backups: true
+
+state:
+  size: 1Gi
+
+backup:
+  schedule: "45 3 * * *"
+  retention: 7
+  pvcSize: 1Gi

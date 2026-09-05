@@ -1,0 +1,48 @@
+# Platform monitoring, part 4: the control plane's OWN dashboards
+# (design 15, ADR-55) - hg-control-plane-overview ("is it working?") and
+# hg-control-plane-reconciliation ("is Git converging?"), rendered by the
+# LOCAL chart control-plane/observability/chart into ConfigMaps in
+# hermes-monitoring that the platform Grafana's sidecars import (see
+# monitoring-stack.yaml). Synced by the hermes-gitops-root Application
+# like every other manifest in bootstrap/ - which is what "provisioned
+# automatically with a fresh installation" means: no operator action, no
+# Grafana edit, no per-dashboard bootstrap change.
+#
+# Like fleet-dashboard.yaml (and unlike the other monitoring-* files)
+# this DOES carry scaffold tokens: it sources a chart from the platform
+# repo itself, exactly like the ApplicationSet does.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: control-plane-observability
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/component: control-plane-observability
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # "default" (Argo CD's built-in AppProject), same reasoning as the
+  # other bootstrap-level Applications: the hermes-gitops AppProject is
+  # created by this same bootstrap/ sync, so platform apps can't
+  # reference it without a bootstrapping deadlock.
+  project: default
+  source:
+    repoURL: __HERMES_GITOPS_REPO_URL__
+    targetRevision: __CHART_REVISION__
+    path: control-plane/observability/chart
+  destination:
+    name: in-cluster
+    namespace: hermes-monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

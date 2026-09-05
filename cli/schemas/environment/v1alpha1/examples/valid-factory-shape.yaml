@@ -1,0 +1,84 @@
+# The factory environment's full shape, condensed: every structured
+# block the infra stack reads, secrets as markers, #358-class values
+# as strings.
+apiVersion: hermes-gitops.factorylevel.dev/environment/v1alpha1
+name: factory
+project: example-project
+rootKms: {location: us, keyring: pulumi, key: pulumi-root}
+state:
+  deployerGroup: user:admin@example.dev
+  agents: [factory]
+  backupEnvironments: [factory]
+infra:
+  clusterProvider: none
+  kubeconfigPath: /home/factory-level/.kube/config
+  gitopsRepoUrl: https://github.com/example/example.gitops.git
+  gitopsBranch: main
+  gitopsBranchProtection: true
+  gitopsRequiredReviewers: 0
+  gitopsGitToken: {secret: true}
+  hermesGitopsRepoUrl: https://github.com/factory-level/harness-hg.git
+  chartRevision: main
+  cloudflareApiToken: {secret: true}
+  providers: {compute: pod, secret: k8s, ingress: cloudflare}
+  stages: {hermes: true, agents: true, cluster: true}
+  hermes:
+    source: /mnt/ssd/hermes-gitops/hermes-agent-gitops
+    ref: ""
+    pluginPath: ""
+    scaffold: true
+  agents:
+    - source: github.com/example/social-media
+      ref: main
+      subdir: distributions/manager
+      name: marketing-manager
+      overrides:
+        gitAuthSecretRef: hermes-marketing-manager-git-auth
+        appValues:
+          monitoring:
+            alert:
+              discordUrl: {secret: true}
+    - source: github.com/example/social-media
+      ref: main
+      subdir: agents/marketing-manager-eve
+      name: marketing-manager-eve
+      runtime: eve
+  agentGitAuth:
+    marketing-manager:
+      username: x-access-token
+      password: {secret: true}
+  argocdRepoCreds:
+    gitopsUsername: x-access-token
+    hermesGitopsUsername: x-access-token
+    gitopsToken: {secret: true}
+    hermesGitopsToken: {secret: true}
+  agentSecrets:
+    marketing-manager:
+      ANTHROPIC_API_KEY: {secret: true}
+      DISCORD_ALLOWED_CHANNELS: "1534804917468795002"
+      DISCORD_ALLOW_BOTS: "true"
+  routerSecrets:
+    hermes-event-router-secrets: {secret: true}
+  pluginConfig:
+    imageRepository: registry.example.dev/hermes/hermes-agent
+    imageTag: fable-1
+  controlPlaneIngress:
+    provider: cloudflare
+    zoneName: example.dev
+    accessGroups:
+      platform-admins:
+        emails: [admin@example.dev]
+    access:
+      groups:
+        grafana: [platform-admins]
+        "workload:marketing-engagement/postiz": [platform-admins]
+      googleClientSecret: {secret: true}
+    hostnames: {grafana: grafana, nexus: nexus}
+    agentSubdomains: true
+  reconcile:
+    enabled: true
+    version: fable-1
+    repoUrl: https://github.com/example/social-media.git
+    branch: main
+    intervalSeconds: 60
+    statusNamespace: hermes-nexus

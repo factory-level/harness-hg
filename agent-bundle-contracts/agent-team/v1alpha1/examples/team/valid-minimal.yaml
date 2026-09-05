@@ -1,0 +1,6 @@
+# The smallest team: one Eve agent under agents/eve/.
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: AgentTeam
+name: echo
+displayName: Echo
+harnesses: [eve]

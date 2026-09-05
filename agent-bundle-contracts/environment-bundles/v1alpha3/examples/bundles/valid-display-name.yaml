@@ -1,0 +1,14 @@
+# The canonical Bundle identity contract (#567): `name` is the stable
+# machine id every join uses; `displayName` is the human-facing title
+# Nexus renders ("Marketing Team"), presentation only.
+version: 3
+bundles:
+  - name: marketing-core
+    displayName: Marketing Team
+    profiles:
+      - name: manager
+        envSecretRef: hermes-marketing-manager-env
+        webhookPort: 8644
+        apiServerPort: 8642
+      - name: research
+        envSecretRef: hermes-marketing-research-env

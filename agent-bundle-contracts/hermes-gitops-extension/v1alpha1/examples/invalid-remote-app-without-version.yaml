@@ -1,0 +1,6 @@
+# Invalid: `version` is REQUIRED for remote repos (https:// or oci://) -
+# deterministic deploys need a pinned chart version, never "latest".
+apps:
+  - name: vector-db
+    chart: qdrant
+    repo: https://qdrant.github.io/qdrant-helm

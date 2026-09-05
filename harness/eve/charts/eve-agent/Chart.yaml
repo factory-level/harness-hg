@@ -1,0 +1,22 @@
+apiVersion: v2
+name: eve-agent
+description: >-
+  One agent on the Eve runtime (ADR-149): renders an EveAgent instance record
+  (profiles/<name>/profile.yaml, agent-bundle-contracts/eveagent/v1alpha1) into one
+  StatefulSet whose initContainer clones spec.source at spec.sha, runs
+  `npm ci` and `eve build` on the eve-runtime image, and whose main container
+  serves the built Nitro output with `eve start`. Health is GET /eve/v1/health;
+  route auth is a per-instance Basic credential the chart mints; the ingress
+  forwards both /eve/ and /.well-known/workflow/ unrewritten. Selected by the
+  compiled agents ApplicationSet from the record's spec.chart, layered under
+  the same cluster-values as the hermes-profile chart. appVersion is the
+  pinned eve release (versions.json runtimes.eve.version).
+type: application
+version: 0.1.0
+appVersion: "0.42.0"
+keywords:
+  - hermes-gitops
+  - eve-agent
+home: https://github.com/factory-level/harness-hg
+sources:
+  - https://github.com/factory-level/harness-hg

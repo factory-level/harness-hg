@@ -1,0 +1,99 @@
+{{- include "hermes-event-router.spec" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hermes-event-router.service" . }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: control-plane
+    hermes-gitops.factorylevel.dev/component: event-router
+    app.kubernetes.io/name: hermes-event-router
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hermes-event-router
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hermes-event-router
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        # Roll the pod whenever the code or the compiled config changes.
+        checksum/code: {{ .Files.Get "files/router.ts" | sha256sum }}
+        checksum/config: {{ .Values.spec | toJson | sha256sum }}
+        # The annotation scrape job the monitoring stack already runs
+        # (the same convention as the agent exporter) - no ServiceMonitor.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.port | quote }}
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: router
+          image: {{ .Values.image }}
+          command: ["bun", "/app/router.ts"]
+          env:
+            - name: CONFIG_PATH
+              value: /config/config.json
+            - name: SECRETS_DIR
+              value: /secrets
+            - name: PORT
+              value: {{ .Values.port | quote }}
+            {{- if .Values.spec.durableProvider }}
+            - name: REDIS_URL
+              value: redis://{{ include "hermes-event-router.service" . }}-redis:6379
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+            {{- range .Values.spec.connections | default list }}
+            - name: connection-{{ .name }}
+              mountPath: /secrets/connections/{{ .name }}
+              readOnly: true
+            {{- end }}
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: code
+          configMap:
+            name: {{ include "hermes-event-router.service" . }}-code
+        - name: config
+          configMap:
+            name: {{ include "hermes-event-router.service" . }}-config
+        - name: secrets
+          secret:
+            secretName: {{ .Values.secretsName }}
+            optional: true
+        {{- range .Values.spec.connections | default list }}
+        - name: connection-{{ .name }}
+          secret:
+            secretName: {{ include "hermes-event-router.service" $ }}-connection-{{ .name }}
+            optional: true
+        {{- end }}

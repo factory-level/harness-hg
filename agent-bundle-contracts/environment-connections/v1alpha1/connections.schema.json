@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/environment-connections/v1alpha1/connections.schema.json",
+  "title": "Platform connections",
+  "description": "Operator-authored, deployment-neutral catalogue of third-party app registrations (a Discord application + bot, a GitHub App) and the profiles they are granted to. A connection is declared ONCE; its secret material lives in one platform Secret `hermes-secrets/connection-<name>` (never in this file), projected into every bound profile's namespace as `<instance>-connection-<name>` and mounted by the event router, whose gateway verifies the provider's signature on `POST /v1/connect/<provider>/<name>` and forwards the request verbatim to the bound profile chosen by the binding's match rule. A profile bound to no connection receives nothing. In an agent-team repository this file lives at `harness-hg/connections.yaml`; the legacy path stays readable for repositories not yet migrated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "connections"
+  ],
+  "$defs": {
+    "shortName": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 40
+    },
+    "discordId": {
+      "type": "string",
+      "pattern": "^[0-9]{5,32}$"
+    },
+    "repositoryFullName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "hermes.gitops/v1alpha1",
+      "description": "Contract identifier this document is validated against; unknown versions are refused loudly."
+    },
+    "kind": {
+      "const": "Connections",
+      "description": "Document kind - always Connections."
+    },
+    "connections": {
+      "description": "The catalogue. Declaring a connection grants nothing: a profile receives its credentials and its inbound traffic only through a binding.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "provider",
+          "bindings"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/shortName",
+            "description": "The connection's identity: the platform Secret is connection-<name>, the gateway route is /v1/connect/<provider>/<name>, the projected Secret is <instance>-connection-<name>."
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "discord",
+              "github"
+            ],
+            "description": "Which provider the connection is an app registration with. Decides the secret keys the platform Secret must carry (discord: DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID, DISCORD_PUBLIC_KEY; github: GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_WEBHOOK_SECRET, GITHUB_APP_SLUG), the gateway's verification scheme (discord: Ed25519 over timestamp+body; github: HMAC-SHA256 X-Hub-Signature-256), the agent route the gateway forwards to (/eve/v1/<provider>), and the match vocabulary."
+          },
+          "bindings": {
+            "description": "Which profiles receive this connection, and which inbound traffic each one is routed. A profile may appear once per connection. Order matters only when match rules overlap: the first match wins.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "profile"
+              ],
+              "properties": {
+                "profile": {
+                  "$ref": "#/$defs/shortName",
+                  "description": "The bound profile (an installed record's name)."
+                },
+                "match": {
+                  "description": "The inbound routing rule. Absent or empty = catch-all (every inbound request the gateway verifies for this connection that no earlier binding matched). discord: guilds and/or channels by snowflake id; github: repositories by owner/name.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "guilds": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "$ref": "#/$defs/discordId"
+                      }
+                    },
+                    "channels": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "$ref": "#/$defs/discordId"
+                      }
+                    },
+                    "repositories": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {
+                        "$ref": "#/$defs/repositoryFullName"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

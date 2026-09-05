@@ -1,0 +1,18 @@
+apiVersion: v2
+name: hermes-bundle
+description: >-
+  Runs a declared bundle of Hermes profiles in one StatefulSet, one pod and one
+  shared HERMES_HOME volume. Each enabled profile gets a gateway container with
+  only its assigned code-repository mounts; the bundle owns scheduling,
+  persistent storage and the machine-level dashboard.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - hermes-gitops
+  - hermes-agent
+  - profiles
+  - bundles
+home: https://github.com/factory-level/harness-hg
+sources:
+  - https://github.com/factory-level/harness-hg

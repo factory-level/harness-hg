@@ -1,0 +1,13 @@
+name: hermes-gitops-bootstrap
+description: >-
+  Hermes GitOps bootstrap — installs the Hermes fork CLI + gitops-emitter
+  plugin (stage 1), installs agents via `hermes profile install` (stage 2),
+  and stands up the cluster control plane (Argo CD, ESO, ClusterSecretStore,
+  optionally PKO, and the hermes-gitops-root Application — stage 3).
+  bun/TypeScript, structured components/ + control-flow/ + index.ts
+  (see src/index.ts and _docs/wiki/index.md's infra/ target).
+runtime:
+  name: nodejs
+  options:
+    packagemanager: bun
+main: src/

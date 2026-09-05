@@ -1,0 +1,199 @@
+{{- include "eve.backupGuard" . -}}
+{{- if and .Values.spec.backup (eq (.Values.providers.backup | default "none") "pvc") -}}
+{{- $retention := .Values.spec.backup.retention | default 7 -}}
+{{- $hasWorkspaces := and .Values.spec.workspace .Values.spec.workspace.repositories -}}
+# Backup path (providers.backup=pvc, ADR-150): archive the instance's data
+# volume into a per-instance backups PVC on the agent's declared schedule.
+# The PORT of hermes-profile/templates/pod/backup.yaml: same routine
+# convention (label, `backups` sink volume, annotations), same sqlite
+# snapshot step, Eve's own exclusions and protected paths:
+#
+#   protected  state/          the Workflow world (every session, queue,
+#                              stream) and the sandbox cache - symlinked
+#                              into <project>/.eve by boot.sh so a rebuild
+#                              never touches it
+#              src/            the checkout at spec.sha (small without the
+#                              excludes below; restoring it keeps an
+#                              instance coherent even if the source repo
+#                              rewrote history)
+#              .hermes-gitops/ the build stamp
+#   excluded   node_modules/, .output/, the npm cache and eve's build /
+#              diagnostic trees: rebuildable from spec.sha, and their
+#              ABSENCE after a restore is what makes boot.sh rebuild
+#              (it checks for .output/, not just the stamp).
+#
+# The workspaces claim is NOT archived: its checkouts are declarative
+# (bindings pinned by sha in Git) and boot.sh re-clones what is missing.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "eve.fullname" . }}-backups
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    {{- include "eve.labels" . | nindent 4 }}
+  annotations:
+    # WaitForFirstConsumer StorageClasses keep this Pending until the first
+    # backup Job mounts it - steady state, not un-health (see hermes-profile).
+    argocd.argoproj.io/ignore-healthcheck: "true"
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.backup.pvc.storageClassName }}
+  storageClassName: {{ .Values.backup.pvc.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.pvc.size | default "5Gi" }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "eve.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    {{- include "eve.labels" . | nindent 4 }}
+    # The backup-routine convention: `hg backup list|run|verify` discovers
+    # by this label, triggers on demand, and opens the newest artifact to
+    # assert the paths in hermes.dev/backup-protects are inside it.
+    hermes.dev/backup-routine: "true"
+  annotations:
+    hermes.dev/backup-protects: "state/,src/,.hermes-gitops/installed_sha"
+    hermes.dev/backup-retention: {{ $retention | quote }}
+    hermes.dev/backup-destination: {{ .Values.providers.backup | default "none" | quote }}
+spec:
+  schedule: {{ .Values.spec.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "eve.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          # Both PVCs are ReadWriteOnce: co-schedule with the agent pod or
+          # the data mount hangs forever.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      {{- include "eve.selectorLabels" . | nindent 22 }}
+                  topologyKey: kubernetes.io/hostname
+          # The data claim is owned by the image's `node` user (fsGroup 1000
+          # in statefulset.yaml); the archiver runs as that identity.
+          securityContext:
+            fsGroup: 1000
+          containers:
+            - name: backup
+              image: {{ printf "%s:%s" .Values.backup.image.repository .Values.backup.image.tag }}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  ts="$(date -u +%Y%m%d-%H%M%S)"
+                  archive="/backups/{{ include "eve.name" . }}-${ts}.tar.gz"
+                  echo "[backup] archiving /data -> ${archive}"
+                  # Every *.db on the volume is snapshotted through
+                  # sqlite3.backup() + integrity_check and appended as the
+                  # archive's LAST root (tar's last-member-wins substitutes
+                  # the consistent copy for a possibly torn live one) - the
+                  # hermes-profile routine's step, kept verbatim: eve's
+                  # local world is file-based today, and if a Workflow world
+                  # ever writes sqlite here this is what keeps BKUP008 true.
+                  rm -rf /tmp/snap && mkdir -p /tmp/snap
+                  python3 - <<'PY'
+                  import json, os, sqlite3, sys, time
+                  PRUNE = ("node_modules", ".output", ".npm", "builds", "discovery",
+                           "compile", "logs", "traces", "evals", "backups")
+                  dbs = []
+                  for root, dirs, files in os.walk("/data"):
+                      dirs[:] = [d for d in dirs if d not in PRUNE]
+                      for f in files:
+                          if not f.endswith(".db"):
+                              continue
+                          src = os.path.join(root, f)
+                          rel = os.path.relpath(src, "/data")
+                          dst = os.path.join("/tmp/snap", rel)
+                          os.makedirs(os.path.dirname(dst), exist_ok=True)
+                          conn = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+                          out = sqlite3.connect(dst)
+                          conn.backup(out)
+                          conn.close()
+                          check = out.execute("PRAGMA integrity_check").fetchone()[0]
+                          out.close()
+                          if check != "ok":
+                              print(f"[backup] FATAL {rel}: integrity_check {check}", file=sys.stderr)
+                              sys.exit(1)
+                          print(f"[backup] snapshot {rel}: integrity_check ok")
+                          dbs.append(dict(db=rel, integrity_check=check))
+                  marker = dict(
+                      takenAt=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                      method="sqlite3.backup + PRAGMA integrity_check",
+                      databases=dbs,
+                  )
+                  with open("/tmp/snap/.hermes-db-snapshot.json", "w") as fh:
+                      json.dump(marker, fh, indent=2)
+                  print(f"[backup] snapshot marker written ({len(dbs)} database(s))")
+                  PY
+                  # GNU tar exits 1 when a file changed while being read -
+                  # routine under a live agent; only exit >1 is fatal.
+                  set +e
+                  tar czf "${archive}" \
+                    --exclude='*/node_modules' \
+                    --exclude='*/.output' \
+                    --exclude=./.npm \
+                    --exclude=./home/.npm \
+                    --exclude=./home/.cache \
+                    --exclude='*/.eve/builds' \
+                    --exclude='*/.eve/discovery' \
+                    --exclude='*/.eve/compile' \
+                    --exclude='*/.eve/logs' \
+                    --exclude='*/.eve/traces' \
+                    --exclude='*/.eve/evals' \
+                    --exclude='*/.eve/dev-runtime' \
+                    --exclude='*.db-wal' \
+                    --exclude='*.db-shm' \
+                    --exclude='*.db-journal' \
+                    -C /data . -C /tmp/snap .
+                  rc=$?
+                  set -e
+                  if [ "$rc" -gt 1 ]; then
+                    echo "[backup] FATAL tar exited ${rc}" >&2
+                    exit "$rc"
+                  fi
+                  ls -1 /backups/*.tar.gz | sort -r | tail -n +{{ add $retention 1 }} | while read -r old; do
+                    echo "[backup] pruning ${old} (retention: {{ $retention }})"
+                    rm -f "${old}"
+                  done
+                  echo "[backup] done: $(ls -1 /backups/*.tar.gz | wc -l) archive(s) retained"
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                  # Not readOnly: a wal-mode sqlite snapshot needs a writable
+                  # -shm to join the writer's locking protocol (hermes-profile
+                  # #436); the connection itself stays mode=ro.
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            # The StatefulSet's volumeClaimTemplate "data" at replica 0
+            # (replicas pinned to 1 in statefulset.yaml).
+            - name: data
+              persistentVolumeClaim:
+                claimName: data-{{ include "eve.fullname" . }}-0
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ include "eve.fullname" . }}-backups
+{{- end -}}

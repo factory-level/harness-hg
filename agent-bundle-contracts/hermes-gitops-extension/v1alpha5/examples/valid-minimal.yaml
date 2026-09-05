@@ -1,0 +1,4 @@
+# The smallest valid v5 file: the version marker alone. A profile with no
+# infra intent and no communication - same semantics as an absent file,
+# pinned to the v5 contract.
+contractVersion: 5

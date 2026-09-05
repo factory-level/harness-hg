@@ -1,0 +1,12 @@
+# prompt and invoke are two different front doors - one per scenario.
+name: both-doors
+profile: platform-sre
+prompt: prompt.md
+invoke:
+  event:
+    name: observability.alert
+    payload: fixtures/alert-firing.json
+expect:
+  outputs:
+    - agent:
+        profile: platform-sre

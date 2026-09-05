@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Bundles — Harness Hg</title>
+<meta name="description" content="Share and install complete agent teams — the agents, the apps they run beside, and the secrets they need — as one reviewable bundle.">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Harness Hg">
+<meta property="og:title" content="Agent Bundles — Harness Hg">
+<meta property="og:description" content="Share and install complete agent teams — the agents, the apps they run beside, and the secrets they need — as one reviewable bundle.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<!-- Vendored faces, declared in styles.css. The two text faces paint the
+     first screen here; JetBrains Mono loads on demand for inline literals. -->
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js"></script>
+<link rel="stylesheet" href="../styles.css?v=18">
+<script>document.documentElement.classList.add('js')</script>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="topbar__brand" href=".././">
+      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <span class="lockup"><span class="lockup__name">Hermes</span><span class="lockup__sym">Hg</span></span>
+    </a>
+    <nav class="topbar__nav" aria-label="Primary">
+      <details class="dd" data-dd>
+        <summary class="dd__label">Features</summary>
+        <ul class="dd__panel">
+          <li><a href="../features/">Overview</a></li>
+          <li><a href="../features/agent-bundles.html" aria-current="page">Agent Bundles</a></li>
+          <li><a href="../features/fleet-canvas.html">Fleet Canvas</a></li>
+          <li><a href="../features/communication.html">Communication</a></li>
+          <li><a href="../features/backups.html">Backups</a></li>
+          <li><a href="../features/repo-sharing.html">Repository Sharing</a></li>
+        </ul>
+      </details>
+      <a href="../docs/">Docs</a>
+      <a href="../demo/">Demo</a>
+      <a href="../devlog/">Devlog</a>
+      <a href="../about.html">About</a>
+    </nav>
+    <a class="topbar__gh" href="https://github.com/factory-level/harness-hg">
+      GitHub
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h6v6M10 2 3.5 8.5"/></svg>
+    </a>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+<div class="pagehead pagehead--split">
+  <div>
+    <p class="sec__eyebrow">Agent bundles</p>
+    <h1 class="sec__title">Install the whole team.</h1>
+    <p class="sec__lede">A bundle deploys several agents side by side — with the apps they run beside and the secrets they need — as <strong>one reviewable declaration</strong>. Share the bundle, and someone else installs the team.</p>
+  </div>
+  <figure class="feat__viz pagehead__viz" aria-hidden="true">
+    <!-- The asset pass: the bundle as one island - both agents, the ledger
+         database and the runbook shelf they ship with, on a single slab. -->
+    <img class="feat__scene" src="../assets/bundle-office.png" alt="" loading="lazy"
+         width="1600" height="1200" />
+    <figcaption class="feat__tag">one bundle · agents and what they ship with</figcaption>
+  </figure>
+</div>
+
+<section class="sec" aria-labelledby="agent-bundles-why">
+  <div class="why">
+    <div class="why__main">
+      <p class="sec__eyebrow">Why it matters</p>
+      <h2 class="sec__title" id="agent-bundles-why">Teams deploy together, or they drift apart.</h2>
+      <p class="sec__lede">Agents that work together share infrastructure — a database, a runbook store, the events that connect them. Installed one at a time, those relationships live in someone’s head and are rebuilt by hand in every new environment. A bundle keeps the team and its relationships in one declaration, so what deploys together is <em>declared</em> together.</p>
+    <p class="sec__lede">Members of a bundle share a boundary, and the devlog records how that asymmetry was found. Choose bundles for teams that belong together; keep agents separate when isolation matters.</p>
+    </div>
+    <aside class="why__aside">
+      <p class="pull">Bundling is a co-location decision, not a security one.</p>
+      <p class="feat__tag">— <a href="../devlog/bundling-is-not-a-downgrade.html">from the devlog</a></p>
+    </aside>
+  </div>
+</section>
+
+<section class="sec" aria-labelledby="agent-bundles-how">
+  <div class="sec__head">
+    <p class="sec__eyebrow">How it fits</p>
+    <h2 class="sec__title" id="agent-bundles-how">From one declaration to one Application.</h2>
+  </div>
+  <ol class="steps">
+    <li class="step">
+      <p class="step__n" aria-hidden="true">01</p>
+      <h3 class="step__t">Declare the bundle and its members.</h3>
+      <p class="step__b">One declaration names the agents, the apps they run beside, and what each needs.</p>
+    </li>
+    <li class="step">
+      <p class="step__n" aria-hidden="true">02</p>
+      <h3 class="step__t">Mercury opens the pull request.</h3>
+      <p class="step__b">The bundle renders as one record in Git — reviewable, reproducible, reversible by revert.</p>
+    </li>
+    <li class="step">
+      <p class="step__n" aria-hidden="true">03</p>
+      <h3 class="step__t">Argo CD deploys it as one unit.</h3>
+      <p class="step__b">The bundle becomes one Application: the members, their apps, their monitoring and their backups.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="sec" aria-labelledby="agent-bundles-rel">
+  <div class="sec__head">
+    <p class="sec__eyebrow">Related capabilities</p>
+    <h2 class="sec__title" id="agent-bundles-rel">It works with the rest.</h2>
+  </div>
+  <div class="flist">
+    <a class="flist__row" href="repo-sharing.html">
+      <span class="flist__t">Repository Sharing</span>
+      <span class="flist__d">Move a bundle you built in one project into another.</span>
+    </a>
+    <a class="flist__row" href="fleet-canvas.html">
+      <span class="flist__t">Fleet Canvas</span>
+      <span class="flist__d">See the installed team and how it connects.</span>
+    </a>
+    <a class="flist__row" href="backups.html">
+      <span class="flist__t">Backups</span>
+      <span class="flist__d">Every member keeps its scheduled, restorable state.</span>
+    </a>
+  </div>
+  <p class="sec__cta" style="margin-top: clamp(32px, 5vh, 52px)">
+    <a class="btn" href="../docs/agent-team-install/">
+      Bundles, in the docs
+      <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
+    </a>
+    <a class="link" href="./">All features</a>
+  </p>
+</section>
+
+</main>
+
+<footer class="siteftr">
+  <p class="siteftr__id"><span class="siteftr__name">Hermes</span><span class="siteftr__sym">Hg</span></p>
+  <nav class="siteftr__nav" aria-label="Footer">
+    <a class="link" href="../docs/">Docs</a>
+    <a class="link" href="../devlog/">Devlog</a>
+    <a class="link" href="../features/">Features</a>
+    <a class="link" href="../about.html">About</a>
+    <a class="link" href="https://github.com/factory-level/harness-hg">GitHub</a>
+  </nav>
+  <p class="siteftr__note">Created by Factory-level.</p>
+</footer>
+
+<script src="../contour-sphere.js?v=18"></script>
+<script src="../hero.js?v=18"></script>
+</body>
+</html>

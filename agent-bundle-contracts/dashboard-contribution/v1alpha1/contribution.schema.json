@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/dashboard-contribution/v1alpha1/contribution.schema.json",
+  "title": "Nexus dashboard contribution (dashboard/contribution.yaml and distributions/<p>/dashboard/components.yaml)",
+  "description": "The persona-authored half of the Nexus canvas: logical components bound to compiled profiles and apps, plus people, groups and conceptual relationships. Data, never code - no URLs, no scripts, no environment specifics. Physical facts (instances, endpoint URLs, Argo identities) come from the compiled topology plan; this file only names what should appear and how it binds. Relationships are conceptual and assert nothing about network connectivity. Cross-file rules (unique component ids across a repository, relationship endpoints existing) are the Nexus compiler's job, not this schema's.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "$defs": {
+    "componentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63,
+      "description": "DNS-label id. Unique across every contribution file of the repository (enforced by the compiler)."
+    },
+    "displayText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Plain text. Rendered escaped - markup is not interpreted."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "dashboard.hermes-gitops/v1alpha1"
+    },
+    "kind": {
+      "const": "NexusContribution"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/componentId",
+          "description": "Identity of this contribution source. For the repository-level file, the operation's name; for a per-distribution file, conventionally the profile name."
+        },
+        "title": {
+          "$ref": "#/$defs/displayText"
+        },
+        "description": {
+          "$ref": "#/$defs/displayText"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "title",
+              "bind"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "application"
+                ],
+                "description": "agent binds a whole profile; application binds one apps[] entry of a profile."
+              },
+              "title": {
+                "$ref": "#/$defs/displayText"
+              },
+              "description": {
+                "$ref": "#/$defs/displayText"
+              },
+              "bind": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "profile"
+                ],
+                "properties": {
+                  "profile": {
+                    "$ref": "#/$defs/componentId",
+                    "description": "The distribution.yaml name the component binds to."
+                  },
+                  "app": {
+                    "$ref": "#/$defs/componentId",
+                    "description": "The apps[] entry name. Required when kind is application, forbidden when kind is agent."
+                  }
+                }
+              },
+              "display": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "icon": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                    "maxLength": 63,
+                    "description": "Lucide icon name (kebab-case). Unknown names fall back to a default icon."
+                  },
+                  "providerBadge": {
+                    "type": "boolean",
+                    "description": "Show hosting-provider badges derived from the compiled plan."
+                  }
+                }
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "showCrons": {
+                    "type": "boolean",
+                    "description": "Agent modal: show the compile-time cron summary (name and schedule from the declared contract - never prompts)."
+                  },
+                  "showConfigSummary": {
+                    "type": "boolean",
+                    "description": "Agent modal: show the allowlisted declared-configuration summary."
+                  },
+                  "showAccessors": {
+                    "type": "boolean",
+                    "description": "Show the people whose accessors list names this component."
+                  },
+                  "showArgoCd": {
+                    "type": "boolean",
+                    "description": "Application modal: show the Argo CD deep link."
+                  },
+                  "endpointNames": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/componentId"
+                    },
+                    "description": "Which declared endpoints appear as deployed-URL links, by endpoint name. Omitted: every endpoint with a compiled external URL."
+                  }
+                }
+              },
+              "observability": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "grafanaDashboard": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                    "maxLength": 63,
+                    "description": "Logical Grafana dashboard identifier. The compiler resolves it to a concrete uid; never a URL."
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "application"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "bind": {
+                      "required": [
+                        "profile",
+                        "app"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "agent"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "bind": {
+                      "not": {
+                        "required": [
+                          "app"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "displayName"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId"
+              },
+              "displayName": {
+                "$ref": "#/$defs/displayText"
+              },
+              "title": {
+                "$ref": "#/$defs/displayText"
+              },
+              "cohorts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/componentId"
+                },
+                "description": "Group ids this person belongs to."
+              },
+              "accessors": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/componentId"
+                },
+                "description": "Component ids this person operates or has access to. Display metadata only - never an IAM assertion."
+              }
+            }
+          }
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId"
+              },
+              "title": {
+                "$ref": "#/$defs/displayText"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "department",
+                  "team",
+                  "system"
+                ]
+              }
+            }
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "from",
+              "to",
+              "label"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/componentId"
+              },
+              "from": {
+                "$ref": "#/$defs/componentId"
+              },
+              "to": {
+                "$ref": "#/$defs/componentId"
+              },
+              "label": {
+                "$ref": "#/$defs/displayText"
+              }
+            }
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "components"
+          ],
+          "properties": {
+            "components": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "people"
+          ],
+          "properties": {
+            "people": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "groups"
+          ],
+          "properties": {
+            "groups": {
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "required": [
+            "relationships"
+          ],
+          "properties": {
+            "relationships": {
+              "minItems": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

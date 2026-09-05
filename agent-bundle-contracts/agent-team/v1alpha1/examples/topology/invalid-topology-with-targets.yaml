@@ -1,0 +1,8 @@
+apiVersion: hermes-gitops.factorylevel.dev/agent-team/v1alpha1
+kind: Topology
+layout: hub-spoke
+regions:
+  - name: ca-west
+    jurisdiction: CA
+    targets:
+      - {name: ca-west-a, argoDestination: ca-west-a}

@@ -1,0 +1,4 @@
+# Invalid: evaluate is required — a scenario with no evaluator asserts nothing.
+name: heartbeat-recorded
+profile: persona-echo
+prompt: prompt.md

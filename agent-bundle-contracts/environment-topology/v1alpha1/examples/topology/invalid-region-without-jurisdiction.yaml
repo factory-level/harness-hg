@@ -1,0 +1,9 @@
+# Jurisdiction is required per region - sovereignty validation is
+# meaningless without it.
+version: 1
+layout: single
+regions:
+  - name: eu-west
+    targets:
+      - name: eu-west-a
+        argoDestination: eu-west-a

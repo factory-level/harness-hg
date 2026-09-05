@@ -1,0 +1,11 @@
+# An output without an event type is untyped traffic - rejected. The event
+# name IS the contract between producer and routes.
+contractVersion: 5
+apps:
+  - name: monitoring
+    chart: charts/monitoring
+    repo: local
+    outputs:
+      - name: alerts
+        adapter:
+          type: webhook

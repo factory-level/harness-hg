@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/charts/fleet-dashboard/values.schema.json",
+  "title": "fleet-dashboard Helm values",
+  "description": "Chart-owned validation of the fleet budget/TCO values (NOT part of the frozen profile-record contract in agent-bundle-contracts/). Validated by Helm at template time, so a malformed budgets map fails the Argo CD render loudly instead of producing a broken dashboard.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "datasourceUid": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budgets": {
+      "type": "object",
+      "description": "persona -> monthly USD budget. Persona keys must be DNS-label-shaped: they are spliced into PromQL profile=\"...\" matchers and Grafana rule uids.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9]([a-z0-9-]{0,52}[a-z0-9])?$"
+      },
+      "additionalProperties": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "alert": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "webhookUrl": {
+          "type": "string"
+        },
+        "discordUrl": {
+          "type": "string"
+        },
+        "evaluationInterval": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pendingFor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fleetBudgetUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "hermes-alerting": {
+      "type": "object",
+      "description": "Helm injects a key per subchart. hermes-alerting is a LIBRARY chart with no values of its own (#619); this entry exists only so the root's additionalProperties: false does not reject Helm's own injection."
+    }
+  }
+}

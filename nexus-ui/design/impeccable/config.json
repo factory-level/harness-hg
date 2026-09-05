@@ -1,0 +1,401 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-color",
+        "value": "#d9793c",
+        "createdAt": "2026-08-17T01:27:11.269Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(217, 121, 60, 0.13)",
+        "createdAt": "2026-08-17T01:27:11.319Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#5b9bd5",
+        "createdAt": "2026-08-17T01:27:11.368Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(91, 155, 213, 0.13)",
+        "createdAt": "2026-08-17T01:27:11.414Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#4caf8e",
+        "createdAt": "2026-08-17T01:27:11.465Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(76, 175, 142, 0.13)",
+        "createdAt": "2026-08-17T01:27:11.509Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#c95f6e",
+        "createdAt": "2026-08-17T01:27:11.552Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(201, 95, 110, 0.13)",
+        "createdAt": "2026-08-17T01:27:11.596Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#8a7bc8",
+        "createdAt": "2026-08-17T01:27:11.639Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(138, 123, 200, 0.15)",
+        "createdAt": "2026-08-17T01:27:11.688Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#6d7a86",
+        "createdAt": "2026-08-17T01:27:11.733Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgba(109, 122, 134, 0.13)",
+        "createdAt": "2026-08-17T01:27:11.781Z",
+        "reason": "#548 closed shape/container palette - canonical token definitions (SHAPE_COLORS, server-validated); DESIGN.md predates the merge, documenter re-run will record them"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.82rem",
+        "createdAt": "2026-08-17T23:32:13.858Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "1.62rem",
+        "createdAt": "2026-08-17T23:32:13.904Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "1.18rem",
+        "createdAt": "2026-08-17T23:32:13.956Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.94rem",
+        "createdAt": "2026-08-17T23:32:14.005Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.8rem",
+        "createdAt": "2026-08-17T23:32:14.052Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.76rem",
+        "createdAt": "2026-08-17T23:32:14.097Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.72rem",
+        "createdAt": "2026-08-17T23:32:14.145Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.68rem",
+        "createdAt": "2026-08-17T23:32:14.191Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.66rem",
+        "createdAt": "2026-08-17T23:32:14.236Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.62rem",
+        "createdAt": "2026-08-17T23:32:14.284Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.86em",
+        "createdAt": "2026-08-17T23:32:14.330Z",
+        "reason": "docs site is a reading surface, not the dense ops canvas DESIGN.md documents (9.5-22px); ramp derived from landing/styles.css, the same brand at document scale"
+      },
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "_docs/wiki/stylesheets/extra.css"
+        ],
+        "createdAt": "2026-08-17T23:33:41.327Z",
+        "reason": "false positive: matches the CSS selector '.md-logo img { visibility: hidden }', not an <img> tag; this is a stylesheet with no markup in it"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.525rem",
+        "createdAt": "2026-08-17T23:41:30.066Z",
+        "reason": "this IS the DESIGN.md label step (10.5px) expressed in rem; Material's root is 20px, so 0.525rem == 10.5px. Same for the paired 0.725rem == the 14.5px headline step. Both reproduce the .nx-brand-name/.nx-brand-hg lockup exactly."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "0.725rem",
+        "createdAt": "2026-08-17T23:41:30.112Z",
+        "reason": "DESIGN.md headline step (14.5px) in rem; Material root is 20px so 0.725rem == 14.5px"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-15T10:24:05.969Z",
+        "reason": "The comm readout's inbound/outbound spine, not a card accent (ADR-66, imported kind-for-kind from 'Canvas Object System copy copy 2.dc.html'). The 3px edge on a clipped-corner tinted readout IS the direction channel; removing either edge destroys the distinction the object system encodes in geometry. Colour here encodes ownership, never status. Scoped to landing/styles.css and widened from the two per-declaration entries this supersedes because impeccable 4.x extracts no value for side-tab (hook-lib.mjs extractFindingIgnoreValue directValueRules), so a declaration-text entry can no longer match."
+      },
+      {
+        "rule": "border-accent-on-rounded",
+        "value": "*",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-15T10:24:11.933Z",
+        "reason": "The owner's bar: the object system's COLOUR channel, naming the domain that ships an object (ADR-58 established it, ADR-66 imported it kind-for-kind, ADR-69 ported it to light). The radius IS the kind's silhouette and the bar is the top edge, so they are two channels rather than a clash; a full colour wash per kind is an explicitly rejected alternative, and confining colour to a 3px bar is why it survives both themes. Scoped to landing/styles.css and widened from the per-declaration entry it supersedes because impeccable 4.x extracts no value for this rule (hook-lib.mjs extractFindingIgnoreValue directValueRules), so a declaration-text entry can no longer match."
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#000",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.335Z",
+        "reason": "mask-image radial-gradient alpha stop, not a painted color — the landing paints no pure black (its dark ground is #0B0D14)"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.383Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": ".95rem",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.444Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "1.42rem",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.511Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "1.7rem",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.555Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "1.9rem",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.597Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "13.5px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.646Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "13px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.697Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "15.5px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.747Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "16.5px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.798Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "16px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.841Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "17px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.900Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "18px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.937Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "19px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:18.982Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "20px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.043Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "26px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.092Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "28px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.142Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "7.5px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.198Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "8.5px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.249Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "20px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.302Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "3px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.352Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "46px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.393Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.431Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "7px",
+        "files": [
+          "landing/styles.css"
+        ],
+        "createdAt": "2026-08-18T05:06:19.466Z",
+        "reason": "landing/ runs its own committed type/radius system (ADR-127..134, landing/README.md, maintainers/landing.md); DESIGN.md 'Hermes Nexus' documents the dashboard surface. Landing design user-approved across review rounds and merged in PR #622."
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+# An entry with metadata and no name declares nothing. `name` is the only
+# required key of the object form (#141).
+spec:
+  source: https://github.com/example/social-media
+  sha: "0000000000000000000000000000000000000000"
+  envRequires:
+    - description: model access
+      required: false

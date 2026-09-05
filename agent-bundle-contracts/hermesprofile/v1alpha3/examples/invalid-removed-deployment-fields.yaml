@@ -1,0 +1,11 @@
+# The other half of v1alpha2's removal: the VM-compute leftovers. Pod is
+# the only compute path, so a machine type, a region and a disk type
+# describe nothing this platform provisions.
+spec:
+  persona: support-agent
+  source: https://github.com/example/personas
+  ref: main
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  deployment:
+    baseImageTag: hermes-base-2026-07
+    machineType: e2-standard-4

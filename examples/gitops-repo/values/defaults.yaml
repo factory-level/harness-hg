@@ -1,0 +1,26 @@
+# Value layer 1 — platform-wide defaults (lowest precedence).
+# Applied to every generated Application before the cluster and profile
+# layers. Operator-owned.
+# MUST be the hermes-agent-gitops fork, not upstream. Upstream has neither the
+# profile-lifecycle hooks the gitops-emitter subscribes to nor `hermes cron sync`,
+# so an agent built from it comes up Healthy and silently never runs a declared
+# job. Keep this in step with `hermes.ref` — the two pins move together and
+# nothing enforces it (ADR-29).
+image:
+  repository: ghcr.io/factory-level/hermes-agent
+  tag: "latest"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+
+# Fleet-wide values for profiles' Helm apps, keyed by app name
+# ({appName: values-fragment}). Deep-merged over each app's author values;
+# per-instance overrides win over this layer. This is where an operator
+# satisfies a distribution's `valuesRequired` paths fleet-wide.
+# persona-echo's local test-page app needs nothing, so this stays empty.
+# appValues:
+#   vector-db:
+#     auth:
+#       apiKeySecretRef: fleet-qdrant-key

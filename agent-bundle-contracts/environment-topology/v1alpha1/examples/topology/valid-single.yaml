@@ -1,0 +1,11 @@
+# The default environment every bare repo compiles under: one target,
+# permissive, no DNS - the shape `hg topology` synthesizes when no
+# environment files exist.
+version: 1
+layout: single
+regions:
+  - name: local
+    jurisdiction: NA
+    targets:
+      - name: in-cluster
+        argoDestination: in-cluster

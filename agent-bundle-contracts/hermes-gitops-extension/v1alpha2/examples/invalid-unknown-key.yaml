@@ -1,0 +1,4 @@
+# Unknown top-level keys stay hard errors in v2, exactly as in v1.
+contractVersion: 2
+placement:
+  target: eu-west-a

@@ -1,0 +1,7 @@
+# A per-profile topology (no shared-pod bundles) declaring only its
+# distribution identity - the operational category its agents, backups,
+# alarms and event routes group under, beside the Harness Hg control plane.
+version: 4
+distribution:
+  name: marketing
+  displayName: Marketing Team

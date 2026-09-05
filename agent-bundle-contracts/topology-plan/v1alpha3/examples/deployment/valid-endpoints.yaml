@@ -1,0 +1,18 @@
+spec:
+  id: marketing-manager/content-kanban@global
+  profile: marketing-manager
+  component: content-kanban
+  scope: global
+  target: ca-west-a
+  argoDestination: ca-west-a
+  endpoints:
+    - name: api
+      type: private
+      backend:
+        service: content-kanban
+        namespace: hermes-app-marketing-manager-content-kanban-global
+        port: 80
+        path: /api
+      internalUrl: http://content-kanban.hermes-app-marketing-manager-content-kanban-global.svc.cluster.local:80/api
+      url: https://api.content-kanban-marketing-manager-global.internal.hermes.factorylevel.ai
+      provides: content-board

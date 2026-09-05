@@ -1,0 +1,47 @@
+{
+  "$comment": "The one resolved-versions surface (ADR-63). Everything a bootstrap resolves is named here: host binaries (x86-64 Linux only, fable/design 18) with sha256 pins, and control-plane Helm chart versions. cli/src/lib.ts and infra/src/control-flow/config.ts import this file; cli/tests/versions.test.ts fails on any second literal copy of a pin. The k3s installer is vendored at infra/scripts/server/vendor/k3s-install.sh and verified against k3sInstallerSha256 before it runs; the k3s binary itself is checksum-verified by that installer.",
+  "host": {
+    "k3s": "v1.35.5+k3s1",
+    "k3sTraefikChart": "traefik-39.0.701+up39.0.7.tgz",
+    "k3sTraefikCrdChart": "traefik-crd-39.0.701+up39.0.7.tgz",
+    "k3sInstallerSha256": "d264d4d43f7c5a27b44de0075513fb22dfb02d0b7cd33ba7a3838cb822f4729c",
+    "kubectl": "v1.36.2",
+    "kubectlSha256": "1e9045ec32bea85da43de85f0065358529ea7c7a152eca78154fba5b58c27d82",
+    "helm": "v3.16.4",
+    "helmSha256": "fc307327959aa38ed8f9f7e66d45492bb022a66c3e5da6063958254b9767d179",
+    "bun": "1.3.14",
+    "bunSha256": "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f",
+    "bunBaselineSha256": "a063908ae08b7852ca10939bbdc6ceed3ddabce8fb9402dce83d65d73b36e6c7",
+    "uv": "0.11.27",
+    "uvSha256": "0f4088a04ac92e4c52b4b76759d227a1047355e0ce1dd57cd738a6dec5966bd9",
+    "pulumi": "v3.253.0",
+    "pulumiSha512": "b9316b7043a26d027309b76b2c0984987fe66a50b45c712e4dbc3b6ad7ca882f37f76bfe4beaa34c9108f13a2e1397b2344a25bd19b73af567db1eb209363f8c",
+    "gcloud": "569.0.0",
+    "gcloudSha256": "05f2921b228228d75f34721792219c358373ea8c96a3294a374220ae558be82d"
+  },
+  "charts": {
+    "argocd": "10.1.4",
+    "eso": "2.7.0",
+    "pko": "2.7.0"
+  },
+  "runtimes": {
+    "$comment": "Agent runtimes the platform deploys (ADR-149). eve.version is the npm `eve` release baked into the eve-runtime image AND the image tag; harness/eve/image/build.sh and harness/eve/charts/eve-agent read it, and the boot script refuses a project whose resolved eve differs from it.",
+    "eve": {
+      "version": "0.42.0",
+      "imageRepository": "us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime"
+    }
+  },
+  "loki": {
+    "$comment": "Control-plane log aggregation (#661, ADR 0165). These pin the images control-plane/loki/chart deploys; the chart's values.yaml defaults must equal them (asserted by cli/tests/versions.test.ts).",
+    "lokiImage": "grafana/loki:3.1.1",
+    "promtailImage": "grafana/promtail:3.1.1"
+  },
+  "wiki": {
+    "$comment": "The in-cluster manual (#664, ADR 0167). control-plane/wiki/image/build.sh builds+tags this from the repo root (the site is baked at the platform revision, /version self-reports); the chart's values.yaml default must equal it (cli/tests/versions.test.ts).",
+    "image": "us-docker.pkg.dev/inferlab-dev/harness-hg/wiki:0.0.0-dev"
+  },
+  "nexus": {
+    "$comment": "The Nexus UI host image (#845): python + fastapi + uvicorn + git. control-plane/nexus/image/build.sh builds+tags this; the chart's values.yaml default must equal it (cli/tests/versions.test.ts). `hg up` builds it locally and imports it into k3d, so the local loop no longer needs the legacy agent image.",
+    "image": "ghcr.io/factory-level/harness-hg-nexus:0.0.0-dev"
+  }
+}

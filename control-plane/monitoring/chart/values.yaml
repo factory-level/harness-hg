@@ -1,0 +1,128 @@
+# All values may be overridden from hermes-gitops.yaml's apps[].values
+# (author), the fleet defaults' appValues, or per-instance appValues
+# overrides (pulumi config set --path
+# 'agents[<i>].overrides.appValues.monitoring.<dot.path>' <value>).
+
+# Grafana datasource uid the dashboard + alert rules query. Must match the
+# uid provisioned by bootstrap/monitoring-grafana.yaml.
+datasourceUid: prometheus
+
+dashboard:
+  enabled: true
+
+alert:
+  # Where notifications go. BOTH are optional individually, but if any
+  # rule below is enabled at least one must be set — the render fails
+  # loudly otherwise (an alert with no receiver is a silent no-op, and
+  # silent is worse than loud). The profile's hermes-gitops.yaml marks
+  # webhookUrl as valuesRequired, making it the operator-supplied channel:
+  #   pulumi config set --path \
+  #     'agents[<i>].overrides.appValues.monitoring.alert.webhookUrl' <url>
+  #
+  # webhookUrl: a generic JSON webhook (Grafana "webhook" contact point) —
+  # point it at a GitHub repository_dispatch proxy, a CI hook, or any
+  # HTTP sink. discordUrl: a Discord Incoming Webhook URL (Grafana's
+  # native "discord" contact point).
+  #
+  # THIS IS NOT THE ONLY PLACE. charts/fleet-dashboard carries its own
+  # alert.webhookUrl for fleet BUDGET alerts, set in that chart's own
+  # valuesObject in bootstrap/fleet-dashboard.yaml. The two charts now share
+  # their delivery templates (charts/hermes-alerting, #619) but they are
+  # separate Helm releases fed by unrelated value channels, so configuring
+  # this one does NOT configure that one. If you want budget alerts
+  # delivered, set it there too.
+  webhookUrl: ""
+  discordUrl: ""
+
+  # How often Grafana evaluates the rule group.
+  evaluationInterval: 1m
+
+  # Alertmanager receiver for THIS profile (ADR-53). Distinct from the
+  # Grafana contact point above: the rules in this chart are
+  # Grafana-managed, but the kube-prometheus-stack's own Prometheus rules
+  # route to Alertmanager, whose tree drops everything on the "null"
+  # receiver until an AlertmanagerConfig binds a real one. This binds it,
+  # per profile namespace, so an agent's alerts actually reach someone.
+  alertmanager:
+    enabled: true
+    # Defaults to alert.webhookUrl - one receiver to configure, not two.
+    # Set this only when Alertmanager should notify somewhere different
+    # from the Grafana contact point.
+    webhookUrl: ""
+    groupWait: 30s
+    groupInterval: 5m
+    # Deliberately long: a still-firing alert re-notifying every few
+    # minutes trains people to ignore the channel.
+    repeatInterval: 4h
+
+  # Site traffic alert: fires when this profile's services received more
+  # than `threshold` HTTP requests (via Traefik) in the trailing 5
+  # minutes.
+  siteVisits5m:
+    enabled: true
+    threshold: 100
+    # How long the query must stay over threshold before firing. "0s"
+    # fires on the first breaching evaluation.
+    pendingFor: 0s
+
+  # Business health (#408): what the OPERATION did, not what the platform
+  # did. Both rules read hermes_business_outcome_total, which the event
+  # router counts from producer-asserted outcomes - so these fire on the
+  # business failing, not on a pod being unhappy.
+  #
+  # Off by default. An operation with no publishing pipeline would
+  # otherwise get an inactivity alert that is permanently correct and
+  # permanently useless, and a business alert nobody believes is worse
+  # than no business alert.
+  business:
+    # A terminal failure the producer reported. One is enough: unlike a
+    # transport error there is no retry behind it.
+    failures:
+      enabled: false
+      # Events matched by their declared type, e.g. "content.published/v1".
+      event: ""
+      threshold: 0
+      pendingFor: 0s
+    # FEWER than minCount succeeded in the window. minCount 1 is the
+    # dead-man half - a pipeline that stops producing is silent in
+    # exactly the same way as a healthy one that has nothing to do,
+    # which is why the window has to be chosen per operation rather than
+    # defaulted to something plausible. minCount above 1 is the
+    # output-rate floor (#407): "we expect at least N posts per window".
+    #
+    # The rule evaluates ONLY while business telemetry is present
+    # (gated on hermes_router_up): a missing telemetry source is its own
+    # rule below, never conflated with a genuinely idle pipeline.
+    inactivity:
+      enabled: false
+      event: ""
+      window: 24h
+      minCount: 1
+
+  # Health alerts: the Hermes agent StatefulSet itself, and every
+  # agent-app Deployment in this profile's namespace.
+  health:
+    enabled: true
+    # Ready-state gaps shorter than this don't fire (rolling restarts,
+    # single pod reschedules). The smoke e2e overrides this down to
+    # prove the alert path quickly.
+    pendingFor: 5m
+    # The queries look at the WORST value over this trailing window
+    # (min_over_time / max_over_time), not just the instant: a short
+    # outage that only one scrape catches still holds the alert firing
+    # long enough to clear Alertmanager's grouping delay and actually
+    # notify — verified live: an instant query let a ~60s pod restart
+    # fire and resolve inside group_wait, and nothing was ever sent.
+    # Trade-off: the alert resolves up to this long after real recovery.
+    lookback: 2m
+
+metric:
+  # Regex for Traefik's service label
+  # ("<namespace>-<service>-<port>@kubernetes"). Empty = every service in
+  # this profile's namespace (derived from the release namespace).
+  serviceRegex: ""
+
+# The Hermes agent StatefulSet name. Empty = the release namespace name,
+# which equals the agent's StatefulSet name under the ApplicationSet
+# naming convention (both are "hermes-<persona>").
+agentStatefulSet: ""

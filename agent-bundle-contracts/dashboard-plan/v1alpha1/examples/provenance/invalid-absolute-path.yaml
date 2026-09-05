@@ -1,0 +1,4 @@
+# INVALID: source paths are repository-relative, never absolute.
+sourceSha: "0000000000000000000000000000000000000000"
+sourcePaths:
+  - /etc/passwd.yaml

@@ -1,0 +1,8 @@
+# Invalid: repo must be the reserved word `local` or a https:// / oci://
+# helm repo URL - anything else (http://, git@, a bare hostname, ...)
+# fails the pattern.
+apps:
+  - name: vector-db
+    chart: qdrant
+    repo: git@github.com:qdrant/qdrant-helm.git
+    version: 1.9.1

@@ -1,0 +1,6 @@
+spec:
+  id: x@y
+  profile: x
+  scope: y
+  target: y-a
+  argoDestination: y-a

@@ -1,0 +1,16 @@
+# INVALID: a full sha256 in `checksum`. The abbreviation is deliberate - the
+# record exists to show that content WAS verified, and the host manifest is the
+# authority on the full digest. Widening this field is how a status ConfigMap
+# quietly becomes a second, unversioned copy of the manifest.
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: PlatformBackupStatus
+observedAt: "2026-08-01T05:02:19Z"
+backupId: hg-2026-08-01T03-11-52z
+createdAt: "2026-08-01T03:11:52Z"
+verification:
+  state: restorable
+  restoredAt: "2026-08-01T04:58:40Z"
+components:
+  - name: volume/nexus/nexus-state-backup
+    kind: volume-archive
+    checksum: 9f3a1c7e2b4508d6e1f2a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8

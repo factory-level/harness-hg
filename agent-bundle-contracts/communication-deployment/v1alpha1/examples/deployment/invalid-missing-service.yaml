@@ -1,0 +1,8 @@
+# A router record without its Service name deploys nothing addressable.
+spec:
+  id: router
+  scope: global
+  target: in-cluster
+  argoDestination: in-cluster
+  namespace: hermes-system
+  application: hermes-event-router

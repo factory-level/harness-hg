@@ -1,0 +1,13 @@
+# The discord-sandbox environment: topologically identical to the local
+# default (one cluster, single layout) - it exists so communication.yaml
+# beside it can bind company_discord to the REAL Discord plugin.
+version: 1
+name: discord-sandbox
+layout: single
+regions:
+  - name: local
+    jurisdiction: NA
+    targets:
+      - name: in-cluster
+        argoDestination: in-cluster
+        primary: true

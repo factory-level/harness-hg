@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "image",
+    "spec"
+  ],
+  "properties": {
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag",
+        "pullPolicy"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "profiles",
+        "repositories",
+        "deployment",
+        "dashboard"
+      ],
+      "properties": {
+        "runtime": {
+          "description": "The members' agent runtime (ADR-150). `hg bundle` stamps it from the records; this chart realizes Hermes bundles only - an Eve bundle (runtime: eve) is eve-bundle's.",
+          "type": "string",
+          "const": "hermes"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+          "maxLength": 40
+        },
+        "profiles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "source",
+              "sha",
+              "gatewayEnabled",
+              "repositoryRefs"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 40,
+                "not": {
+                  "const": "default"
+                }
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "sourceSubdir": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*$"
+              },
+              "envSecretRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+              },
+              "gitAuthSecretRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+              },
+              "gatewayEnabled": {
+                "type": "boolean"
+              },
+              "apiServerPort": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "webhookPort": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "terminalCwd": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "repositoryRefs": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                  "maxLength": 40
+                }
+              },
+              "connections": {
+                "description": "Connections projected into this member (ADR-152): one ExternalSecret each, from hermes-secrets/<secretName>, mounted as env.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "provider",
+                    "secretName",
+                    "keys"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "provider": {
+                      "type": "string"
+                    },
+                    "secretName": {
+                      "type": "string"
+                    },
+                    "keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "apiServerPort"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "envSecretRef"
+                  ],
+                  "properties": {
+                    "gatewayEnabled": {
+                      "not": {
+                        "const": false
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "repositories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "source",
+              "sha",
+              "mountPath",
+              "access"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                "maxLength": 40
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "mountPath": {
+                "type": "string",
+                "pattern": "^/workspaces/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*(/\\.?[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*)*$"
+              },
+              "access": {
+                "type": "string",
+                "enum": [
+                  "read-only",
+                  "read-write"
+                ]
+              },
+              "gitAuthSecretRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253,
+                "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+              }
+            }
+          }
+        },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "diskSizeGb",
+            "workspaceSizeGb"
+          ],
+          "properties": {
+            "baseImageTag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "diskSizeGb": {
+              "type": "integer",
+              "minimum": 10
+            },
+            "workspaceSizeGb": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "dashboard": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "port"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "envSecretRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253,
+              "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "then": {
+                "required": [
+                  "envSecretRef"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "providers": {
+      "type": "object",
+      "description": "Environment layer from cluster-values.yaml. `providers.backup` is CONSUMED by templates/backup.yaml - `pvc` renders the routine, anything else renders nothing."
+    },
+    "platformRepo": {
+      "type": "object",
+      "description": "Environment layer from cluster-values.yaml; accepted, not consumed by this chart."
+    },
+    "appProject": {
+      "type": "object",
+      "description": "Environment layer from cluster-values.yaml; accepted, not consumed by this chart."
+    },
+    "backup": {
+      "type": "object",
+      "description": "Environment layer from cluster-values.yaml. CONSUMED by templates/backup.yaml: schedule, retention, image and pvc shape the bundle's backup routine."
+    },
+    "secretBackend": {
+      "type": "object",
+      "description": "Environment layer from cluster-values.yaml; accepted, not consumed by this chart."
+    },
+    "networkPolicy": {
+      "type": "object",
+      "description": "Opt-in ingress restriction for the bundle pod. Mirrors the profile chart's.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "observerUrl": {
+          "type": "string",
+          "description": "HERMES_OBSERVER_URL for the bundled profile gateways (#476). Empty = lifecycle emission off."
+        }
+      }
+    }
+  }
+}

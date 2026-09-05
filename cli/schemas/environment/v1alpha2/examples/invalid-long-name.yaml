@@ -1,0 +1,12 @@
+# INVALID: 22-char environment name - the SA id and bucket budgets
+# cap the name at 21 (state/src/config.ts).
+apiVersion: hermes-gitops.factorylevel.dev/environment/v1alpha2
+name: this-name-is-22-chars-
+project: example-project
+rootKms: {location: us, keyring: pulumi, key: pulumi-root}
+state:
+  deployerGroup: deployers@example.dev
+  agents: [scratch]
+infra:
+  gitopsRepoUrl: https://github.com/example/scratch.gitops.git
+  providers: {compute: pod, secret: k8s, ingress: none}

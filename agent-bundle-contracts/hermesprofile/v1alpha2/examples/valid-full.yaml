@@ -1,0 +1,33 @@
+spec:
+  persona: support-agent
+  source: github.com/factorylevel/support-agent
+  ref: v1.3.0
+  sha: 9f2c1ab3d4e5f60718293a4b5c6d7e8f9a0b1c2d
+  distributionVersion: 1.3.0
+  deployment:
+    baseImageTag: hermes-base-2026-07
+    diskSizeGb: 100
+  apps:
+    # A resolved REMOTE app: values already merged (author + fleet defaults
+    # + per-instance overrides), valuesRequired satisfied and dropped.
+    - name: vector-db
+      chart: qdrant
+      repo: https://qdrant.github.io/qdrant-helm
+      version: 1.9.1
+      values:
+        replicas: 1
+        auth:
+          apiKeySecretRef: hermes-support-agent-qdrant-api-key
+    # A resolved LOCAL app: chart path into the platform tree, no version.
+    - name: docs-site
+      chart: charts/test-page
+      repo: local
+  envRequires:
+    - DISCORD_BOT_TOKEN
+  expose:
+    services:
+      - name: tools
+        port: 8080
+        path: /
+    access:
+      policy: service-token

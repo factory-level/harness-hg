@@ -1,0 +1,26 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "nexus-ui/src/app/workspace/workspace.css"
+        ],
+        "createdAt": "2026-08-31T03:21:13.188Z",
+        "reason": "user approved restoring the retired board's ADR-58 comm-panel grammar; the 4px --comm inline border is the directional spine (left=inbound, right=outbound), semantic not decorative"
+      },
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/app/workspace/workspace.css"
+        ],
+        "createdAt": "2026-08-31T19:49:08.777Z",
+        "reason": "user approved restoring the retired board's ADR-58 comm-panel grammar; the 4px --comm inline border is the directional spine (left=inbound, right=outbound), semantic not decorative"
+      }
+    ]
+  }
+}

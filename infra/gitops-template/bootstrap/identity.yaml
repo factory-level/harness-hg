@@ -1,0 +1,189 @@
+# The platform's identity provider (ADR-50, #284): ONE OIDC issuer that
+# Nexus, Hermes Classic, Argo CD and Grafana all trust. Synced by the
+# hermes-gitops-root Application like every other manifest in bootstrap/ -
+# the operator edits THIS file to add a connector, change the client set,
+# or move the issuer.
+#
+# Why Dex rather than Cloudflare Access as the issuer: it is the only
+# option that works IDENTICALLY offline and live. Static passwords for the
+# local loop, a Google/GitHub connector for real humans, one config shape
+# either way - which is what makes the owner/operator/viewer/unbound
+# matrix provable in `make test` rather than only against a live edge.
+# Cloudflare Access remains EDGE ADMISSION and never substitutes for a
+# service's own authorization decision (ADR-40).
+#
+# SSO shares identity, never authorization. Each service maps the same
+# subject and group claims onto its OWN native roles and keeps its own
+# session - so a denial is enforced by the service being asked, not by
+# whatever let the request in.
+#
+# What is NOT here: the connector for real accounts (issue #298 - it needs
+# an OAuth client registration this repository cannot make) and published
+# hostnames (#289). The static-password connector below is the local
+# loop's issuer and is explicitly not a production login.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity
+  namespace: argocd
+  labels:
+    hermes-gitops.factorylevel.dev/component: identity
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # "default", same bootstrapping reason as the other platform
+  # Applications: the hermes-gitops AppProject is created by this same
+  # bootstrap/ sync.
+  project: default
+  source:
+    repoURL: https://charts.dexidp.io
+    chart: dex
+    targetRevision: 0.24.1
+    helm:
+      valuesObject:
+        # One replica. Dex is stateless with the storage below, and an
+        # HA issuer is a decision this fleet has not made (ADR-50 Cost:
+        # an IdP outage locks every UI; break-glass is Kubernetes API
+        # access, which survives).
+        replicaCount: 1
+        service:
+          ports:
+            http:
+              port: 5556
+        config:
+          # THE load-bearing field. `issuer` is the string that lands in
+          # every token's `iss` claim AND the base every client fetches
+          # discovery and JWKS from - so it must resolve to the same Dex
+          # from a browser and from inside a pod. The local loop
+          # overrides it with the host-gateway URL for exactly that
+          # reason (see LOCAL_ONLY_VALUES in cli/src/platform.ts); a
+          # published environment sets its real hostname here.
+          issuer: https://identity.example.invalid/dex
+          storage:
+            # ponytail: Kubernetes CRD storage keeps auth codes and
+            # refresh tokens across a pod restart. `memory` would log
+            # everyone out on every roll, which reads as an outage.
+            type: kubernetes
+            config:
+              inCluster: true
+          oauth2:
+            # No "skip approval" - the consent screen is one click and
+            # its absence is the kind of convenience that later reads as
+            # a silent authorization.
+            skipApprovalScreen: false
+            # Refresh tokens are what let one sign-in reach four services
+            # without a second prompt.
+            responseTypes: ["code"]
+            # THE enabler for a browserless proof. Without this Dex
+            # answers `unsupported_grant_type` to the password grant even
+            # with enablePasswordDB on - discovery does not advertise the
+            # grant either way, so the only way to learn this is to try
+            # it. `hg auth prove` drives the entire owner/operator/
+            # viewer/unbound matrix through it; remove this line and the
+            # RBAC matrix becomes browser-only, which is to say untested.
+            passwordConnector: local
+          expiry:
+            idTokens: 1h
+            refreshTokens:
+              validIfNotUsedFor: 12h
+              absoluteLifetime: 720h
+          # Every client secret arrives from the `identity-clients`
+          # Secret through the environment; Dex expands $VARS in this
+          # config. No secret value is ever written here (issue #130's
+          # rule, and the reason this file is safe to commit).
+          staticClients:
+            - id: nexus
+              name: Hermes GitOps Nexus
+              secretEnv: DEX_NEXUS_SECRET
+              redirectURIs:
+                - https://nexus.example.invalid/api/plugins/hermes-gitops/nexus/auth/callback
+            - id: argocd
+              name: Argo CD
+              secretEnv: DEX_ARGOCD_SECRET
+              redirectURIs:
+                - https://argocd.example.invalid/auth/callback
+            - id: grafana
+              name: Grafana
+              secretEnv: DEX_GRAFANA_SECRET
+              redirectURIs:
+                - https://grafana.example.invalid/login/generic_oauth
+            - id: hermes
+              name: Hermes Classic
+              secretEnv: DEX_HERMES_SECRET
+              redirectURIs:
+                - https://hermes.example.invalid/auth/callback
+            # The proof client. `hg auth prove` drives the whole
+            # owner/operator/viewer/unbound matrix through the password
+            # grant, which is the ONLY reason that matrix is machine-
+            # checkable without a browser. It is a confidential client
+            # with no redirect URI: it can mint a token for a user whose
+            # password it is given, and nothing else.
+            - id: hg-proof
+              name: hg auth prove
+              secretEnv: DEX_PROOF_SECRET
+              redirectURIs: []
+          # The password grant is enabled for hg-proof only by virtue of
+          # being the only client that uses it; Dex has no per-client
+          # grant allowlist. Named as a ceiling rather than hidden: any
+          # client holding a user's password could use it, which is why
+          # the loop's passwords are generated, 0600 on the host, and
+          # never an operator's real credential.
+          enablePasswordDB: true
+          # Static passwords are the LOCAL LOOP's users and nothing else.
+          # Hashes arrive from the Secret; the emails encode the role the
+          # groups claim would otherwise carry, because Dex's password DB
+          # has no group support (see `groups` handling in each service's
+          # role mapping).
+          staticPasswords:
+            - email: owner@hermes.local
+              hashFromEnv: DEX_OWNER_HASH
+              username: owner
+              userID: "00000000-0000-0000-0000-000000000001"
+            - email: operator@hermes.local
+              hashFromEnv: DEX_OPERATOR_HASH
+              username: operator
+              userID: "00000000-0000-0000-0000-000000000002"
+            - email: viewer@hermes.local
+              hashFromEnv: DEX_VIEWER_HASH
+              username: viewer
+              userID: "00000000-0000-0000-0000-000000000003"
+            # Deliberately present and deliberately bound to nothing.
+            # "unbound is denied" is unprovable without an identity that
+            # authenticates successfully and is then refused by every
+            # service - a user who cannot log in proves the wrong thing.
+            - email: unbound@hermes.local
+              hashFromEnv: DEX_UNBOUND_HASH
+              username: unbound
+              userID: "00000000-0000-0000-0000-000000000004"
+          # A real connector goes here (#298). Left absent rather than
+          # stubbed: a half-configured connector fails at redirect time,
+          # which is far harder to read than "no connector is declared".
+          connectors: []
+        # Top-level chart value, NOT part of the dex config document -
+        # this is what puts the Secret's keys in the container's
+        # environment so the $VARs above resolve.
+        envFrom:
+          - secretRef:
+              name: identity-clients
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+  destination:
+    name: in-cluster
+    namespace: hermes-identity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

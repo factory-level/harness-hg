@@ -1,0 +1,286 @@
+# Harness Hg wiki — MkDocs Material site over _docs/.
+# Local preview: `make wiki-serve`. Strict build (CI gate): `make wiki-build`.
+# NOTE: some pages are GENERATED and byte-drift-checked — never hand-edit them.
+#   _docs/wiki/reference/profile-record.md  (make docs      / make docs-drift)
+#   _docs/wiki/reference/contracts/*.md     (make docs      / make docs-drift; index.md is hand-written)
+#   _docs/wiki/reference/cli/*.md           (make cli-docs  / make cli-docs-drift)
+#   _docs/wiki/assets/{mark,favicon}.svg    (make mark      / make mark-drift)
+# Nav titles for them live here instead; `make cli-docs` prints the CLI nav
+# block to paste when the command set changes.
+site_name: Harness Hg
+site_description: Run a team of AI agents from Git — no custom controllers.
+# Overridable for another host (the in-cluster wiki serves at its own root):
+#   HG_SITE_URL=https://wiki.example/ HG_HOMEPAGE=/ mkdocs build …
+site_url: !ENV [HG_SITE_URL, "https://factory-level.github.io/harness-hg/docs/"]
+repo_url: https://github.com/factory-level/harness-hg
+repo_name: factory-level/harness-hg
+docs_dir: wiki
+site_dir: site
+
+# The theme overrides live inside docs_dir (custom_dir below) and are not pages.
+# This config sits one level UP from docs_dir on purpose: mkdocs refuses a
+# docs_dir that is the config file's own directory, and only `build` used to get
+# away with it (a relative-vs-absolute path comparison) - `serve` raised on
+# every rebuild.
+exclude_docs: |
+  overrides/
+
+# `first-agent-team.md` became the dev quickstart (#675); the page stays as a
+# one-line pointer because install-the-tools.md links to it, but it earns no
+# nav row of its own.
+not_in_nav: |
+  get-started/first-agent-team.md
+
+theme:
+  name: material
+  # The header's source area gains an Install quick action and a version badge
+  # (#616). `overrides/` lives beside this config (docs_dir excludes it below).
+  custom_dir: wiki/overrides
+  # Both are GENERATED from the live mark — see infra/scripts/generate-mark-svg.mjs.
+  logo: assets/mark.svg
+  favicon: assets/favicon.svg
+  # `false` stops Material fetching anything from Google Fonts. The brand faces
+  # (Figtree, Nunito Sans) are self-hosted from _docs/wiki/assets/fonts/ by
+  # stylesheets/extra.css — the same three OFL woff2 files Nexus ships, so the
+  # docs and the product render in one typeface. See ADR-105 for why Nexus
+  # stopped fetching them over the network.
+  font: false
+  # Dark by default for everyone, not by OS preference. Nexus behaves the same
+  # way — `.nx-root` has no system-preference mode, so dark is what you get
+  # until you choose otherwise. Keying these to `prefers-color-scheme` instead
+  # would show anyone on a light desktop a palette the product never uses.
+  # The toggle still switches, and the choice still persists.
+  palette:
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - navigation.instant
+    - navigation.tracking
+    - content.tooltips
+    - search.share
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: "☤"
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+# The header logo AND the site-name anchor point at the landing site, which
+# `make site` publishes one level above the wiki (site root = landing,
+# /docs/ = wiki, /demo/ = Nexus demo). The value is site-root-absolute
+# because Material passes it through the `url` filter, which leaves a
+# leading slash untouched — a relative value would resolve per page.
+extra:
+  homepage: !ENV [HG_HOMEPAGE, "/harness-hg/"]
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/palette-default.js
+  - javascripts/header-home-link.js
+  - javascripts/copy-page.js
+
+plugins:
+  - search
+
+# Computes the docs version from the commit history at build time — see
+# infra/scripts/mkdocs_version_hook.py. Deliberately NOT a committed file: the
+# value embeds the HEAD sha, so anything committed would be stale immediately.
+hooks:
+  - ../infra/scripts/mkdocs_version_hook.py
+  - ../infra/scripts/mkdocs_llms_hook.py
+
+# MkDocs defaults `links.anchors` to `info`, and `--strict` only promotes
+# warnings — so a dead `page.md#anchor` link builds clean and silently jumps
+# nowhere. The decision log is addressed by anchor (`adr/CHANGES.md#adr-33`)
+# from many pages; raising this to `warn` is what makes `make wiki-build`
+# actually catch a renamed one.
+validation:
+  links:
+    anchors: warn
+  # Generated reference pages must all be reachable: a page on disk that nav
+  # omits would build silently and be findable only by search.
+  nav:
+    omitted_files: warn
+
+# Only the wiki publishes. The decision ledger (_docs/adr/), the desired-state
+# design (_docs/design/) and the as-built architecture (_docs/architecture/)
+# live OUTSIDE docs_dir as internal engineering documents; wiki pages link to
+# the ledger by GitHub URL.
+
+nav:
+  - Home:
+      - Harness Hg: index.md
+      - Read this first: read-this-first.md
+      - Vocabulary: vocabulary.md
+      - Roadmap: roadmap.md
+  - Get Started:
+      - Overview: get-started/index.md
+      - Install the tools: get-started/install-the-tools.md
+      - Build an agent team: get-started/dev-quickstart.md
+      - Agent Team Repo: get-started/agent-team-repo.md
+      - Host an environment: get-started/host-an-environment.md
+      - Agent Skills: get-started/agent-skills.md
+  - Platform:
+      - Overview: platform/index.md
+      - GitOps: platform/reconciliation.md
+      - Observability: platform/observability.md
+      - Communication:
+          - Alerts and alarms: platform/alerts.md
+          - Event routing: platform/webhooks-events.md
+          - Inbound events: platform/inbound-events.md
+          - Outbound events: platform/outbound-events.md
+      - ChatOps: platform/chat-conversations.md
+      - Harness:
+          - Overview: platform/runtime.md
+          - Eve agent: platform/runtime-eve.md
+      - Nexus UI: platform/nexus.md
+      - Secrets: platform/secrets.md
+      - IAM: platform/identity.md
+      - Backup: platform/backups.md
+      - Networking:
+          - Overview: platform/topology.md
+          - Tunnels: platform/tunneling.md
+          - Webhooks: platform/webhooks.md
+      - Testing: platform/testing.md
+      - Security: platform/security.md
+  - Agent Team Install:
+      - Overview: agent-team-install/index.md
+      - Eve agents: agent-team-install/eve-agents.md
+      - Declaring capabilities:
+          - Overview: agent-team-install/declaring-capabilities.md
+          - Secrets: agent-team-install/secrets.md
+          - Endpoints and exposure: agent-team-install/endpoints.md
+          - Supporting workloads: agent-team-install/workloads.md
+          - Backups and routines: agent-team-install/backups.md
+          - Repository mounts: agent-team-install/repositories.md
+          - Signals: agent-team-install/signals.md
+      - Use cases:
+          - Overview: agent-team-install/use-cases/index.md
+          - Minimal agent: agent-team-install/use-cases/minimal.md
+          - Software project agent: agent-team-install/use-cases/software-project.md
+          - Marketing team: agent-team-install/use-cases/marketing.md
+  - Nexus UI:
+      - Fleet Canvas: nexus-ui/index.md
+      - Objects and interactions: nexus-ui/objects.md
+      - Views:
+          - Overview: nexus-ui/views/index.md
+          - Alert Routing: nexus-ui/views/alert-routing.md
+          - Agents: nexus-ui/views/agents.md
+          - Backups: nexus-ui/views/backups.md
+          - System: nexus-ui/views/system.md
+          - Avatars: nexus-ui/views/avatars.md
+  - Runbooks:
+      - Overview: runbooks/index.md
+      - Google Cloud setup: runbooks/google-cloud.md
+      - Credentials: runbooks/credentials.md
+      - Install a destination server: runbooks/install.md
+      - Cloudflare Tunnel setup: runbooks/cloudflare-tunnel.md
+      - Google sign-in at the edge: runbooks/google-sso.md
+      - Alert destinations: runbooks/alert-destinations.md
+      - Slack apps: runbooks/slack-apps.md
+      - Recovery: runbooks/recovery.md
+      - The destructive test: runbooks/destructive-test.md
+      - Workspace bindings: runbooks/workspace-bindings.md
+  - Reference:
+      - Overview: reference/index.md
+      - CLI:
+          - Overview: reference/cli/index.md
+          - hg agent: reference/cli/agent.md
+          - hg auth: reference/cli/auth.md
+          - hg backup: reference/cli/backup.md
+          - hg bundle: reference/cli/bundle.md
+          - hg chatops: reference/cli/chatops.md
+          - hg communication: reference/cli/communication.md
+          - hg cron: reference/cli/cron.md
+          - hg dash: reference/cli/dash.md
+          - hg debug: reference/cli/debug.md
+          - hg dev: reference/cli/dev.md
+          - hg discord: reference/cli/discord.md
+          - hg down: reference/cli/down.md
+          - hg edge: reference/cli/edge.md
+          - hg env: reference/cli/env.md
+          - hg envfile: reference/cli/envfile.md
+          - hg eval: reference/cli/eval.md
+          - hg event: reference/cli/event.md
+          - hg expose: reference/cli/expose.md
+          - hg gitops: reference/cli/gitops.md
+          - hg harness: reference/cli/harness.md
+          - hg grafana: reference/cli/grafana.md
+          - hg help: reference/cli/help.md
+          - hg identity: reference/cli/identity.md
+          - hg launch: reference/cli/launch.md
+          - hg logs: reference/cli/logs.md
+          - hg nexus: reference/cli/nexus.md
+          - hg observability: reference/cli/observability.md
+          - hg onboard: reference/cli/onboard.md
+          - hg open: reference/cli/open.md
+          - hg platform: reference/cli/platform.md
+          - hg prompt: reference/cli/prompt.md
+          - hg reconcile: reference/cli/reconcile.md
+          - hg reset: reference/cli/reset.md
+          - hg server: reference/cli/server.md
+          - hg slack: reference/cli/slack.md
+          - hg status: reference/cli/status.md
+          - hg test: reference/cli/test.md
+          - hg topology: reference/cli/topology.md
+          - hg up: reference/cli/up.md
+          - hg validate: reference/cli/validate.md
+          - hg workspace: reference/cli/workspace.md
+          - hg connection: reference/cli/connection.md
+      - Contract files:
+          - Overview: reference/contracts/index.md
+          - Agent team: reference/contracts/agent-team.md
+          - Dashboard contribution: reference/contracts/dashboard-contribution.md
+          - Eval suite: reference/contracts/evals.md
+          - Bundle destination: reference/contracts/bundle-destination.md
+          - Cluster values: reference/contracts/cluster-values.md
+          - Environment topology: reference/contracts/environment-topology.md
+          - Environment capabilities: reference/contracts/environment-capabilities.md
+          - Environment communication: reference/contracts/environment-communication.md
+          - Environment bundles: reference/contracts/environment-bundles.md
+          - Environment workspaces: reference/contracts/environment-workspaces.md
+          - Environment connections: reference/contracts/environment-connections.md
+          - Topology plan: reference/contracts/topology-plan.md
+          - EveAgent record: reference/contracts/eveagent.md
+          - Agent runtime manifest: reference/contracts/agent-runtime.md
+          - Harness declaration: reference/contracts/harness-declaration.md
+          - Communication deployment: reference/contracts/communication-deployment.md
+          - Dashboard plan: reference/contracts/dashboard-plan.md
+          - Panel catalog: reference/contracts/panel-catalog.md
+          - Runtime overlay: reference/contracts/runtime-overlay.md
+          - Eval result batch: reference/contracts/eval-result.md
+          - Lifecycle record: reference/contracts/lifecycle-record.md
+      - Profile record: reference/profile-record.md
+      - Repository scaffolds: reference/repo-scaffolds.md
+      - Configuration: reference/configuration.md

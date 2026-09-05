@@ -1,0 +1,15 @@
+# Image pins live in versions.json ("loki" block) and are asserted equal to
+# these defaults by cli/tests/versions.test.ts - edit both together.
+images:
+  loki: grafana/loki:3.1.1
+  promtail: grafana/promtail:3.1.1
+
+# Bounded by design: this is a single-cluster platform, not a log warehouse.
+retentionHours: 168        # 7 days, enforced by the compactor
+storageSize: 10Gi
+
+# The plane relabel (ADR 0164): streams from these namespaces (or the
+# prefix) are plane=control-plane, everything else plane=workload. A copy
+# of control-plane/planes.yaml's sets - keep them in step.
+controlPlaneNamespaces: [argocd, external-secrets, hermes-secrets, hermes-system, hermes-monitoring]
+controlPlaneNamespacePrefix: hermes-system-
