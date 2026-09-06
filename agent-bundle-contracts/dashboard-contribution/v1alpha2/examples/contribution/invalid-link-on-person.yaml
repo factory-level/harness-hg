@@ -7,6 +7,6 @@ metadata:
 spec:
   people:
     - id: calvin
-      displayName: Calvin
+      displayName: Avery
       links:
         repository: https://github.com/factory-level

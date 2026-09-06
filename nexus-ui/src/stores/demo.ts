@@ -15,7 +15,7 @@ export const DEMO_DATA: NexusData = {
       { id: "mkt-engage", title: "Engagement", kind: "agent", icon: "mkt-engagement", bind: { profile: "mkt-engage" }, description: "Answers mentions and threads within the hour, in the brand voice." },
       { id: "mkt-research", title: "Research", kind: "agent", bind: { profile: "mkt-research" }, description: "No icon on purpose - this card proves the rings fallback." },
       { id: "app-postiz", title: "Postiz", kind: "application", icon: "app-postiz", bind: { profile: "mkt-manager", app: "postiz" } },
-      { id: "operator", title: "Calvin", kind: "person", personTitle: "Operator", accessors: ["mkt-manager"] },
+      { id: "operator", title: "Avery", kind: "person", personTitle: "Operator", accessors: ["mkt-manager"] },
       { id: "higgsfield", title: "Higgsfield", kind: "external-tool" },
       { id: "marketing", title: "Marketing Team", kind: "agent-bundle" },
       { id: "content-published", title: "content.published/v1", kind: "comm-out", description: "#social" },

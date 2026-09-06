@@ -5,7 +5,7 @@ sourceSha: "0000000000000000000000000000000000000000"
 components:
   - id: calvin
     kind: human
-    title: Calvin
+    title: Avery
     resolved: true
     bind:
       profile: marketing-manager

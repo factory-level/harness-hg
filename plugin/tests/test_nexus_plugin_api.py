@@ -1882,7 +1882,7 @@ class TestWorkspace:
         # object carries no x/y of its own.
         drawn = self._sheet(
             objects=[
-                {"id": "person-1", "kind": "person", "title": "Calvin"},
+                {"id": "person-1", "kind": "person", "title": "Avery"},
                 {"id": "external-tool-1", "kind": "external-tool", "title": "Stripe", "subtitle": "Payments API"},
             ]
         )
@@ -1932,7 +1932,7 @@ class TestWorkspace:
         drawn = self._sheet(
             objects=[
                 {"id": "external-tool-1", "kind": "external-tool", "title": "Stripe", "url": "https://dashboard.stripe.com"},
-                {"id": "person-1", "kind": "person", "title": "Calvin"},
+                {"id": "person-1", "kind": "person", "title": "Avery"},
             ]
         )
         out = api.validate_workspace(self._doc(sheets=[drawn]))
@@ -3498,7 +3498,7 @@ class TestBackupsGrouping:
             assert (row["group"], row["groupTitle"]) == ("control-plane", "Control plane"), ns
 
     def test_an_uncovered_bundle_app_attributes_to_its_bundle(self, api):
-        # The bundle is the UNIT of protection (Calvin/ADR-122 amendment):
+        # The bundle is the UNIT of protection (ADR-122 amendment):
         # an agent-application with no routine (Postiz) belongs to its
         # distribution's shelf, never a standalone "not covered" section.
         membership = {

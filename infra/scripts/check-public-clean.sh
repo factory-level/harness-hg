@@ -21,6 +21,8 @@ OVERLAY=(
   ':(exclude)state/Pulumi.factory.yaml'
   ':(exclude)_old-docs'
   ':(exclude)_docs/adr/CHANGES.md'
+  ':(exclude)PRODUCT.md'
+  ':(exclude).github/workflows/DISABLED.md'
 )
 # Image pins that still name the private registry until the images are
 # published to ghcr.io (tracked in the OSS-readiness epic). Each is one line.

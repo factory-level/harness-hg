@@ -27,6 +27,8 @@ OVERLAY=(
   _docs/adr/CHANGES.md
   DOCS_REFACTOR.md
   avatars
+  PRODUCT.md
+  .github/workflows/DISABLED.md
 )
 
 [ -e "$OUT" ] && { echo "public-snapshot: $OUT exists - refusing to overwrite"; exit 1; }
@@ -47,6 +49,19 @@ this file.
 EOF
 
 (cd "$OUT" && git init -q && git add -A && git -c user.name=harness-hg -c user.email=hg-bot@users.noreply.github.com commit -q -m "$SUBJECT")
+# Chain the snapshot onto the public repo's main so history is kept: a PR
+# merged there between cuts stays an ancestor (its content is carried by
+# the ops fork, where every public PR is ported before the next cut), and
+# the push is a fast-forward, never a force. The first cut has no parent.
+PUBLIC_REMOTE="${PUBLIC_REMOTE:-https://github.com/factory-level/harness-hg.git}"
+if git -C "$OUT" fetch -q "$PUBLIC_REMOTE" main 2>/dev/null; then
+  parent="$(git -C "$OUT" rev-parse FETCH_HEAD)"
+  chained="$(cd "$OUT" && git -c user.name=harness-hg -c user.email=hg-bot@users.noreply.github.com commit-tree "HEAD^{tree}" -p "$parent" -m "$SUBJECT")"
+  git -C "$OUT" update-ref refs/heads/main "$chained" && git -C "$OUT" reset -q --hard main
+  echo "== chained onto public main ${parent:0:8}"
+else
+  echo "== public main not reachable - orphan commit (first cut, or offline)"
+fi
 echo "== gates inside the export"
 # After the commit: the gate is a git grep, and an uninitialised tree greps nothing.
 (cd "$OUT" && bash infra/scripts/check-public-clean.sh --strict)
@@ -57,7 +72,7 @@ rm -f "$OUT/.snapshot-make-test.log"
 # and .gitignore covers it, so the tree is still one clean commit.
 (cd "$OUT" && git status --short | head -5)
 echo "== snapshot ready at $OUT ($(cd "$OUT" && git rev-parse --short HEAD)); push it with:"
-echo "   git -C $OUT remote add origin git@github.com:factory-level/harness-hg.git && git -C $OUT push -u origin HEAD:main"
+echo "   git -C $OUT push $PUBLIC_REMOTE HEAD:main && git -C $OUT tag -a vX.Y.Z -m ... && git -C $OUT push $PUBLIC_REMOTE vX.Y.Z"
 # A force-pushed orphan commit has no base to diff, so the wiki workflow's
 # path filter never matches and no run starts: dispatch it by hand.
 echo "   then: gh workflow run wiki -R factory-level/harness-hg --ref main   (the push trigger's path filter cannot see an orphan commit)"

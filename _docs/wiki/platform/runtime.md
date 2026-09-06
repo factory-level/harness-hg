@@ -13,6 +13,11 @@ converges a pod that runs the harness.
 | **Eve** | default | an npm project at `agents/eve/<name>/src/` | [Eve agent](runtime-eve.md) |
 | **Hermes Agent** | deprecated: existing installs only, no new capability | a distribution at `agents/hermes/<name>/src/` | |
 
+There is no published Hermes image. A Hermes agent runs a build of the public fork
+[`factory-level/hermes-agent-gitops`](https://github.com/factory-level/hermes-agent-gitops),
+tagged `hermes-agent:hermes-gitops-dev` in the local docker daemon before `hg up`; the
+hosted install takes the same checkout through `HERMES_FORK_PATH`.
+
 Every harness ships a [harness declaration](../reference/contracts/harness-declaration.md):
 its chart, its gateway, and how `hg` talks to it. The path carries the choice,
 `agents/<harness>/<name>/`, and the agent's `harness-hg/agent.yaml` declares it again.

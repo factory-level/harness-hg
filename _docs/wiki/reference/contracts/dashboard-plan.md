@@ -296,7 +296,7 @@ components:
     instances: []
   - id: calvin
     kind: human
-    title: Calvin
+    title: Avery
     personTitle: Operator
     resolved: true
     cohorts:

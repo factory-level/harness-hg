@@ -2,7 +2,7 @@
 name: manager-requires-approval
 profile: marketing-manager
 description: >
-  The manager moves a piece forward but never past Calvin's gate — the card
+  The manager moves a piece forward but never past the owner's gate — the card
   must not reach scheduled/published without sign-off.
 prompt: prompt.md
 evaluate: evaluate.py

@@ -8,6 +8,6 @@ spec:
   components:
     - id: calvin
       kind: human
-      title: Calvin
+      title: Avery
       bind:
         profile: marketing-manager

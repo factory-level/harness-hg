@@ -22,7 +22,7 @@ const agent: PlanComponent = {
   instances: [{ destinations: { deployed: [{ name: "published", url: "https://m.example" }, { name: "internal", url: "https://i.example" }] } }],
 };
 const app: PlanComponent = { id: "app-postiz", kind: "application", bind: { profile: "mkt-manager", app: "postiz" } };
-const person: PlanComponent = { id: "calvin", title: "Calvin", kind: "person", personTitle: "Operator", accessors: ["mkt-manager"] };
+const person: PlanComponent = { id: "calvin", title: "Avery", kind: "person", personTitle: "Operator", accessors: ["mkt-manager"] };
 
 const edges: CommEdge[] = [
   { id: "e1", producer: "mkt-research@feed#topics", kind: "agent", event: "content.topic/v1", target: { profile: "mkt-manager" } },

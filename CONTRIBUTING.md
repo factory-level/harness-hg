@@ -44,6 +44,13 @@ Thanks for helping. This page is the whole checklist.
   `example-project`, `T0123456789`.
 - **Version pins live in `versions.json` only.** A second literal copy fails the build.
 
+## Where this repository comes from
+
+This is the public tree of a platform that also runs a private operations fork. `main`
+advances by snapshot commits from that fork, each gated by `make test` and the identifier
+check before it lands. A PR merged here is ported into the fork before the next snapshot,
+so it survives; a snapshot never rewrites history, only adds a commit on top.
+
 ## Reviews
 
 Every PR needs one approving review from a code owner (`.github/CODEOWNERS`). Frozen
