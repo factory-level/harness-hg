@@ -74,7 +74,7 @@ data enforced by the grammar lint ([#656](https://github.com/factory-level/harne
 | `gitops` · `topology` · `observability` · `nexus` · `chatops` | agent-bundle | the external repo's authoring surface |
 | `agent` | ops · dev | engine-neutral incl. `prove`/`evals` (ADR 0177); `apply` refuses on Eve with the reason |
 | `harness` | ops | the declared harness registry, listed |
-| `cron` · `discord` | ops · dev | engine-neutral surface; Hermes-native depth, honest refusals on Eve (ADR 0177) |
+| `cron` | ops · dev | engine-neutral surface; Hermes-native depth, honest refusals on Eve (ADR 0177) |
 | `bundle` | **unmapped — dies** | ADR-28 preview, superseded by the real bundle contract |
 | `help` | all | meta; leads with the three front doors |
 

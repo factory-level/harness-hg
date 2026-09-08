@@ -61,7 +61,7 @@ const V3_PROFILE = {
         from: { app: "monitoring", output: "alerts" },
         outputs: [
           { agent: { profile: "platform-sre", handler: "alerts", session: { mode: "keyed", key: "subject" } } },
-          { chatops: "company_discord#channel-1" },
+          { chatops: "company_chat#channel-1" },
         ],
       },
     ],
@@ -70,7 +70,7 @@ const V3_PROFILE = {
 
 const ENV_COMMUNICATION = {
   version: 1,
-  chatopsConnections: { company_discord: { provider: "recording" } },
+  chatopsConnections: { company_chat: { provider: "recording" } },
   durableProvider: { plugin: "redis-streams" },
 };
 
@@ -132,7 +132,7 @@ describe("environment/communication.yaml", () => {
     );
     const { environment, findings } = loadEnvironment(root);
     expect(findings).toEqual([]);
-    expect(environment.communication?.chatopsConnections["company_discord"]?.provider).toBe("recording");
+    expect(environment.communication?.chatopsConnections["company_chat"]?.provider).toBe("recording");
     expect(environment.communication?.durableProvider?.plugin).toBe("redis-streams");
   });
 
@@ -152,7 +152,7 @@ describe("environment/communication.yaml", () => {
   test("a schema-invalid file becomes a finding and is treated as absent", () => {
     const root = mkRepo(
       { p: null },
-      { "communication.yaml": { version: 1, chatopsConnections: { company_discord: { provider: "discord" } } } },
+      { "communication.yaml": { version: 1, chatopsConnections: { company_chat: { provider: "discord" } } } },
     );
     const { environment, findings } = loadEnvironment(root);
     expect(findings.some((f) => f.check === "environment" && f.severity === "error")).toBe(true);
@@ -209,8 +209,8 @@ function referenceRepo(overrides?: {
           },
           outputs: [
             { agent: { profile: "platform-sre", handler: "alerts", session: { mode: "keyed", key: "subject" } } },
-            { chatops: "company_discord#channel-1" },
-            { chatops: "company_discord#channel-2" },
+            { chatops: "company_chat#channel-1" },
+            { chatops: "company_chat#channel-2" },
           ],
         },
       ],
@@ -294,8 +294,8 @@ describe("compileCommunication", () => {
 
     // Auto-registration: referencing the spaces IS registering them.
     expect(comm.chatopsSpaces.map((s) => s.id).sort()).toEqual([
-      "company_discord#channel-1",
-      "company_discord#channel-2",
+      "company_chat#channel-1",
+      "company_chat#channel-2",
     ]);
     expect(comm.chatopsSpaces[0]!.provider).toBe("recording");
   });
@@ -317,7 +317,7 @@ describe("compileCommunication", () => {
         route: {
           name: "bad",
           from: { app: "monitoring", output: "nope" },
-          outputs: [{ chatops: "company_discord#channel-1" }],
+          outputs: [{ chatops: "company_chat#channel-1" }],
         },
       }),
     );
@@ -448,7 +448,7 @@ describe("compileCommunication", () => {
   test("EVENT006: queued delivery without a durable provider fails", () => {
     const plan = planFor(
       referenceRepo({
-        envCommunication: { version: 1, chatopsConnections: { company_discord: { provider: "recording" } } },
+        envCommunication: { version: 1, chatopsConnections: { company_chat: { provider: "recording" } } },
       }),
     );
     expect(plan.ok).toBe(false);
@@ -460,7 +460,7 @@ describe("compileCommunication", () => {
       referenceRepo({
         envCommunication: {
           version: 1,
-          chatopsConnections: { company_discord: { provider: "recording" } },
+          chatopsConnections: { company_chat: { provider: "recording" } },
           durableProvider: { plugin: "carrier-pigeon" },
         },
       }),
@@ -476,7 +476,7 @@ describe("compileCommunication", () => {
         route: {
           name: "operational-alerts",
           from: { app: "monitoring", output: "alerts" },
-          outputs: [{ chatops: "company_discord#channel-1" }],
+          outputs: [{ chatops: "company_chat#channel-1" }],
         },
       }),
     );
@@ -589,74 +589,13 @@ describe("emit deployments/communication", () => {
     return { plan, result: writeTree(output, tree), tree };
   }
 
-  test("declared inbound authorization materializes into the gateway's enforced allowlist vars (#476)", async () => {
-    // ADR-96's cost said it exactly: authoring `inbound` must not be
-    // mistaken for having authorization. The emitted agent env overlay
-    // now CARRIES the allowlists the fork's Discord adapter enforces
-    // (DISCORD_ALLOWED_USERS/ROLES/CHANNELS, deny-by-default), so the
-    // declaration IS the enforcement input.
-    const { parse } = await import("yaml");
-    const { readFileSync } = await import("node:fs");
-    const root = referenceRepo({
-      envCommunication: {
-        version: 1,
-        chatopsConnections: {
-          company_discord: {
-            provider: "discord",
-            credentialRef: { name: "discord-bot", key: "token" },
-            inbound: {
-              approvedUsers: ["111111111111111111", "222222222222222222"],
-              approvedRoles: ["333333333333333333"],
-              approvedChannels: ["444444444444444444"],
-            },
-          },
-        },
-        durableProvider: { plugin: "redis-streams" },
-      },
-    });
-    const out = mkdtempSync(join(tmpdir(), "gitops-"));
-    const { result } = await emitTo(root, out);
-    const valuesFile = result.written.find((f) => f.startsWith("deployments/agents/") && f.endsWith("values.yaml"));
-    expect(valuesFile).toBeDefined();
-    const doc = parse(readFileSync(join(out, valuesFile!), "utf8")) as { spec: { env: Record<string, string> } };
-    expect(doc.spec.env["DISCORD_ALLOWED_USERS"]).toBe("111111111111111111,222222222222222222");
-    expect(doc.spec.env["DISCORD_ALLOWED_ROLES"]).toBe("333333333333333333");
-    expect(doc.spec.env["DISCORD_ALLOWED_CHANNELS"]).toBe("444444444444444444");
-  });
-
-  test("TWO discord connections with inbound materialize NOTHING, loudly (CHATOPS002)", async () => {
-    // The gateway allowlist is process-wide: merging two connections'
-    // lists would collapse two security boundaries into one. Silence in
-    // the env, loud in the plan.
-    const { parse } = await import("yaml");
-    const { readFileSync } = await import("node:fs");
-    const root = referenceRepo({
-      envCommunication: {
-        version: 1,
-        chatopsConnections: {
-          company_discord: {
-            provider: "discord",
-            credentialRef: { name: "bot-a", key: "token" },
-            inbound: { approvedUsers: ["111111111111111111"] },
-          },
-          second_discord: {
-            provider: "discord",
-            credentialRef: { name: "bot-b", key: "token" },
-            inbound: { approvedUsers: ["222222222222222222"] },
-          },
-        },
-        durableProvider: { plugin: "redis-streams" },
-      },
-    });
+  test("Discord declarations are rejected before emitting credentials or deployments", () => {
+    const root = referenceRepo({ envCommunication: { version: 1, chatopsConnections: {
+      company_chat: { provider: "discord", credentialRef: { name: "retired-token", key: "token" }, inbound: { approvedUsers: ["123"] } },
+    } } });
     const plan = planFor(root);
-    expect(
-      plan.findings.some((f) => f.check === "CHATOPS002" && f.severity === "warning" && f.message.includes("process-wide")),
-    ).toBe(true);
-    const out = mkdtempSync(join(tmpdir(), "gitops-"));
-    const { result } = await emitTo(root, out);
-    const valuesFile = result.written.find((f) => f.startsWith("deployments/agents/") && f.endsWith("values.yaml"))!;
-    const doc = parse(readFileSync(join(out, valuesFile), "utf8")) as { spec: { env: Record<string, string> } };
-    expect(Object.keys(doc.spec.env ?? {})).not.toContain("DISCORD_ALLOWED_USERS");
+    expect(plan.ok).toBe(false);
+    expect(plan.findings.some((finding) => finding.severity === "error" && finding.message.includes("roadmap-only"))).toBe(true);
   });
 
   test("a capability injection may never write an authorization variable (reserved TOPO014)", () => {
@@ -690,7 +629,7 @@ describe("emit deployments/communication", () => {
       envCommunication: {
         version: 1,
         chatopsConnections: {
-          company_discord: { provider: "recording", inbound: { approvedUsers: ["1"] } },
+          company_chat: { provider: "recording", inbound: { approvedUsers: ["1"] } },
         },
         durableProvider: { plugin: "redis-streams" },
       },
@@ -720,7 +659,7 @@ describe("emit deployments/communication", () => {
     const values = parse(readFileSync(join(out, "deployments/communication/router/values.yaml"), "utf8"));
     expect(values.spec.producers).toHaveLength(2);
     expect(values.spec.edges).toHaveLength(5);
-    expect(values.spec.chatopsConnections["company_discord"].provider).toBe("recording");
+    expect(values.spec.chatopsConnections["company_chat"].provider).toBe("recording");
     expect(values.spec.durableProvider.plugin).toBe("redis-streams");
     // Credential references only - no value-shaped key can survive the
     // schema, and the recording connection carries none at all.
@@ -762,7 +701,7 @@ describe("emit deployments/communication", () => {
               delivery: { mode: "queued", ordering: { mode: "fifo", key: "subject" } },
               outputs: [
                 { agent: { profile: "platform-sre", handler: "alerts", session: { mode: "keyed", key: "subject" } } },
-                { chatops: "company_discord#channel-1" },
+                { chatops: "company_chat#channel-1" },
               ],
             },
             {
@@ -939,8 +878,8 @@ describe("hg event / hg chatops CLI (fixture, subprocess)", () => {
     expect(agents[0].delivery.ordering.key).toBe("subject");
     expect(doc.edges.some((e: { agent?: { profile: string } }) => e.agent?.profile === "unrelated-sre")).toBe(false);
     expect(doc.chatopsSpaces.map((s: { space: string }) => s.space).sort()).toEqual([
-      "company_discord#channel-1",
-      "company_discord#channel-2",
+      "company_chat#channel-1",
+      "company_chat#channel-2",
     ]);
   });
 
@@ -969,7 +908,7 @@ describe("hg event / hg chatops CLI (fixture, subprocess)", () => {
     expect(doc.spaces).toHaveLength(2);
     expect(doc.spaces[0].provider).toBe("recording");
 
-    const p = hg(["chatops", "plan", "company_discord#channel-1", "--dir", FIXTURE, "--json"]);
+    const p = hg(["chatops", "plan", "company_chat#channel-1", "--dir", FIXTURE, "--json"]);
     expect(p.code).toBe(0);
     const planDoc = JSON.parse(p.stdout);
     expect(planDoc.routes.sort()).toEqual(["external-alert-triage", "operational-alerts"]);
@@ -977,7 +916,7 @@ describe("hg event / hg chatops CLI (fixture, subprocess)", () => {
 
   test("chatops render produces the logical message and provider preview without sending", () => {
     const r = hg([
-      "chatops", "render", "company_discord#channel-1",
+      "chatops", "render", "company_chat#channel-1",
       "--dir", FIXTURE, "--event", "observability.alert",
       "--payload", "fixtures/alert-firing.json", "--json",
     ]);
@@ -988,13 +927,13 @@ describe("hg event / hg chatops CLI (fixture, subprocess)", () => {
     expect(doc.logical.facts.subject).toBe("incident/postiz-down");
   });
 
-  test("the discord-sandbox environment rebinds the alias to the real provider by reference only", () => {
-    const envTopo = join(FIXTURE, "environments", "discord-sandbox", "topology.yaml");
+  test("the slack-sandbox environment rebinds the alias to the real provider by reference only", () => {
+    const envTopo = join(FIXTURE, "environments", "slack-sandbox", "topology.yaml");
     const r = hg(["chatops", "list", "--dir", FIXTURE, "--environment", envTopo, "--json"]);
     expect(r.code).toBe(0);
     const doc = JSON.parse(r.stdout);
-    expect(doc.spaces[0].provider).toBe("discord");
-    expect(doc.spaces[0].credentialRef).toEqual({ env: "HG_DISCORD_BOT_TOKEN" });
+    expect(doc.spaces[0].provider).toBe("slack");
+    expect(doc.spaces[0].credentialRef).toEqual({ env: "HG_SLACK_BOT_TOKEN" });
     expect(r.stdout).not.toContain("xoxb");
   });
 
@@ -1002,9 +941,9 @@ describe("hg event / hg chatops CLI (fixture, subprocess)", () => {
     const e = hg(["event", "plan", "nope.event", "--dir", FIXTURE, "--json"]);
     expect(e.code).toBe(1);
     expect(e.stderr).toContain("observability.alert/v1");
-    const s = hg(["chatops", "plan", "company_discord#nope", "--dir", FIXTURE, "--json"]);
+    const s = hg(["chatops", "plan", "company_chat#nope", "--dir", FIXTURE, "--json"]);
     expect(s.code).toBe(1);
-    expect(s.stderr).toContain("company_discord#channel-1");
+    expect(s.stderr).toContain("company_chat#channel-1");
   });
 });
 

@@ -33,6 +33,8 @@ const observed = () =>
 let gateway: ReturnType<typeof Bun.serve>;
 let sink: ReturnType<typeof Bun.serve>;
 let router: { port: number };
+let slackResult = { status: 200, body: { ok: true, ts: "123.456" } as Record<string, unknown> };
+const slackCalls: { auth: string | null; body: any }[] = [];
 // The connection gateway (ADR-152): a fake eve agent that records what the
 // router forwards verbatim, a Discord-style Ed25519 keypair whose PUBLIC
 // half is the connection's DISCORD_PUBLIC_KEY, and a GitHub webhook secret.
@@ -67,6 +69,10 @@ beforeAll(async () => {
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);
+      if (url.pathname === "/slack/chat.postMessage") {
+        slackCalls.push({auth:req.headers.get("authorization"),body:await req.json()});
+        return Response.json(slackResult.body,{status:slackResult.status});
+      }
       sinkDeliveries.push({ path: url.pathname, body: await req.json() });
       return new Response('{"ok": true}');
     },
@@ -96,6 +102,8 @@ beforeAll(async () => {
   // the delivery is captured like any other.
   writeFileSync(join(secretsDir, "company-info-webhook-url"), `http://127.0.0.1:${sink.port}/info-webhook`);
 
+  writeFileSync(join(secretsDir, "factory-slack-token"), "fixture-slack-token");
+  process.env.SLACK_API_BASE = `http://127.0.0.1:${sink.port}/slack`;
   const config = {
     environment: "local",
     recordingBase: `http://127.0.0.1:${sink.port}`,
@@ -103,7 +111,9 @@ beforeAll(async () => {
       router: { id: "router", scope: "global", namespace: "hermes-system", service: "hermes-event-router" },
       durableProvider: { plugin: "redis-streams" },
       chatopsConnections: {
-        company_discord: { provider: "recording" },
+        company_chat: { provider: "recording" },
+        factory_slack: {provider:"slack",credentialRef:{name:"factory-slack-token",key:"value"}},
+        missing_slack: {provider:"slack",credentialRef:{name:"not-present",key:"value"}},
         company_info: {
           provider: "generic-webhook",
           credentialRef: { name: "company-info-webhook-url", key: "value" },
@@ -229,7 +239,7 @@ beforeAll(async () => {
           from: { producer: "platform-sre/monitoring#alerts" },
           event: "observability.alert/v1",
           kind: "chatops",
-          chatops: { space: "company_discord#channel-1", alias: "company_discord", destination: "channel-1", provider: "recording" },
+          chatops: { space: "company_chat#channel-1", alias: "company_chat", destination: "channel-1", provider: "recording" },
           delivery: { mode: "queued", retry: { maxAttempts: 5, backoff: "exponential" }, deadLetter: { enabled: true } },
         },
         {
@@ -239,7 +249,7 @@ beforeAll(async () => {
           from: { producer: "platform-sre/monitoring#alerts" },
           event: "observability.alert/v1",
           kind: "chatops",
-          chatops: { space: "company_discord#channel-2", alias: "company_discord", destination: "channel-2", provider: "recording" },
+          chatops: { space: "company_chat#channel-2", alias: "company_chat", destination: "channel-2", provider: "recording" },
           delivery: { mode: "queued", retry: { maxAttempts: 5, backoff: "exponential" }, deadLetter: { enabled: true } },
         },
         {
@@ -314,8 +324,8 @@ describe("event router (the chart's actual file)", () => {
 
     // Both spaces got their own recorded message.
     expect(chatops().map((s) => s.path).sort()).toEqual([
-      "/chatops/company_discord/channel-1",
-      "/chatops/company_discord/channel-2",
+      "/chatops/company_chat/channel-1",
+      "/chatops/company_chat/channel-2",
     ]);
     const recorded = chatops()[0]!.body as { message: { title: string; severity: string }; event: { correlationId: string } };
     expect(recorded.message.title).toContain("PostizDown");
@@ -338,11 +348,11 @@ describe("event router (the chart's actual file)", () => {
     gatewayDeliveries.length = 0;
     sinkDeliveries.length = 0;
     const { doc } = await post(
-      "/v1/events/platform-sre-monitoring-alerts?toChatops=company_discord%23channel-2",
+      "/v1/events/platform-sre-monitoring-alerts?toChatops=company_chat%23channel-2",
       FIRING,
     );
     expect(doc.deliveries).toHaveLength(1);
-    expect(doc.deliveries[0].space).toBe("company_discord#channel-2");
+    expect(doc.deliveries[0].space).toBe("company_chat#channel-2");
     expect(gatewayDeliveries).toHaveLength(0);
     expect(chatops()).toHaveLength(1);
   });
@@ -370,13 +380,36 @@ describe("event router (the chart's actual file)", () => {
 
   test("chatops test delivers one synthetic message through the provider binding", async () => {
     sinkDeliveries.length = 0;
-    const { status, doc } = await post("/v1/test/chatops", { space: "company_discord#channel-1" });
+    const { status, doc } = await post("/v1/test/chatops", { space: "company_chat#channel-1" });
     expect(status).toBe(200);
     expect(doc.status).toBe("delivered");
     expect(doc.providerMessageId).toMatch(/^recording-/);
     expect(chatops()).toHaveLength(1);
     const unknown = await post("/v1/test/chatops", { space: "nobody#nowhere" });
     expect(unknown.status).toBe(404);
+  });
+
+  test("Slack confirms delivery, escapes mentions and fails on API-level errors", async () => {
+    slackCalls.length = 0;
+    let result = await post("/v1/test/chatops", {space:"factory_slack#C1", payload:{title:"Alert <!channel>",summary:"check <@U1>"}});
+    expect(result.status).toBe(200);
+    expect(result.doc.providerMessageId).toBe("123.456");
+    expect(slackCalls[0]!.auth).toBe("Bearer fixture-slack-token");
+    expect(slackCalls[0]!.body.channel).toBe("C1");
+    expect(slackCalls[0]!.body.text).not.toContain("<!channel>");
+    expect(slackCalls[0]!.body.unfurl_links).toBe(false);
+    for (const [status,error,classification] of [[200,"not_in_channel","unknown-channel"],[200,"invalid_auth","credential-rejected"],[429,"ratelimited","rate-limited"],[503,"fatal_error","destination-5xx"]] as const) {
+      slackResult={status,body:{ok:false,error}};
+      result=await post("/v1/test/chatops",{space:"factory_slack#C1"});
+      expect(result.status).toBe(502);
+      expect(result.doc.classification).toBe(classification);
+      expect(JSON.stringify(result.doc)).not.toContain("fixture-slack-token");
+    }
+    slackResult={status:200,body:{ok:true,ts:"123.456"}};
+    const before=slackCalls.length;
+    result=await post("/v1/test/chatops",{space:"missing_slack#C1"});
+    expect(result.doc.classification).toBe("no-credential");
+    expect(slackCalls.length).toBe(before);
   });
 
   test("external ingress: the full signature matrix, replay, and payload-selector immunity", async () => {
@@ -550,11 +583,10 @@ describe("event router (the chart's actual file)", () => {
     }
     const hits = sinkDeliveries.filter((s) => s.path === "/info-webhook");
     expect(hits.length).toBe(before + 1);
-    const body = hits[hits.length - 1]!.body as { embeds?: { title?: unknown; fields?: unknown[] }[] };
-    // The webhook receives the SAME embed shape the bot-token plugin
-    // posts - the shared renderer is the contract.
-    expect(Array.isArray(body.embeds)).toBe(true);
-    expect(body.embeds).toHaveLength(1);
+    const body = hits[hits.length - 1]!.body as { title?: string; severity?: string; embeds?: unknown };
+    expect(typeof body.title).toBe("string");
+    expect(body.severity).toBe("info");
+    expect(body.embeds).toBeUndefined();
   });
 
   test("a failing destination never blocks the other edges", async () => {
@@ -731,39 +763,11 @@ describe("the connection gateway (ADR-152): POST /v1/connect/<provider>/<name>",
     return { status: resp.status, doc: await resp.json().catch(() => null) };
   };
 
-  test("discord: a signed PING is answered by the gateway itself with PONG", async () => {
-    const { status, doc } = await discordPost(JSON.stringify({ type: 1 }));
-    expect(status).toBe(200);
-    expect(doc).toEqual({ type: 1 });
-  });
-
-  test("discord: unsigned and forged requests are refused before anything is read", async () => {
+  test("retired Discord gateway never forwards, even with a valid signature", async () => {
     forwarded.length = 0;
-    expect((await discordPost(JSON.stringify({ type: 1 }), { sign: false })).status).toBe(401);
-    expect((await discordPost(JSON.stringify({ type: 1 }), { forge: true })).status).toBe(401);
-    expect((await discordPost(JSON.stringify({ type: 2, guild_id: "111" }), { forge: true })).status).toBe(401);
+    expect((await discordPost(JSON.stringify({ type: 1 }))).status).toBe(404);
+    expect((await discordPost(JSON.stringify({ type: 2, guild_id: "111" }))).status).toBe(404);
     expect(forwarded).toHaveLength(0);
-  });
-
-  test("discord: a signed command is routed by guild and forwarded VERBATIM, the agent's answer proxied back", async () => {
-    forwarded.length = 0;
-    const body = JSON.stringify({ type: 2, guild_id: "111", channel_id: "222", data: { name: "ask", options: [{ name: "message", value: "ping" }] } });
-    const { status, doc } = await discordPost(body);
-    expect(status).toBe(200);
-    expect(doc).toEqual({ type: 5 });
-    expect(forwarded).toHaveLength(1);
-    expect(forwarded[0]!.path).toBe("/eve/v1/discord");
-    expect(forwarded[0]!.body).toBe(body); // byte-for-byte
-    expect(forwarded[0]!.headers["x-signature-ed25519"]).toMatch(/^[0-9a-f]{128}$/);
-    expect(forwarded[0]!.headers["x-signature-timestamp"]).toBeDefined();
-    expect(forwarded[0]!.headers["x-hermes-connection"]).toBe("company-discord");
-  });
-
-  test("discord: an unmatched guild falls to the catch-all binding; first match wins", async () => {
-    forwarded.length = 0;
-    const { status } = await discordPost(JSON.stringify({ type: 2, guild_id: "999" }));
-    expect(status).toBe(200);
-    expect(forwarded[0]!.path).toBe("/greeter/eve/v1/discord");
   });
 
   test("github: ping answered by the gateway; a signed issue_comment is routed by repository and forwarded verbatim", async () => {
@@ -781,25 +785,14 @@ describe("the connection gateway (ADR-152): POST /v1/connect/<provider>/<name>",
     expect(forwarded[0]!.headers["x-github-delivery"]).toMatch(/^d-\d+$/);
   });
 
-  test("replays are refused: a repeated GitHub delivery id, a repeated Discord signature, a stale Discord timestamp", async () => {
+  test("replays are refused: a repeated GitHub delivery id", async () => {
     forwarded.length = 0;
     const body = JSON.stringify({ action: "created", repository: { full_name: "factory-level/harness-hg" } });
     expect((await githubPost(body, "issue_comment", { delivery: "dup-1" })).status).toBe(200);
     const again = await githubPost(body, "issue_comment", { delivery: "dup-1" });
     expect(again.status).toBe(409);
     expect(again.doc.reason).toBe("replay");
-    // Discord: the same signed request twice (same timestamp -> same signature)
-    const ts = String(Math.floor(Date.now() / 1000));
-    const cmd = JSON.stringify({ type: 2, guild_id: "111", n: 1 });
-    expect((await discordPost(cmd, { ts })).status).toBe(200);
-    expect((await discordPost(cmd, { ts })).status).toBe(409);
-    // and a signature over an old timestamp is stale even though it verifies
-    const old = await discordPost(JSON.stringify({ type: 1 }), { ts: String(Math.floor(Date.now() / 1000) - 3600) });
-    expect(old.status).toBe(401);
-    expect(old.doc.reason).toBe("stale-signature");
-    // exactly one forward per provider: the first GitHub delivery and the
-    // first Discord command; every replay and the stale PING stopped here
-    expect(forwarded).toHaveLength(2);
+    expect(forwarded).toHaveLength(1);
   });
 
   test("github: a forged signature, a missing one, and an unbound repository are refused", async () => {
@@ -822,15 +815,15 @@ describe("the connection gateway (ADR-152): POST /v1/connect/<provider>/<name>",
     // Rejection bodies carry a reason and nothing of the request: no
     // payload field, no signature material.
     const forged = await discordPost(JSON.stringify({ type: 2, guild_id: "111", secretish: "do-not-echo" }), { forge: true });
-    expect(forged.status).toBe(401);
+    expect(forged.status).toBe(404);
     expect(JSON.stringify(forged.doc)).not.toContain("do-not-echo");
     expect(JSON.stringify(forged.doc)).not.toContain("guild_id");
-    expect(forged.doc).toEqual({ status: "rejected", reason: "invalid-signature" });
+    expect(forged.doc).toEqual({ status: "rejected", reason: "unknown-connection" });
   });
 
   test("the pure helpers: route selection and both verifiers", async () => {
     const mod = await import("../../control-plane/event-router/chart/files/router.ts");
-    const conn = { name: "c", provider: "discord" as const, secretName: "s", verifyKey: "K", routes: [
+    const conn = { name: "c", provider: "github" as const, secretName: "s", verifyKey: "K", routes: [
       { profile: "a", url: "http://a", match: { guilds: ["1"], channels: ["9"] } },
       { profile: "b", url: "http://b", match: { channels: ["9"] } },
     ] };
@@ -839,6 +832,5 @@ describe("the connection gateway (ADR-152): POST /v1/connect/<provider>/<name>",
     expect(mod.selectConnectionRoute(conn, { guild_id: "2", channel_id: "8" })).toBeUndefined();
     expect(mod.verifyGithubSignature("k", "body", "sha256=" + createHmac("sha256", "k").update("body").digest("hex"))).toBe(true);
     expect(mod.verifyGithubSignature("k", "body", "sha256=deadbeef")).toBe(false);
-    expect(mod.verifyDiscordSignature("zz", "1", "b", "00".repeat(64))).toBe(false);
   });
 });

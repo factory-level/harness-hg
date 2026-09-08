@@ -42,7 +42,7 @@ const OMITTED_TEAM_FILES: [string, string][] = [
   ["apps.yaml", "shared workloads (a board, a publisher): one chart each, with the agent that owns it - absent = none"],
   ["bundles.yaml", "which agents share one pod (ADR-28) - absent = every agent standalone"],
   ["communication.yaml", "ChatOps connection aliases + the durable transport - absent = no ChatOps, no queued routes"],
-  ["connections.yaml", "third-party app registrations (Discord, GitHub App) the team binds to - absent = none"],
+  ["connections.yaml", "third-party app registrations (GitHub App) the team binds to - absent = none"],
   ["capabilities.yaml", "capability -> provider bindings the team brings - absent = only peer endpoints provide"],
   ["topology.yaml", "the layout the team is built for (regions, no cluster names) - absent = single"],
 ];

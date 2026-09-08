@@ -17,7 +17,7 @@ hg communication prove [flags]
 
 ## Description
 
-Compile + emit determinism + fan-out + incident sessions + queue conformance + consumer restart + DLQ replay + the ingress signature matrix + the recording provider's captures + secret redaction. The live flags add a real Discord sandbox message and a real Grafana fire/resolve cycle.
+Compile + emit determinism + fan-out + incident sessions + queue conformance + consumer restart + DLQ replay + the ingress signature matrix + the recording provider's captures + secret redaction. The live flags add a real Slack sandbox message and a real Grafana fire/resolve cycle.
 
 ## `hg communication prove`
 
@@ -31,7 +31,7 @@ Run the whole matrix.
 |---|---|---|---|
 | `--dir` | `<repo>` | — | The declaring repo. |
 | `--environment` | `<file>` | — | The cluster half, overriding the repo's own: a legacy `topology.yaml`-shaped file (targets inline), or an environment spec (`infra/environments/<env>.yaml`) whose `grants` supply targets, DNS, policy and capability providers for the team's target-free `harness-hg/topology.yaml`. Team files (bundles, communication, capabilities) always come from the repo's `harness-hg/` (legacy: `environment/`). |
-| `--require-live-chatops` | — | — | Fail (instead of unknown) when the live Discord leg cannot run. |
+| `--require-live-chatops` | — | — | Fail (instead of unknown) when the live Slack leg cannot run. |
 | `--require-live-grafana` | — | — | Fail (instead of unknown) when the live Grafana leg cannot run. |
 | `--to-chatops` | `<alias>#<channel>` | — | Where the live sandbox message is sent. |
 | `--since` | `<iso-time>` | — | Only consider captures after this time. |

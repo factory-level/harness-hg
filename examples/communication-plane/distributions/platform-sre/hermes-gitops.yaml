@@ -3,7 +3,7 @@
 # The route below is the whole demonstration: one typed event from the
 # monitoring app fans out to this profile's own gateway handler (durable
 # FIFO by subject, keyed incident session) and to two ChatOps spaces.
-# Which provider backs company_discord - recording locally, real Discord
+# Which provider backs company_chat - recording locally, real Slack
 # in the sandbox - is the environment's decision, never this file's.
 contractVersion: 3
 
@@ -70,8 +70,8 @@ communication:
             session:
               mode: keyed
               key: subject
-        - chatops: company_discord#channel-1
-        - chatops: company_discord#channel-2
+        - chatops: company_chat#channel-1
+        - chatops: company_chat#channel-2
 
     - name: external-alert-triage
       from:
@@ -83,7 +83,7 @@ communication:
             session:
               mode: keyed
               key: subject
-        - chatops: company_discord#channel-1
+        - chatops: company_chat#channel-1
 
   externalInputs:
     - name: demo-alert-source

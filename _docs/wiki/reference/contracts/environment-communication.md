@@ -8,6 +8,8 @@
 
 **What this page tells you:** every field of this contract, with types, constraints and defaults — generated from the frozen schema, so it cannot drift from what validates.
 
+> This frozen contract includes historical Discord syntax. Current loaders and runtimes reject Discord integrations; they are roadmap-only. Schema acceptance alone does not establish current provider support.
+
 Written by the **operator** as `environment/communication.yaml`: binds the agents' communication intent to real providers and durable transport. Credential references only; the schema forbids values. In v1alpha2 an absent `inbound` block means deny.
 
 Schema: `agent-bundle-contracts/environment-communication/v1alpha2/communication.schema.json` — **Environment communication configuration (environment/communication.yaml)**

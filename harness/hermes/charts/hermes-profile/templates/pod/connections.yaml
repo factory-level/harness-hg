@@ -13,6 +13,7 @@ key is an empty string in the platform Secret, never absent, so a projection
 never blocks a pod on a key the operator has not supplied yet.
 */}}
 {{- range (.Values.spec.connections | default list) }}
+{{- if eq .provider "discord" }}{{ fail "Discord is roadmap-only; remove this connection" }}{{ end }}
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

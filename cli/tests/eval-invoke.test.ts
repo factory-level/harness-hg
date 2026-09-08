@@ -57,7 +57,7 @@ beforeAll(async () => {
             from: { app: "monitoring", output: "alerts" },
             outputs: [
               { agent: { profile: "platform-sre", handler: "alerts", session: { mode: "keyed", key: "subject" } } },
-              { chatops: "company_discord#channel-1" },
+              { chatops: "company_chat#channel-1" },
             ],
           },
           {
@@ -79,7 +79,7 @@ beforeAll(async () => {
   );
   const envDir = join(repo, "environment");
   mkdirSync(envDir);
-  writeFileSync(join(envDir, "communication.yaml"), yaml({ version: 1, chatopsConnections: { company_discord: { provider: "recording" } } }));
+  writeFileSync(join(envDir, "communication.yaml"), yaml({ version: 1, chatopsConnections: { company_chat: { provider: "recording" } } }));
 
   // --- Destinations.
   gateway = Bun.serve({
@@ -165,7 +165,7 @@ beforeAll(async () => {
       name: "fanout",
       profile: "platform-sre",
       invoke: { event: { name: "observability.alert", payload: "fixtures/firing.json" } },
-      expect: { outputs: [{ agent: { profile: "platform-sre" } }, { chatops: "company_discord#channel-1" }] },
+      expect: { outputs: [{ agent: { profile: "platform-sre" } }, { chatops: "company_chat#channel-1" }] },
       evaluate: "evaluate.sh",
     }),
   );
@@ -235,13 +235,13 @@ describe("hg eval with typed invocation (v1alpha2)", () => {
         name: "wrong-expect",
         profile: "platform-sre",
         invoke: { event: { name: "observability.alert", payload: "fixtures/firing.json" } },
-        expect: { outputs: [{ chatops: "company_discord#not-routed" }] },
+        expect: { outputs: [{ chatops: "company_chat#not-routed" }] },
       }),
     );
     const proc = await hgEval(["--dir", join(repo, "evals"), "--scenario", "wrong-expect", "--json"]);
     const doc = JSON.parse(proc.stdout.toString()) as { ok: boolean; scenarios: { runs: { reason?: string }[] }[] };
     expect(doc.ok).toBe(false);
-    expect(doc.scenarios[0]?.runs[0]?.reason).toContain("company_discord#not-routed");
+    expect(doc.scenarios[0]?.runs[0]?.reason).toContain("company_chat#not-routed");
     expect(proc.exitCode).toBe(1);
   }, 120_000);
 });

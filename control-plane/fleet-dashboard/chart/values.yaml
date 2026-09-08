@@ -29,7 +29,6 @@ alert:
   # the render fails loudly otherwise (an alert with no receiver is a
   # silent no-op, and silent is worse than loud).
   webhookUrl: ""
-  discordUrl: ""
   # How often Grafana evaluates the rule group. MTD spend moves slowly;
   # 5m is plenty.
   evaluationInterval: 5m

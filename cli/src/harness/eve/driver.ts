@@ -383,7 +383,7 @@ export async function eveShow(ctx: ProfileCtx, timeoutSec = 60): Promise<AgentSn
  * credential overrides an empty placeholder of the same name in the env
  * overlay. Reading only the first Secret shows the placeholder and hides
  * the credential, which is the exact failure this function exists to
- * prevent: `agent show` and EVE021 disagreed about whether a Discord key
+ * prevent: `agent show` and the channel proof disagreed about whether a provider key
  * was present the moment the credential moved into its connection.
  *
  * The VALUES are read only to ask "is this empty" and are never kept,

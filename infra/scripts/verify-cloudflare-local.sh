@@ -110,7 +110,7 @@ $KC create namespace "$NS" >/dev/null
 # Simulate K6's env Secret (the infra creates this from agentSecrets in a
 # real fleet; this script exercises the tunnel path, not K6 again).
 $KC -n "$NS" create secret generic "${RELEASE}-env" \
-  --from-literal=DISCORD_BOT_TOKEN=fake --from-literal=OPENAI_API_KEY=fake >/dev/null
+  --from-literal=SLACK_BOT_TOKEN=fake --from-literal=OPENAI_API_KEY=fake >/dev/null
 
 sed -e 's/__IMAGE_REPOSITORY__/ghcr.io\/factory-level\/hermes-agent/' -e 's/__IMAGE_TAG__/latest/' \
   infra/gitops-template/bootstrap/values/cluster-values.yaml > "$WORKDIR/base-values.yaml"

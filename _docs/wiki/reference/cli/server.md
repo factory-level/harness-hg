@@ -55,8 +55,7 @@ Register the environment with its operations channel (idempotent — never dupli
 
 | Flag | Value | Default | What it does |
 |---|---|---|---|
-| `--channel` | `<discord-channel-id>` | — | The operations channel. |
-| `--role` | `<role-id>` | — | Role mentioned on lifecycle events. |
+| `--channel` | `<slack-channel-id>` | — | The operations channel. |
 | `--environment` | `<name>` | — | The environment name registered. |
 
 ## `hg server destroy`

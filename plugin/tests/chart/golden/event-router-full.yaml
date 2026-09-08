@@ -91,7 +91,7 @@ data:
     /** One platform connection's gateway configuration (ADR-152). */
     interface ConnectionGateway {
       name: string;
-      provider: "discord" | "github";
+      provider: "github";
       secretName: string;
       verifyKey: string;
       routes: { profile: string; url: string; match: { guilds?: string[]; channels?: string[]; repositories?: string[] } }[];
@@ -197,23 +197,8 @@ data:
     // VERBATIM - raw body bytes and the provider's signature headers - so the
     // agent's own eve channel verifies again with its projected copy of the
     // same key and does its own threading and replies. Synchronous by design:
-    // Discord's interactions expect the answer (PONG, or the deferred ACK)
-    // inside three seconds from THIS response. Nothing here parses the payload
+    // The provider receives the agent response. Nothing here parses the payload
     // beyond the match fields, nothing is re-signed, nothing is queued.
-    
-    /** Discord: Ed25519 over `${timestamp}${body}` with the application's
-     * public key (32 bytes hex), per Discord's interactions contract. The raw
-     * key is wrapped in a SubjectPublicKeyInfo so node:crypto can verify it. */
-    export function verifyDiscordSignature(publicKeyHex: string, timestamp: string, body: string, signatureHex: string): boolean {
-      if (!/^[0-9a-f]{64}$/i.test(publicKeyHex) || !/^[0-9a-f]{128}$/i.test(signatureHex)) return false;
-      const spki = Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(publicKeyHex, "hex")]);
-      try {
-        const key = crypto.createPublicKey({ key: spki, format: "der", type: "spki" });
-        return crypto.verify(null, Buffer.from(timestamp + body, "utf8"), key, Buffer.from(signatureHex, "hex"));
-      } catch {
-        return false;
-      }
-    }
     
     /** GitHub: HMAC-SHA256 of the raw body with the App's webhook secret,
      * `X-Hub-Signature-256: sha256=<hex>`. */
@@ -261,8 +246,6 @@ data:
      * identity headers, and the content type. Nothing else crosses. */
     const FORWARDED_HEADERS = [
       "content-type",
-      "x-signature-ed25519",
-      "x-signature-timestamp",
       "x-hub-signature-256",
       "x-github-event",
       "x-github-delivery",
@@ -278,7 +261,7 @@ data:
         observe("connection.rejected", { path: url.pathname, reason, ...(connection ? { connection } : {}) });
         return json(status, { status: "rejected", reason });
       };
-      const m = url.pathname.match(/^\/v1\/connect\/(discord|github)\/([a-z0-9][-a-z0-9]*)$/);
+      const m = url.pathname.match(/^\/v1\/connect\/(github)\/([a-z0-9][-a-z0-9]*)$/);
       if (!m) return reject(404, "unknown-connection");
       const provider = m[1] as ConnectionGateway["provider"];
       const connection = (config.spec.connections ?? []).find((c) => c.name === m[2] && c.provider === provider);
@@ -294,19 +277,6 @@ data:
       const key = connectionKey(connection.name, connection.verifyKey);
       if (!key) return reject(503, "no-connection-key", connection.name);
     
-      // ---- verify, the provider's way
-      if (provider === "discord") {
-        const sig = req.headers.get("x-signature-ed25519") ?? "";
-        const ts = req.headers.get("x-signature-timestamp") ?? "";
-        if (!sig || !ts) return reject(401, "missing-signature", connection.name);
-        // Freshness: Discord's timestamp is signed, so a captured request is
-        // replayable forever unless its age is bounded (the platform's own
-        // ±300 s window, envelope.ts).
-        const age = Math.abs(Math.floor(Date.now() / 1000) - Number(ts));
-        if (!/^\d+$/.test(ts) || !Number.isFinite(age) || age > 300) return reject(401, "stale-signature", connection.name);
-        if (!verifyDiscordSignature(key, ts, raw, sig)) return reject(401, "invalid-signature", connection.name);
-        if (!rememberDelivery(`${connection.name}:${sig}`)) return reject(409, "replay", connection.name);
-      } else {
         const header = req.headers.get("x-hub-signature-256") ?? "";
         if (!header) return reject(401, "missing-signature", connection.name);
         if (!verifyGithubSignature(key, raw, header)) return reject(401, "invalid-signature", connection.name);
@@ -314,7 +284,6 @@ data:
         // external-webhook path's rule), falling back to the signature.
         const delivery = req.headers.get("x-github-delivery") ?? header;
         if (!rememberDelivery(`${connection.name}:${delivery}`)) return reject(409, "replay", connection.name);
-      }
     
       let payload: Record<string, unknown>;
       try {
@@ -324,12 +293,6 @@ data:
         return reject(400, "invalid-json", connection.name);
       }
     
-      // ---- the provider's liveness checks are answered here, verified: a
-      // Discord PING (type 1) and a GitHub `ping` event need no agent.
-      if (provider === "discord" && payload["type"] === 1) {
-        bump("hermes_connection_pings_total");
-        return json(200, { type: 1 });
-      }
       if (provider === "github" && req.headers.get("x-github-event") === "ping") {
         bump("hermes_connection_pings_total");
         return json(200, { ok: true, connection: connection.name });
@@ -732,7 +695,7 @@ data:
       bump("hermes_event_delivery_attempts_total");
       if (chatops.provider === "recording") {
         // The recording plugin: capture at the local sink, never send. Same
-        // route declarations run against Discord in the sandbox environment.
+        // route declarations run against Slack in the sandbox environment.
         const url = `${config.recordingBase}/chatops/${encodeURIComponent(chatops.alias)}/${encodeURIComponent(chatops.destination)}`;
         try {
           const resp = await fetch(url, {
@@ -758,35 +721,7 @@ data:
           return { ...base, status: "failed", classification: "unreachable" };
         }
       }
-      // The logical message projected to a Discord-shaped embed - ONE shape
-      // for the bot-token plugin and the webhook plugin, so the two channels
-      // can never drift in what they show.
-      const embedOf = () => {
-        const severity = String(logical["severity"] ?? "info");
-        const color = severity === "critical" ? 0xe01e5a : severity === "warning" ? 0xecb22e : 0x2eb67d;
-        return {
-          embeds: [
-            {
-              title: logical["title"],
-              description: logical["summary"],
-              color,
-              fields: Object.entries((logical["facts"] ?? {}) as Record<string, string>).map(([name, value]) => ({
-                name,
-                value,
-                inline: true,
-              })),
-              ...(logical["status"] ? { footer: { text: `status: ${logical["status"]}` } } : {}),
-            },
-          ],
-        };
-      };
       if (chatops.provider === "generic-webhook") {
-        // The webhook plugin: the URL IS the credential (a Discord/Slack
-        // compatible webhook), resolved through the same credential
-        // REFERENCE as every other provider and appearing nowhere in
-        // receipts or logs. `?wait=true` makes Discord return the created
-        // message so the receipt can carry a provider id; other webhook
-        // hosts ignore the query.
         const cred = config.spec.chatopsConnections[chatops.alias]?.credentialRef;
         const url = cred?.env ? process.env[cred.env] : cred?.name ? secretFor(cred.name) : undefined;
         if (!url) {
@@ -794,11 +729,11 @@ data:
           return { ...base, status: "failed", classification: "no-credential" };
         }
         try {
-          const target = `${url.trim()}${url.includes("?") ? "&" : "?"}wait=true`;
+          const target = url.trim();
           const resp = await fetch(target, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(embedOf()),
+            body: JSON.stringify(logical),
             signal: AbortSignal.timeout(30_000),
           });
           if (resp.ok) {
@@ -825,51 +760,44 @@ data:
           return { ...base, status: "failed", classification: "unreachable" };
         }
       }
-      if (chatops.provider === "discord") {
-        // The live Discord plugin: the logical message projected to an embed,
-        // posted with the bot token from the connection's credential
-        // REFERENCE (a mounted Secret key, or an env var). The token appears
-        // in the Authorization header only - never in receipts or logs.
+      if (chatops.provider === "slack") {
         const cred = config.spec.chatopsConnections[chatops.alias]?.credentialRef;
         const token = cred?.env ? process.env[cred.env] : cred?.name ? secretFor(cred.name) : undefined;
         if (!token) {
           bump("hermes_chatops_delivery_failures_total");
           return { ...base, status: "failed", classification: "no-credential" };
         }
-        const embed = embedOf();
+        // Alert payloads are data: escape Slack mentions and suppress automatic unfurls.
+        const plain = (value: unknown) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const facts = Object.entries((logical["facts"] ?? {}) as Record<string, unknown>)
+          .map(([key, value]) => `${plain(key)}: ${plain(value)}`);
+        const text = [plain(logical["title"]), `Severity: ${plain(logical["severity"] ?? "info")}`, plain(logical["summary"]),
+          ...(logical["status"] ? [`Status: ${plain(logical["status"])}`] : []), ...facts].filter(Boolean).join("\n").slice(0, 10000);
         try {
-          const discordApi = process.env["DISCORD_API_BASE"] ?? "https://discord.com/api/v10";
-          const resp = await fetch(`${discordApi}/channels/${encodeURIComponent(chatops.destination)}/messages`, {
+          const api = process.env["SLACK_API_BASE"] ?? "https://slack.com/api";
+          const resp = await fetch(`${api}/chat.postMessage`, {
             method: "POST",
-            headers: { authorization: `Bot ${token}`, "content-type": "application/json" },
-            body: JSON.stringify(embed),
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ channel: chatops.destination, text, mrkdwn: false, parse: "none", unfurl_links: false, unfurl_media: false }),
             signal: AbortSignal.timeout(30_000),
           });
-          if (resp.ok) {
-            const posted = (await resp.json()) as { id?: string };
+          const posted = await resp.json().catch(() => ({})) as { ok?: boolean; ts?: string; error?: string };
+          if (resp.ok && posted.ok === true && typeof posted.ts === "string" && posted.ts) {
             bump("hermes_chatops_deliveries_total");
-            return { ...base, status: "delivered", httpStatus: resp.status, providerMessageId: posted.id };
+            return { ...base, status: "delivered", httpStatus: resp.status, providerMessageId: posted.ts };
           }
           bump("hermes_chatops_delivery_failures_total");
-          return {
-            ...base,
-            status: "failed",
-            httpStatus: resp.status,
-            classification:
-              resp.status === 401 || resp.status === 403
-                ? "credential-rejected"
-                : resp.status === 404
-                  ? "unknown-channel"
-                  : resp.status >= 500
-                    ? "destination-5xx"
-                    : "destination-4xx",
-          };
+          const classification = resp.status === 429 || posted.error === "ratelimited" ? "rate-limited"
+            : resp.status === 401 || resp.status === 403 || ["invalid_auth", "token_revoked", "account_inactive"].includes(posted.error ?? "") ? "credential-rejected"
+            : ["channel_not_found", "not_in_channel", "is_archived"].includes(posted.error ?? "") ? "unknown-channel"
+            : resp.status >= 500 ? "destination-5xx" : "destination-4xx";
+          return { ...base, status: "failed", httpStatus: resp.status, classification };
         } catch {
           bump("hermes_chatops_delivery_failures_total");
           return { ...base, status: "failed", classification: "unreachable" };
         }
       }
-      // Any other provider (slack, teams, ...) is a later plugin; an
+      // Any other provider (teams, ...) is a later plugin; an
       // unimplemented provider fails closed and says so.
       bump("hermes_chatops_delivery_failures_total");
       return { ...base, status: "failed", classification: `provider-${chatops.provider}-unavailable` };
@@ -1904,7 +1832,7 @@ spec:
         app.kubernetes.io/instance: router-test
       annotations:
         # Roll the pod whenever the code or the compiled config changes.
-        checksum/code: 6097a7c88999647361d5f4ac26e48004aa888278f973e372040a0b0a65823836
+        checksum/code: 4f758f5d3806d3d6a2f28857d0704f2936fffee68f03b52b17911e22750d205d
         checksum/config: 07783a01e283d3c6b0801049d80042b17270664c3ee71884529341f221f5d5d8
         # The annotation scrape job the monitoring stack already runs
         # (the same convention as the agent exporter) - no ServiceMonitor.

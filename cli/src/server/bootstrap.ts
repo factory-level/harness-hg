@@ -86,12 +86,12 @@ export function evaluatePreflight(
     add("SRV003", "fail", "sync-root", `only ${Math.round(availKb / 1024 / 1024)}GiB free on ${facts["sync_dev"]} (need 50GiB)`);
   else add("SRV003", "pass", "sync-root", `${facts["sync_dev"]}, ${Math.round(availKb / 1024 / 1024)}GiB free`);
 
-  const reach = ["reach_github", "reach_gcs", "reach_discord"].map((k) => [k, facts[k] ?? "000"] as const);
+  const reach = ["reach_github", "reach_gcs", "reach_slack"].map((k) => [k, facts[k] ?? "000"] as const);
   const unreachable = reach.filter(([, code]) => code === "000");
   if (facts["dns_ok"] !== "yes") add("SRV004", "fail", "network", "DNS resolution failed (github.com)");
   else if (unreachable.length > 0)
     add("SRV004", "fail", "network", `unreachable: ${unreachable.map(([k]) => k.replace("reach_", "")).join(", ")}`);
-  else add("SRV004", "pass", "network", `github ${facts["reach_github"]}, gcs ${facts["reach_gcs"]}, discord ${facts["reach_discord"]}`);
+  else add("SRV004", "pass", "network", `github ${facts["reach_github"]}, gcs ${facts["reach_gcs"]}, slack ${facts["reach_slack"]}`);
 
   if (facts["ntp_synced"] === "yes") add("SRV005", "pass", "time", "NTP synchronized");
   else add("SRV005", "fail", "time", `NTP not synchronized (${facts["ntp_synced"]})`);
@@ -529,19 +529,17 @@ export async function cmdServer(sub: string | undefined, json: boolean, flags: {
   syncRoot?: string;
   allowLocalState: boolean;
   channel?: string;
-  role?: string;
   environment?: string;
   backup?: string;
   sink?: string;
   nuclear: boolean;
 }): Promise<void> {
-  // `register` talks to Discord, not to a host - no --host needed.
+  // `register` talks to Slack, not to a host - no --host needed.
   if (sub === "register") {
-    if (!flags.channel) throw new CliError("server register needs --channel <discord-channel-id>");
+    if (!flags.channel) throw new CliError("server register needs --channel <slack-channel-id>");
     const registration = await registerEnvironment({
       environment: flags.environment ?? "factory",
       channelId: flags.channel,
-      ...(flags.role ? { roleId: flags.role } : {}),
       facts: { syncRoot: flags.syncRoot ?? DEFAULT_SYNC_ROOT, k3s: versions.host.k3s },
     });
     if (json) jsonOut(registration);

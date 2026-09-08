@@ -10,6 +10,8 @@
 
 **What this page tells you:** every field of this contract, with types, constraints and defaults — generated from the frozen schema, so it cannot drift from what validates.
 
+> This frozen contract includes historical Discord syntax. Current loaders and runtimes reject Discord integrations; they are roadmap-only. Schema acceptance alone does not establish current provider support.
+
 **Generated** by `hg topology emit` under `deployments/communication/`: one event-router instance record per scope, its operative `values.yaml` configuration, and the whole-plane summary.
 
 ## `deployment` (v1alpha1)

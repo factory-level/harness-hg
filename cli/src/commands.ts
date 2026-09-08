@@ -687,7 +687,7 @@ export const COMMANDS: Command[] = [
     desc:
       "Compile + emit determinism + fan-out + incident sessions + queue conformance + consumer restart + DLQ replay + " +
       "the ingress signature matrix + the recording provider's captures + secret redaction. The live flags add a real " +
-      "Discord sandbox message and a real Grafana fire/resolve cycle.",
+      "Slack sandbox message and a real Grafana fire/resolve cycle.",
     json: true,
     subs: [
       {
@@ -696,7 +696,7 @@ export const COMMANDS: Command[] = [
         flags: [
           { name: "--dir", value: "<repo>", desc: "The declaring repo." },
           ENVIRONMENT,
-          { name: "--require-live-chatops", desc: "Fail (instead of unknown) when the live Discord leg cannot run." },
+          { name: "--require-live-chatops", desc: "Fail (instead of unknown) when the live Slack leg cannot run." },
           { name: "--require-live-grafana", desc: "Fail (instead of unknown) when the live Grafana leg cannot run." },
           { name: "--to-chatops", value: "<alias>#<channel>", desc: "Where the live sandbox message is sent." },
           { name: "--since", value: "<iso-time>", desc: "Only consider captures after this time." },
@@ -704,17 +704,6 @@ export const COMMANDS: Command[] = [
         ],
       },
     ],
-  },
-  {
-    name: "discord",
-    loops: ["ops", "dev"],
-    summary: "the Discord gateway, observed from outside (Hermes-native; Eve's Discord is the connection gateway's)",
-    desc:
-      "Declaration, token/authz env BINDING (names only, never values), and the adapter's own `gateway.log` " +
-      "connect lines from the pod. Refuses on an Eve profile - the connection gateway owns Discord there " +
-      "(`hg connection prove`, and `hg agent prove` legs EVE021/EVE024).",
-    json: true,
-    subs: [{ name: "status", summary: "gateway declaration + binding + connect evidence", flags: [PROFILE] }],
   },
   {
     name: "cron",
@@ -901,10 +890,9 @@ export const COMMANDS: Command[] = [
           "plus the documented eve channel contract; EVE012..020 behaviours around the routes " +
           "(cancel on the stream, --deep durability across a pod restart, compaction, schedules firing " +
           "in-process, subagents + a delegation eval, the backup ledger and a --deep restore round-trip, " +
-          "workspace bindings at the resolved sha, child Applications Synced+Healthy); EVE021 the Discord " +
-          "interactions route refuses unsigned and forged requests; EVE022..023 the mounted runtime " +
-          "manifest equals the offline resolve and `hg agent show` answers; EVE024 exactly ONE live " +
-          "Gateway session. Hermes: HRM001 the running pod answers `agent show` with a coherent snapshot and " +
+          "workspace bindings at the resolved sha, child Applications Synced+Healthy); EVE022..023 the mounted runtime " +
+          "manifest equals the offline resolve and `hg agent show` answers. " +
+          "Hermes: HRM001 the running pod answers `agent show` with a coherent snapshot and " +
           "every declared cron job is activated; HRM002 the smoke tier passes — deliberately shallow, deep " +
           "Hermes acceptance stays `hg test`. A leg whose precondition is absent reports `unknown`, never a " +
           "pass. `hg launch prove` aggregates this subject whenever any agent is onboarded.",
@@ -977,7 +965,7 @@ export const COMMANDS: Command[] = [
     see: ["../contracts/environment-connections.md", "../../platform/inbound-events.md"],
     summary: "third-party app connections: list, plan, set, prove",
     desc:
-      "A connection is one third-party app registration (a Discord application, a GitHub App) declared once and " +
+      "A connection is one third-party app registration (a GitHub App) declared once and " +
       "bound to profiles. Its keys live in ONE platform Secret (hermes-secrets/connection-<name>), " +
       "projected into every bound profile's namespace and mounted by the event router, whose gateway verifies " +
       "the provider's signature on /v1/connect/<provider>/<name> and forwards verbatim to the bound agent. " +
@@ -995,7 +983,7 @@ export const COMMANDS: Command[] = [
           "multi-line PEM, and the right way to supply any credential: a value on a command line " +
           "is readable by every process on the host through /proc and lands in the shell history.",
         examples: [
-          "hg connection set company-discord DISCORD_BOT_TOKEN=... DISCORD_APPLICATION_ID=... DISCORD_PUBLIC_KEY=...",
+          "hg connection set platform-github GITHUB_WEBHOOK_SECRET=...",
           "hg connection set platform-github GITHUB_APP_PRIVATE_KEY=@~/Downloads/my-app.private-key.pem",
         ],
       },
@@ -1056,8 +1044,7 @@ export const COMMANDS: Command[] = [
         name: "register",
         summary: "register the environment with its operations channel (idempotent — never duplicates the permanent message)",
         flags: [
-          { name: "--channel", value: "<discord-channel-id>", desc: "The operations channel." },
-          { name: "--role", value: "<role-id>", desc: "Role mentioned on lifecycle events." },
+          { name: "--channel", value: "<slack-channel-id>", desc: "The operations channel." },
           { name: "--environment", value: "<name>", desc: "The environment name registered." },
         ],
       },

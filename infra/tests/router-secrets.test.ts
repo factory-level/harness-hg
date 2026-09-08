@@ -23,6 +23,13 @@ describe("router signing secrets (ADR-53)", () => {
     expect(routerSecretKey("marketing-manager")).toBe("hermes-marketing-manager-env");
   });
 
+  test("Eve signing keys match the runtime namespace rather than the retired Hermes namespace", () => {
+    expect(routerSecretKey("marketing-sre", "eve")).toBe("ag-eve-marketing-sre-env");
+    expect(routerSecretEntries({"marketing-sre":{WEBHOOK_SECRET:"fixture"}}, {}, [
+      {name:"marketing-sre",runtime:"eve",source:"github.com/example/team",ref:"main",subdir:"agents/eve/marketing-sre/src",overrides:null},
+    ])).toEqual({"ag-eve-marketing-sre-env":"fixture"});
+  });
+
   test("the namespace matches the single-layout router scope", () => {
     // cli/src/topology/communication.ts:224.
     expect(ROUTER_NS).toBe("hermes-system");

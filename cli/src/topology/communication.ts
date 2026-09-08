@@ -219,25 +219,6 @@ export function compileCommunication(
   const sorted = [...contracts].sort((a, b) => a.profile.localeCompare(b.profile));
   const elide = topo.layout === "single";
 
-  // CHATOPS002 (#476, Codex catch): the gateway's inbound allowlist is
-  // PROCESS-WIDE, so per-connection inbound declarations cannot be
-  // materialized when more than one discord connection carries one -
-  // merging them would collapse two security boundaries into one. The
-  // emitter materializes nothing in that case; this warning is what
-  // keeps the silence loud.
-  const discordInbound = Object.entries(env.communication?.chatopsConnections ?? {}).filter(
-    ([, c]) => c.provider === "discord" && c.inbound,
-  );
-  if (discordInbound.length > 1) {
-    warn(
-      "*",
-      "CHATOPS002",
-      `${discordInbound.length} discord connections declare inbound (${discordInbound
-        .map(([alias]) => alias)
-        .join(", ")}) - the gateway allowlist is process-wide, so NONE materializes; ` +
-        "consolidate inbound onto one connection to enforce it",
-    );
-  }
   const comm = env.communication;
 
   // --- Routers: one per scope that hosts any producer or agent. Locally
@@ -385,6 +366,10 @@ export function compileCommunication(
           : `route ${route} references ChatOps space ${space}, but the environment declares no communication.yaml`,
         "declare the connection alias (provider + credentialRef) in environment/communication.yaml",
       );
+      return undefined;
+    }
+    if (!["recording", "slack", "generic-webhook"].includes(connection.provider)) {
+      err(profile, "CHATOPS001", `route ${route}: unsupported provider; Discord is roadmap-only`);
       return undefined;
     }
     let binding = chatopsSpaces.get(space);

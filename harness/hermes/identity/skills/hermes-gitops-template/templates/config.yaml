@@ -30,7 +30,7 @@ model:
 
 # Messaging platforms. Credentials live in .env via env_requires, never here.
 # Note that some adapters enable themselves purely from a token present in the
-# environment — declaring the intent here keeps "why is this agent on Discord?"
+# environment — declaring the intent here keeps "which messaging adapter is enabled?"
 # answerable from the repo.
 # platforms:
 #   webhook:

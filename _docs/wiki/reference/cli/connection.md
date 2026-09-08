@@ -20,7 +20,7 @@ hg connection prove
 
 ## Description
 
-A connection is one third-party app registration (a Discord application, a GitHub App) declared once and bound to profiles. Its keys live in ONE platform Secret (hermes-secrets/connection-<name>), projected into every bound profile's namespace and mounted by the event router, whose gateway verifies the provider's signature on /v1/connect/<provider>/<name> and forwards verbatim to the bound agent. Values never print - `list` shows which keys are SET, by name.
+A connection is one third-party app registration (a GitHub App) declared once and bound to profiles. Its keys live in ONE platform Secret (hermes-secrets/connection-<name>), projected into every bound profile's namespace and mounted by the event router, whose gateway verifies the provider's signature on /v1/connect/<provider>/<name> and forwards verbatim to the bound agent. Values never print - `list` shows which keys are SET, by name.
 
 ## `hg connection list`
 
@@ -51,7 +51,7 @@ Set a connection's keys locally ($hg_home/connections/<name>.json, 0600) and re-
 **Examples**
 
 ```bash
-hg connection set company-discord DISCORD_BOT_TOKEN=... DISCORD_APPLICATION_ID=... DISCORD_PUBLIC_KEY=...
+hg connection set platform-github GITHUB_WEBHOOK_SECRET=...
 hg connection set platform-github GITHUB_APP_PRIVATE_KEY=@~/Downloads/my-app.private-key.pem
 ```
 

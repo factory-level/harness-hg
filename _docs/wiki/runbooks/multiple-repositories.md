@@ -28,3 +28,11 @@ reconciliation card shows the default watcher.
 
 **Proof:** each watcher's status reports the expected source revision as applied, its timer
 is enabled, and its deployed workloads are healthy. An unavailable proof is not a pass.
+
+## Inferlab internal company team
+
+Use `infra/environments/factory-inferops-prepare.py` to prepare the three `inferops-*` Eve
+identities from HQ's encrypted Slack outputs. HQ owns all three apps and channels. The
+proposal uses the existing shared factory GitOps destination and named `inferops` watcher,
+preserving social-media. New agents remain inactive until explicit activation and live proofs.
+See the source repository's `docs/agent-team.md` for role capabilities and rollout details.

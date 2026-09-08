@@ -2,7 +2,7 @@
 Fleet budget alerting provisioning, delivered as a ConfigMap: the
 platform Grafana's alerts sidecar (bootstrap/monitoring-stack.yaml,
 label grafana_alert: "1", all namespaces) imports it as a provisioning
-file. One fleet contact point (Discord and/or generic webhook, from
+file. One fleet contact point (generic webhook, from
 values) and one rule group with a BudgetExceeded rule per budgeted
 persona - each routed straight to the contact point via
 notification_settings, so the root notification-policy tree is never
@@ -36,7 +36,7 @@ data:
     groups:
       - orgId: 1
         name: hermes-fleet-budget
-        folder: Hermes GitOps
+        folder: Harness Hg
         interval: {{ .Values.alert.evaluationInterval }}
         rules:
           {{- range $persona := keys $budgets | sortAlpha }}

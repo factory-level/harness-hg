@@ -35,7 +35,7 @@ export function projectNameOf(stackDir: string): string {
   return doc.name;
 }
 
-function generateBoth(name: string, specFile: string) {
+export function generateEnvironmentProjections(name: string, specFile: string) {
   const spec = loadEnvironmentSpec(specFile);
   if (spec.name !== name) {
     throw new CliError(`env: the spec at ${specFile} declares name ${JSON.stringify(spec.name)}, not ${JSON.stringify(name)}`);
@@ -72,7 +72,7 @@ export function cmdEnvironment(json: boolean, args: string[], opts: EnvOpts): vo
   }
 
   if (sub === "plan" || sub === "apply") {
-    const generated = generateBoth(name, specPath(name, opts.spec));
+    const generated = generateEnvironmentProjections(name, specPath(name, opts.spec));
     let drift = 0;
     const missing = generated.flatMap((g) => g.result.missingSecrets);
     for (const g of generated) {
@@ -94,14 +94,14 @@ export function cmdEnvironment(json: boolean, args: string[], opts: EnvOpts): vo
       log(`  ! secret unset at ${m.stack}:${m.path} - supply it:\n      ${m.fix}`);
     }
     if (json) {
-      jsonOut({ command: `env-${sub}`, ok: sub === "apply" || drift === 0, drift, missingSecrets: missing });
+      jsonOut({ command: `env-${sub}`, ok: missing.length === 0 && (sub === "apply" || drift === 0), drift, missingSecrets: missing });
     } else if (sub === "plan") {
       if (drift === 0 && missing.length === 0) ok(`env plan: ${name} is clean (spec == generated config)`);
       else log(`env plan: ${drift} stack file(s) drift, ${missing.length} secret(s) unset`);
     }
     if (sub === "plan" && drift > 0) throw new CliError(`env plan: ${name} drifts from its spec`);
-    if (sub === "apply" && missing.length > 0) {
-      throw new CliError(`env apply: ${missing.length} secret(s) unset - run the printed commands, then re-apply`);
+    if (missing.length > 0) {
+      throw new CliError(`env ${sub}: ${missing.length} secret(s) unset - run the printed commands, then re-apply`);
     }
     return;
   }

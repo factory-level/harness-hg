@@ -233,7 +233,7 @@ print(json.dumps({
 
 /** What a profile's agent is actually configured with, right now.
  *
- * Env var NAMES are reported, never values - knowing DISCORD_BOT_TOKEN is
+ * Env var NAMES are reported, never values - knowing SLACK_BOT_TOKEN is
  * present is the whole diagnostic (a channel adapter enables itself off
  * the token), and printing the value would put a live credential in a
  * terminal and a CI log. */

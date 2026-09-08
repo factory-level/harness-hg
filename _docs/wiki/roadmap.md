@@ -13,7 +13,8 @@ Nothing outside the **Done** lane is supported today. No dates.
 
     - **Sandboxed agent execution.** Tool calls run in a container or VM, not a
       simulated shell.
-    - **More chat surfaces.** Teams and Telegram beside Slack.
+    - **More chat surfaces.** Discord, Teams and Telegram beside Slack. Discord is
+      not a supported provider today; its former gateway and notification adapters are retired.
     - **More alert destinations.** PagerDuty beside the generic webhook.
 
 -   __Planned__

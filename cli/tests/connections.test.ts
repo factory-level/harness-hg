@@ -29,12 +29,12 @@ const decl = (connections: ConnectionDeclarations["connections"]): ConnectionDec
 describe("compileConnections", () => {
   test("an eve binding is routed to its channel URL; a hermes binding is projection-only with a warning", () => {
     const r = compileConnections(
-      decl([{ name: "company-discord", provider: "discord", bindings: [{ profile: "echo", match: { guilds: ["1"] } }, { profile: "manager" }] }]),
+      decl([{ name: "company-github", provider: "github", bindings: [{ profile: "echo", match: { repositories: ["o/r"] } }, { profile: "manager" }] }]),
       targets,
     );
     expect(r.findings.filter((f) => f.severity === "error")).toEqual([]);
     expect(r.bindings.map((b) => [b.profile, b.url])).toEqual([
-      ["echo", "http://ag-eve-echo.ag-eve-echo.svc.cluster.local:3000/eve/v1/discord"],
+      ["echo", "http://ag-eve-echo.ag-eve-echo.svc.cluster.local:3000/eve/v1/github"],
       ["manager", null],
     ]);
     expect(r.findings.some((f) => f.check === "connections CONN006" && f.profile === "manager")).toBe(true);
@@ -43,8 +43,8 @@ describe("compileConnections", () => {
   test("CONN002 unknown profile, CONN003 two connections of one provider on one profile, CONN004 foreign match vocabulary", () => {
     const r = compileConnections(
       decl([
-        { name: "a", provider: "discord", bindings: [{ profile: "nobody" }, { profile: "echo" }] },
-        { name: "b", provider: "discord", bindings: [{ profile: "echo" }] },
+        { name: "a", provider: "github", bindings: [{ profile: "nobody" }, { profile: "echo" }] },
+        { name: "b", provider: "github", bindings: [{ profile: "echo" }] },
         { name: "gh", provider: "github", bindings: [{ profile: "greeter", match: { guilds: ["1"] } }] },
       ]),
       targets,
@@ -59,7 +59,7 @@ describe("compileConnections", () => {
 
   test("CONN005 a binding after a catch-all never matches (warning, still compiled)", () => {
     const r = compileConnections(
-      decl([{ name: "c", provider: "discord", bindings: [{ profile: "echo" }, { profile: "greeter", match: { guilds: ["1"] } }] }]),
+      decl([{ name: "c", provider: "github", bindings: [{ profile: "echo" }, { profile: "greeter", match: { repositories: ["o/r"] } }] }]),
       targets,
     );
     expect(r.findings.some((f) => f.check === "connections CONN005")).toBe(true);
@@ -70,8 +70,7 @@ describe("compileConnections", () => {
 describe("connectionFiles + the bundle fold", () => {
   const r = compileConnections(
     decl([
-      { name: "company-discord", provider: "discord", bindings: [{ profile: "echo", match: { guilds: ["1"] } }, { profile: "greeter" }] },
-      { name: "platform-github", provider: "github", bindings: [{ profile: "echo", match: { repositories: ["o/r"] } }] },
+      { name: "company-github", provider: "github", bindings: [{ profile: "echo", match: { repositories: ["o/r"] } }, { profile: "greeter" }] },
     ]),
     targets,
   );
@@ -84,12 +83,12 @@ describe("connectionFiles + the bundle fold", () => {
       "deployments/connections/profiles/greeter.yaml",
     ]);
     const echo = files.get("deployments/connections/profiles/echo.yaml")!;
-    expect(echo).toContain("secretName: connection-company-discord");
-    expect(echo).toContain("- DISCORD_PUBLIC_KEY");
+    expect(echo).toContain("secretName: connection-company-github");
+    expect(echo).toContain("- GITHUB_WEBHOOK_SECRET");
     expect(echo).toContain("- GITHUB_WEBHOOK_SECRET");
     const gw = files.get("deployments/connections/gateway.yaml")!;
-    expect(gw).toContain("verifyKey: DISCORD_PUBLIC_KEY");
-    expect(gw).toContain("url: http://ag-eve-echo.ag-eve-echo.svc.cluster.local:3000/eve/v1/discord");
+    expect(gw).toContain("verifyKey: GITHUB_WEBHOOK_SECRET");
+    expect(gw).toContain("url: http://ag-eve-echo.ag-eve-echo.svc.cluster.local:3000/eve/v1/github");
     expect(gw.indexOf("profile: echo")).toBeLessThan(gw.indexOf("profile: greeter"));
     // determinism
     expect(connectionFiles(r.bindings).get("deployments/connections/gateway.yaml")).toBe(gw);
@@ -102,8 +101,8 @@ describe("connectionFiles + the bundle fold", () => {
       { version: 4, bundles: [{ name: "team", profiles: [{ name: "echo" }, { name: "greeter" }] }] } as never,
       r.bindings,
     ) as { bundles: { profiles: { name: string; connections?: { name: string }[] }[] }[] };
-    expect(merged.bundles[0]!.profiles[0]!.connections!.map((c) => c.name)).toEqual(["company-discord", "platform-github"]);
-    expect(merged.bundles[0]!.profiles[1]!.connections!.map((c) => c.name)).toEqual(["company-discord"]);
+    expect(merged.bundles[0]!.profiles[0]!.connections!.map((c) => c.name)).toEqual(["company-github"]);
+    expect(merged.bundles[0]!.profiles[1]!.connections!.map((c) => c.name)).toEqual(["company-github"]);
   });
 
   test("writeConnectionTree writes the desired set and prunes what disappeared (fail closed)", () => {
@@ -129,6 +128,6 @@ describe("loadConnectionDeclarations", () => {
     writeFileSync(file, "apiVersion: hermes.gitops/v1alpha1\nkind: Connections\nconnections:\n  - name: x\n    provider: slack\n    bindings: [{profile: echo}]\n");
     expect(() => loadConnectionDeclarations(file)).toThrow(/failed connections schema validation/);
     writeFileSync(file, readFileSync(join(import.meta.dir, "../../agent-bundle-contracts/environment-connections/v1alpha1/examples/connections/valid-full.yaml"), "utf8"));
-    expect(loadConnectionDeclarations(file).connections).toHaveLength(2);
+    expect(() => loadConnectionDeclarations(file)).toThrow(/Discord is roadmap-only/);
   });
 });

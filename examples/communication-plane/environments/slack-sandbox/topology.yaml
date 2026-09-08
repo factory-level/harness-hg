@@ -1,8 +1,8 @@
-# The discord-sandbox environment: topologically identical to the local
+# The slack-sandbox environment: topologically identical to the local
 # default (one cluster, single layout) - it exists so communication.yaml
-# beside it can bind company_discord to the REAL Discord plugin.
+# beside it can bind company_chat to the REAL Slack plugin.
 version: 1
-name: discord-sandbox
+name: slack-sandbox
 layout: single
 regions:
   - name: local

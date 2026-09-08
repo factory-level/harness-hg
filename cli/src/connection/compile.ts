@@ -1,7 +1,7 @@
 // Compile the operator-authored Connections declaration (ADR-152,
 // environment/connections.yaml) into deployment-neutral records.
 //
-// A connection is ONE third-party app registration - a Discord application
+// A connection is ONE third-party app registration - a GitHub application
 // and its bot, a GitHub App - declared once and granted to profiles by
 // explicit bindings. Two things come out of a binding:
 //
@@ -10,7 +10,7 @@
 //      namespace as <instance>-connection-<name> (an ExternalSecret the
 //      agent chart renders from deployments/connections/profiles/<p>.yaml)
 //      and its pod through envFrom - so the agent's own channel code finds
-//      DISCORD_* / GITHUB_* in the environment exactly as eve documents;
+//      GITHUB_* in the environment exactly as eve documents;
 //   2. the ROUTE: the event router's gateway verifies the provider's
 //      signature on POST /v1/connect/<provider>/<name> and forwards the
 //      request verbatim to the profile the binding's match rule selects
@@ -34,27 +34,24 @@ const SCHEMA_FILES: Record<string, string> = {
   "hermes.gitops/v1alpha1": path.join(CONTRACTS_ROOT, "environment-connections/v1alpha1/connections.schema.json"),
 };
 
-export type ConnectionProvider = "discord" | "github";
+export type ConnectionProvider = "github";
 
 /** The secret keys a provider's platform Secret carries - the names eve's
- * channels read from the environment (docs/channels/discord, github), so
+ * channels read from the environment (docs/channels/github), so
  * the projection needs no renaming layer. Every key is present in the
  * platform Secret (an unset one is an empty string, never absent): the
  * projection is a fixed shape, not a discovery. */
 export const PROVIDER_KEYS: Record<ConnectionProvider, readonly string[]> = {
-  discord: ["DISCORD_BOT_TOKEN", "DISCORD_APPLICATION_ID", "DISCORD_PUBLIC_KEY"],
   github: ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY", "GITHUB_WEBHOOK_SECRET", "GITHUB_APP_SLUG"],
 };
 
 /** The key the gateway verifies inbound requests with, per provider. */
 export const PROVIDER_VERIFY_KEY: Record<ConnectionProvider, string> = {
-  discord: "DISCORD_PUBLIC_KEY",
   github: "GITHUB_WEBHOOK_SECRET",
 };
 
 /** The agent route the gateway forwards to (eve's channel routes). */
 export const PROVIDER_AGENT_PATH: Record<ConnectionProvider, string> = {
-  discord: "/eve/v1/discord",
   github: "/eve/v1/github",
 };
 
@@ -110,6 +107,9 @@ export function loadConnectionDeclarations(file: string): ConnectionDeclarations
       return `${error.instancePath || "/"} ${error.message ?? "invalid"}${extra}`;
     });
     throw new Error(`${file} failed connections schema validation:\n- ${lines.join("\n- ")}`);
+  }
+  if (raw.connections.some((connection) => connection.provider !== "github")) {
+    throw new Error(`${file}: unsupported connection provider; Discord is roadmap-only. Use GitHub connections or agent-owned Slack channels.`);
   }
   return raw;
 }
@@ -177,6 +177,10 @@ export function compileConnections(
     }
     seenNames.add(c.name);
     const provider = c.provider;
+    if (provider !== "github") {
+      error("*", "CONN001", `connection ${c.name}: unsupported provider; Discord is roadmap-only`);
+      continue;
+    }
     const seenProfiles = new Set<string>();
     let sawCatchAll = false;
     (c.bindings ?? []).forEach((b, order) => {
@@ -207,7 +211,7 @@ export function compileConnections(
       // The match vocabulary is the provider's: a guild rule on a GitHub
       // connection never matches anything, which is a lie in the plan.
       const foreign = Object.keys(match).filter((k) =>
-        provider === "discord" ? k === "repositories" : k === "guilds" || k === "channels",
+        k === "guilds" || k === "channels",
       );
       if (foreign.length > 0) {
         error(profile, "CONN004", `connection ${c.name} (${provider}): match.${foreign[0]} does not apply to ${provider}`);

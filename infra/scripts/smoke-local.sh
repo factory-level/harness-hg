@@ -13,9 +13,8 @@
 #     -> the demo secret delivered into the pod env and verified by the
 #        secret SHA tester page (two payloads, checksum only in git)
 #     -> Grafana fires SiteVisitsHigh (threshold from the Pulumi override),
-#        HermesAgentDown, and AgentAppUnhealthy - each asserted CAUSALLY
-#        at a local webhook sink (and mirrored to Discord when
-#        DISCORD_WEBHOOK_URL is exported)
+#        AgentDown, and AgentAppUnhealthy - each asserted CAUSALLY
+#        at a local webhook sink
 #
 # The persona installed is THIS REPOSITORY ITSELF: its distribution payload
 # under .hermes-dist/distribution-agent/ (installed via the fork's --subdir
@@ -162,9 +161,8 @@ log "== step 2: local git servers (GitOps repo + persona-source mirror) =="
 start_git_servers
 
 # The local webhook sink stands in for the operator's real alert receiver
-# (a GitHub dispatch endpoint, Discord, ...) so step 12m can ASSERT
-# delivery. Export DISCORD_WEBHOOK_URL to additionally prove alerts
-# against a real Discord channel (see bootstrap_stage12).
+# (a GitHub dispatch endpoint or another JSON receiver) so step 12m can ASSERT
+# delivery through the configured JSON receiver.
 log "== step 2b: local webhook sink (Grafana alert receiver) =="
 start_webhook_sink
 
@@ -392,7 +390,7 @@ pass "secret-tester verified the live secret against the in-repo checksum (both 
 # alerts (monitoring-chart ConfigMaps, picked up by the platform
 # Grafana's sidecars), the visits threshold came from the per-instance
 # Pulumi override, and every alert lands at the webhook sink (plus
-# Discord, when DISCORD_WEBHOOK_URL was exported).
+# the configured JSON receiver).
 # ---------------------------------------------------------------------------
 log "== step 12m: monitoring — dashboard ConfigMaps + Grafana alert loop =="
 
@@ -449,19 +447,19 @@ kill "$TRAFFIC_PID" 2>/dev/null || true
 wait "$TRAFFIC_PID" 2>/dev/null || true
 pass "SiteVisitsHigh fired at the sink (threshold ${VISITS_THRESHOLD}/5m came from the Pulumi override)"
 
-log "-- 12m.2: killing the agent pod must fire HermesAgentDown --"
-# Settle first: on a cold cluster the KSM series lags and HermesAgentDown
+log "-- 12m.2: killing the agent pod must fire AgentDown --"
+# Settle first: on a cold cluster the KSM series lags and AgentDown
 # false-fires at rule-import time. If it is STILL firing when we take the
 # baseline, the kill produces no new firing transition and the causal
 # assertion below can never pass (run 8). Wait for the series, then for
 # the false positive to clear (needs the 2m lookback to drain).
 wait_for "the agent StatefulSet's KSM series in Prometheus" 300 prometheus_has_agent_series || \
   fail "kube-state-metrics never exposed the agent StatefulSet series"
-wait_for "HermesAgentDown to settle to inactive" 600 grafana_rule_inactive "HermesAgentDown (${PERSONA_NAME})" || {
+wait_for "AgentDown to settle to inactive" 600 grafana_rule_inactive "AgentDown (${PERSONA_NAME})" || {
   dump_monitoring_diagnostics
-  fail "HermesAgentDown never settled to inactive before the kill test"
+  fail "AgentDown never settled to inactive before the kill test"
 }
-ok "HermesAgentDown settled (install-time false positive cleared)"
+ok "AgentDown settled (install-time false positive cleared)"
 SINK_BASELINE="$(webhook_log_lines)"
 # THREE deletes 25s apart, not one: a single fast restart can slip
 # between kube-state-metrics scrapes entirely (no 0 sample -> no alert —
@@ -471,12 +469,12 @@ for kill_round in 1 2 3; do
   "${KCTL[@]}" -n "$NAMESPACE" delete pod "hermes-${PERSONA_NAME}-0" --wait=false >/dev/null 2>&1 || true
   sleep 25
 done
-wait_webhook_alert "HermesAgentDown (${PERSONA_NAME})" "$SINK_BASELINE" 420 || {
+wait_webhook_alert "AgentDown (${PERSONA_NAME})" "$SINK_BASELINE" 420 || {
   dump_monitoring_diagnostics
   tail -5 "$WEBHOOK_LOG" 2>/dev/null || true
-  fail "HermesAgentDown did not reach the webhook sink within 420s of deleting the agent pod"
+  fail "AgentDown did not reach the webhook sink within 420s of deleting the agent pod"
 }
-pass "HermesAgentDown fired at the sink after the agent pod was deleted"
+pass "AgentDown fired at the sink after the agent pod was deleted"
 wait_pod_ready "$NAMESPACE" "hermes-${PERSONA_NAME}-0" 300s
 ok "agent pod recovered (StatefulSet controller restarted it)"
 

@@ -40,7 +40,7 @@ import { compile } from "../topology/compile.ts";
 import { renderTree } from "../topology/emit.ts";
 import { signBody } from "../topology/envelope.ts";
 import {
-  discordDeliverAndVerify,
+  slackDeliver,
   invokeForEval,
   loadComm,
   recordedMessages,
@@ -65,7 +65,7 @@ export interface ProveOptions {
   since?: string;
   requireLiveChatops: boolean;
   requireLiveGrafana: boolean;
-  /** Live Discord target; defaults to $HG_DISCORD_SANDBOX_CHANNEL. */
+  /** Live Slack target; defaults to $HG_SLACK_SANDBOX_CHANNEL. */
   toChatops?: string;
   /** Run exactly one named stage (compile always runs); the rest skip.
    * The live-fleet guard (#350): dlq-replay alone must not drag the
@@ -229,7 +229,7 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
     );
     const spaces = ctx.comm.chatopsSpaces.map((s) => s.id).sort();
     assert(
-      spaces.includes("company_discord#channel-1") && spaces.includes("company_discord#channel-2"),
+      spaces.includes("company_chat#channel-1") && spaces.includes("company_chat#channel-2"),
       `both ChatOps spaces must auto-register (got ${spaces.join(", ")})`,
     );
     assert(!!ctx.comm.durableProvider, "no durable provider declared");
@@ -277,7 +277,7 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
     assert(new Set(result.deliveryIds).size === 3, "delivery ids are not independent");
     const agent = result.receipts.filter((r) => r.kind === "agent" && r.status === "accepted");
     assert(agent.length === 1 && agent[0]!.edge.includes(":agent:platform-sre"), "platform-sre did not accept exactly one delivery");
-    for (const space of ["company_discord#channel-1", "company_discord#channel-2"]) {
+    for (const space of ["company_chat#channel-1", "company_chat#channel-2"]) {
       assert(
         result.receipts.some((r) => r.space === space && r.status === "delivered"),
         `${space} did not receive its delivery`,
@@ -500,7 +500,7 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
 
   // --- 10. The recording provider's captured messages ----------------------
   await stage("chatops-recording", async () => {
-    for (const space of ["company_discord#channel-1", "company_discord#channel-2"]) {
+    for (const space of ["company_chat#channel-1", "company_chat#channel-2"]) {
       const messages = recordedMessages(space);
       assert(messages.length > 0, `${space}: nothing recorded`);
       const hit = messages.some((m) => {
@@ -515,27 +515,26 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
     return "both spaces hold the fan-out event with title, severity, event + correlation ids";
   });
 
-  // --- 11. Live Discord ----------------------------------------------------
-  const liveChannel = opts.toChatops?.split("#")[1] ?? process.env["HG_DISCORD_SANDBOX_CHANNEL"];
+  // --- 11. Live Slack ----------------------------------------------------
+  const liveChannel = opts.toChatops?.split("#")[1] ?? process.env["HG_SLACK_SANDBOX_CHANNEL"];
   if (opts.requireLiveChatops) {
-    await stage("live-discord", async () => {
-      const token = process.env["HG_DISCORD_BOT_TOKEN"];
-      assert(!!token, "HG_DISCORD_BOT_TOKEN is not set");
-      assert(!!liveChannel, "no sandbox channel (pass --to-chatops company_discord#<id> or set HG_DISCORD_SANDBOX_CHANNEL)");
-      const receipt = await discordDeliverAndVerify(token!, liveChannel!, {
+    await stage("live-slack", async () => {
+      const token = process.env["HG_SLACK_BOT_TOKEN"];
+      assert(!!token, "HG_SLACK_BOT_TOKEN is not set");
+      assert(!!liveChannel, "no sandbox channel (pass --to-chatops company_chat#<id> or set HG_SLACK_SANDBOX_CHANNEL)");
+      const receipt = await slackDeliver(token!, liveChannel!, {
         title: "hg communication prove — live sandbox check",
-        summary: "The ADR-39 acceptance run posted this; it deletes itself.",
+        summary: "The communication acceptance run posted this Slack delivery check.",
         severity: "info",
         facts: { event: producer!.event, environment: "local" },
         links: [],
       });
       assert(receipt.status === "delivered", `live delivery failed (${receipt.classification})`);
-      assert(/^\d+$/.test(receipt.providerMessageId ?? ""), "no real provider message id");
-      assert(receipt.cleanedUp === true, "test message not cleaned up");
-      return `real message ${receipt.providerMessageId} posted${receipt.verified ? ", read back verified" : ""}, deleted`;
+      assert(!!receipt.providerMessageId, "no provider message timestamp");
+      return `Slack accepted message ${receipt.providerMessageId}`;
     });
   } else {
-    skip("live-discord", "--require-live-chatops not set");
+    skip("live-slack", "--require-live-chatops not set");
   }
 
   // --- 12. Grafana wiring (and optionally a real alert) --------------------
@@ -548,7 +547,7 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
   if (opts.requireLiveGrafana) {
     await stage("live-grafana", async () => {
       // The REAL causal loop: take platform-sre's agent down - its OWN
-      // monitoring (the router-wired producer) must fire HermesAgentDown
+      // monitoring (the router-wired producer) must fire AgentDown
       // through Grafana -> the generated publisher URL -> the durable
       // queue. The ChatOps recordings land immediately (the sink does
       // not depend on the downed agent) and are the firing signal; the
@@ -559,11 +558,11 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
       const workload = `statefulset/${appOf("platform-sre")}`;
       const started = Date.now();
       const capturesSince = (since: number, status: string) =>
-        recordedMessages("company_discord#channel-1").filter((m) => {
+        recordedMessages("company_chat#channel-1").filter((m) => {
           const msg = (m.body["message"] ?? {}) as Record<string, unknown>;
           return (
             Date.parse(m.ts) > since &&
-            String(msg["title"] ?? "").includes("HermesAgentDown") &&
+            String(msg["title"] ?? "").includes("AgentDown") &&
             String(msg["status"] ?? "") === status
           );
         });
@@ -576,7 +575,7 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
           await new Promise((resolve) => setTimeout(resolve, 15_000));
         }
         const firing = capturesSince(started, "firing");
-        assert(firing.length > 0, "Grafana's HermesAgentDown never reached the ChatOps space within 20m");
+        assert(firing.length > 0, "Grafana's AgentDown never reached the ChatOps space within 20m");
         const firingEvent = (firing[0]!.body["event"] ?? {}) as { id?: string; correlationId?: string };
         assert(!!firingEvent.correlationId, "the recorded capture carries no correlation id");
 
@@ -640,7 +639,7 @@ export async function cmdCommunication(json: boolean, args: string[], opts: Prov
       if (s) secrets.add(s);
     }
     for (const v of Object.values(state.commExtSecrets ?? {})) secrets.add(v);
-    const token = process.env["HG_DISCORD_BOT_TOKEN"];
+    const token = process.env["HG_SLACK_BOT_TOKEN"];
     if (token) secrets.add(token);
     assert(secrets.size > 0, "no secrets known to scan for - the scan would be vacuous");
     const surfaces: [string, string][] = [];

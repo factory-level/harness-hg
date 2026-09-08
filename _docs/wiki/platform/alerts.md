@@ -9,7 +9,7 @@ you turn them off:
 
 | Alert | Fires when | Severity |
 |---|---|---|
-| `HermesAgentDown` | the agent has no ready replica for 5 minutes | critical |
+| `AgentDown` | the agent has no ready replica for 5 minutes | critical |
 | `AgentAppUnhealthy` | a supporting workload has unavailable replicas for 5 minutes | critical |
 | `SiteVisitsHigh` | request rate crosses a threshold (default 100) | warning |
 

@@ -50,6 +50,32 @@ function writeSpec(): string {
 }
 
 describe("environment spec", () => {
+  test("named repository watchers validate and generate in both environment versions", () => {
+    for (const version of ["v1alpha1", "v1alpha2"]) {
+      const file = writeSpec();
+      const yaml = SPEC_YAML.replace("environment/v1alpha1", `environment/${version}`) + `
+  reconcile:
+    enabled: true
+    repoUrl: https://github.com/example/social.git
+    instances:
+      inferops:
+        enabled: true
+        repoUrl: https://github.com/example/inferops.git
+        branch: develop
+        checks: ["hg topology doctor --dir ."]
+        apply: "pulumi up --yes"
+`;
+      writeFileSync(file, yaml);
+      const spec = loadEnvironmentSpec(file);
+      expect((spec.infra.reconcile as any).instances.inferops.branch).toBe("develop");
+      const generated = generateStack(spec, "infra", { stackDir: "/tmp/infra", project: "test", existingFile: "/tmp/nonexistent-inferlab-fixture.yaml" });
+      expect(generated.text).toContain("instances:");
+      expect(generated.text).toContain("branch: develop");
+      writeFileSync(file, yaml + "        instances: {}\n");
+      expect(() => loadEnvironmentSpec(file)).toThrow();
+    }
+  });
+
   test("Slack rename aliases survive environment generation", () => {
     for (const version of ["v1alpha1", "v1alpha2"]) {
       const file = writeSpec();
@@ -261,4 +287,17 @@ describe("empty collections (#676 scratch run)", () => {
     // pulumi refuses '' where it expects a JSON value - a bare key is that.
     expect(text).not.toMatch(/agents:\n/);
   });
+});
+
+
+test("regenerating an unset secret keeps it a missing prerequisite", () => {
+  const spec = loadEnvironmentSpec(writeSpec());
+  const file = join(mkdtempSync(join(tmpdir(), "hg-missing-")), "Pulumi.scratch.yaml");
+  const opts = { stackDir: "/tmp/infra", project: "test", existingFile: file };
+  const first = generateStack(spec, "infra", opts);
+  expect(first.missingSecrets.length).toBeGreaterThan(0);
+  writeFileSync(file, first.text);
+  const second = generateStack(spec, "infra", opts);
+  expect(second.missingSecrets).toEqual(first.missingSecrets);
+  expect(second.text).toBe(first.text);
 });

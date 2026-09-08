@@ -13,7 +13,7 @@ runtime:
     - name: ANTHROPIC_API_KEY
       description: Anthropic API key; agent.ts calls the provider directly.
     # The Discord and GitHub channels (agent/channels/{discord,github}.ts)
-    # read DISCORD_* / GITHUB_* from the environment - supplied NOT here but
+    # read GITHUB_* from the environment - supplied NOT here but
     # by the platform connections bound to this agent
     # (environment/connections.yaml, ADR-152), projected as env.
 # Archive intent only: schedule + retention. The destination is the

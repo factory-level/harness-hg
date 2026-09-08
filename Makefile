@@ -211,16 +211,13 @@ doc-links:
 quickstart-drift:
 	@bash infra/scripts/check-quickstart-drift.sh
 
-# The #674 drift gate: every declared environment's generated Pulumi
-# stack config matches its spec (hg env plan exits 1 on drift). Specs
-# live at infra/environments/<name>.yaml.
+# The #674 drift gate compares generated files, not credential readiness.
+# Public examples intentionally contain unset secret placeholders; env plan/apply
+# still refuse those when used for real environment preparation.
 .PHONY: env-drift
 env-drift:
-	@for spec in infra/environments/*.yaml; do \
-		name=$$(basename $$spec .yaml); \
-		bun cli/src/main.ts env plan $$name >/dev/null || exit 1; \
-		echo "OK   env $$name: spec == generated config"; \
-	done
+	bun infra/scripts/check-env-drift.ts
+
 
 # The #672 grep-gate: no living reference to a retired tree
 # (plugin/schemas, infra/charts, dashboard/*) or a deleted CLI alias.

@@ -34,7 +34,7 @@ const APP_ROUTE = {
   name: "board-alerts",
   from: { app: "board", output: "alerts" },
   delivery: { mode: "queued", guarantee: "at-least-once" },
-  outputs: [{ chatops: "company_discord#sre-alerts" }],
+  outputs: [{ chatops: "company_chat#sre-alerts" }],
 };
 const APP = {
   name: "board",

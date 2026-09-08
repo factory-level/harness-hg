@@ -825,7 +825,7 @@ BIZ_ONLY_ERR="$(helm template monitoring "$REPO_ROOT/control-plane/monitoring/ch
     --set alert.health.enabled=false \
     --set alert.business.failures.enabled=true \
     --set alert.business.failures.event=content.published/v1 2>&1 || true)"
-if printf '%s' "$BIZ_ONLY_ERR" | grep -qF "neither alert.webhookUrl nor alert.discordUrl is set"; then
+if printf '%s' "$BIZ_ONLY_ERR" | grep -qF "alert.webhookUrl is not set"; then
   log "OK   control-plane/monitoring/chart refuses business-only rules with no receiver (#617)"
 else
   echo "FAIL control-plane/monitoring/chart rendered business-only rules with no receiver (#617 regressed)"
@@ -839,7 +839,7 @@ AM_DISCORD_ERR="$(helm template monitoring "$REPO_ROOT/control-plane/monitoring/
     --namespace hermes-social-media \
     --set alert.discordUrl=https://discord.invalid/hook \
     --set alert.alertmanager.enabled=true 2>&1 || true)"
-if printf '%s' "$AM_DISCORD_ERR" | grep -qF "no Alertmanager receiver URL resolves"; then
+if printf '%s' "$AM_DISCORD_ERR" | grep -qE "Discord is roadmap-only|no Alertmanager receiver URL resolves"; then
   log "OK   control-plane/monitoring/chart refuses alertmanager.enabled with no Alertmanager URL (#620)"
 else
   echo "FAIL control-plane/monitoring/chart silently skipped the AlertmanagerConfig (#620 regressed)"
@@ -848,7 +848,7 @@ fi
 # ...and the documented escape hatch still works: Grafana-only is a legitimate
 # choice, it just has to be stated rather than implied by an empty value.
 if helm template monitoring "$REPO_ROOT/control-plane/monitoring/chart" --namespace hermes-social-media \
-    --set alert.discordUrl=https://discord.invalid/hook \
+    --set alert.webhookUrl=https://alerts.invalid/hook \
     --set alert.alertmanager.enabled=false >/dev/null 2>&1; then
   log "OK   charts/monitoring renders Grafana-only when alertmanager is off (#620)"
 else

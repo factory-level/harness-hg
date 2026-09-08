@@ -3,7 +3,7 @@
 # assertion.
 name: alert-fanout
 profile: platform-sre
-description: "observability.alert/v1 fans out to platform-sre + two Discord spaces"
+description: "observability.alert/v1 fans out to platform-sre + two Slack spaces"
 invoke:
   event:
     name: observability.alert
@@ -13,5 +13,5 @@ expect:
   outputs:
     - agent:
         profile: platform-sre
-    - chatops: company_discord#channel-1
-    - chatops: company_discord#channel-2
+    - chatops: company_chat#channel-1
+    - chatops: company_chat#channel-2

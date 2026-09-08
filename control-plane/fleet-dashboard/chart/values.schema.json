@@ -41,7 +41,11 @@
           "type": "string"
         },
         "discordUrl": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            ""
+          ],
+          "description": "Retired input. Discord is roadmap-only; use webhookUrl."
         },
         "evaluationInterval": {
           "type": "string",

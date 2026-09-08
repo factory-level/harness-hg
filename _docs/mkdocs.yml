@@ -227,7 +227,6 @@ nav:
           - hg dash: reference/cli/dash.md
           - hg debug: reference/cli/debug.md
           - hg dev: reference/cli/dev.md
-          - hg discord: reference/cli/discord.md
           - hg down: reference/cli/down.md
           - hg edge: reference/cli/edge.md
           - hg env: reference/cli/env.md

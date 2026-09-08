@@ -60,7 +60,6 @@ See [Testing](../../platform/testing.md) for what the proofs establish.
 | [`hg reconcile`](reconcile.md) | ops | yes | the destination host's reconcile timer |
 | [`hg event`](event.md) | ops · agent-bundle | yes | the event router: list, trace, publish, prove the queue, dead letters |
 | [`hg communication`](communication.md) | ops | yes | the communication acceptance matrix as one command |
-| [`hg discord`](discord.md) | ops · dev | yes | the Discord gateway, observed from outside (Hermes-native; Eve's Discord is the connection gateway's) |
 | [`hg cron`](cron.md) | ops · dev | — | the agent's scheduler surface - Hermes wrapped natively, Eve projected read-only |
 | [`hg edge`](edge.md) | ops | yes | the tunnel and access policy: prove, publish, unpublish, list |
 | [`hg envfile`](envfile.md) | ops | — | profile environment files: list, use, set, unset (values never print) |
@@ -102,15 +101,15 @@ See [Testing](../../platform/testing.md) for what the proofs establish.
 | `HG_CF_ACCESS_CLIENT_ID` | Cloudflare Access service-token id, when the control plane sits behind Access. |
 | `HG_CF_ACCESS_CLIENT_SECRET` | Cloudflare Access service-token secret. |
 | `HG_CLUSTER_NAME` | The local loop's k3d cluster (default `hermes-gitops-cli`). Set it with HERMES_GITOPS_HOME to run a second, isolated loop beside the default one; `reset --nuclear` deletes only this cluster. |
-| `HG_DISCORD_API_BASE` | Overrides the Discord API base, for testing against a fake. |
-| `HG_DISCORD_BOT_TOKEN` | Bot token for the live ChatOps legs of `communication prove`. |
-| `HG_DISCORD_SANDBOX_CHANNEL` | Channel id the live ChatOps legs are allowed to post into. |
 | `HG_EVAL_TOKEN` | The Nexus eval publish token. Read from the environment or `--token-file`, never from argv, so it cannot land in shell history. |
 | `HG_GRAFANA_ANON_VIEWER` | Treat Grafana as anonymously readable when proving observability. |
 | `HG_KUBE_CONTEXT` | Overrides the kube context (default `k3d-<cluster>`). |
 | `HG_PROOFS_DIR` | Where `ProofResult` documents are written. |
 | `HG_RECONCILE_LOCK` | Path to the reconciler's flock. A run is skipped, not queued, while it is held. |
 | `HG_RESTORE_READER_SA` | Service account impersonated to READ backups back. Separate from the writer on purpose — restore is verified with an identity that cannot have written the backup. |
+| `HG_SLACK_API_BASE` | Overrides the Slack API base, for testing against a fake. |
+| `HG_SLACK_BOT_TOKEN` | Bot token for the live ChatOps legs of `communication prove`. |
+| `HG_SLACK_SANDBOX_CHANNEL` | Channel id the live ChatOps legs are allowed to post into. |
 
 No command takes a secret as an argument. A credential comes from the environment or from a
 file named by a flag. See [Secrets](../../platform/secrets.md).

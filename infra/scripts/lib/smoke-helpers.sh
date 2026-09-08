@@ -151,7 +151,7 @@ start_webhook_sink() {
 # webhook_log_lines - current number of entries in the sink log (0 if the
 # file doesn't exist yet). Used to assert CAUSAL alert delivery: take a
 # count before triggering a condition, then require a matching entry
-# AFTER that line — install-time firings (e.g. HermesAgentDown while the
+# AFTER that line — install-time firings (e.g. AgentDown while the
 # agent boots the very first time) can't satisfy the assertion.
 # ---------------------------------------------------------------------------
 webhook_log_lines() {
@@ -268,7 +268,7 @@ prometheus_has_visit_series() {
 # prometheus_has_agent_series - true once Prometheus holds the agent
 # StatefulSet's kube-state-metrics ready-replicas series. On a cold
 # cluster that series can lag several minutes; until it exists the
-# HermesAgentDown rule sees vector(0) and false-fires at import time.
+# AgentDown rule sees vector(0) and false-fires at import time.
 # Requires: KCTL, NAMESPACE.
 # ---------------------------------------------------------------------------
 prometheus_has_agent_series() {
@@ -412,19 +412,11 @@ bootstrap_stage12() {
   #   - the visits threshold overrides the author default (100) down to
   #     $VISITS_THRESHOLD so a handful of curls can trip it;
   #   - fast health-rule evaluation so the kill-the-pod step proves
-  #     HermesAgentDown/AgentAppUnhealthy in seconds, not minutes.
+  #     AgentDown/AgentAppUnhealthy in seconds, not minutes.
   pulumi config set --path "hermes-gitops-bootstrap:agents[0].overrides.appValues.monitoring.alert.webhookUrl" "$WEBHOOK_SINK_URL"
   pulumi config set --path "hermes-gitops-bootstrap:agents[0].overrides.appValues.monitoring.alert.siteVisits5m.threshold" "$VISITS_THRESHOLD"
   pulumi config set --path "hermes-gitops-bootstrap:agents[0].overrides.appValues.monitoring.alert.evaluationInterval" "30s"
   pulumi config set --path "hermes-gitops-bootstrap:agents[0].overrides.appValues.monitoring.alert.health.pendingFor" "0s"
-  # Optional live proof against a real Discord channel: export
-  # DISCORD_WEBHOOK_URL before running and every alert ALSO lands there
-  # (Grafana's native discord contact-point type). Never committed
-  # anywhere - it only enters this throwaway stack's config.
-  if [[ -n "${DISCORD_WEBHOOK_URL:-}" ]]; then
-    pulumi config set --secret --path "hermes-gitops-bootstrap:agents[0].overrides.appValues.monitoring.alert.discordUrl" "$DISCORD_WEBHOOK_URL"
-    log "Discord contact point enabled (DISCORD_WEBHOOK_URL is set)"
-  fi
 
   pulumi up --yes
 }

@@ -2,7 +2,7 @@
 
 **The freeze (final-pass epic #646, ADR 0157):** Hermes keeps working and takes **no new
 features**. Fixes only where a live environment breaks. Its surfaces — the `hermes-profile`
-/ `hermes-bundle` charts, the Hermes-native CLI groups (`hg cron`, `hg discord`,
+/ `hermes-bundle` charts, the Hermes-native CLI groups (`hg cron`,
 `hg agent apply` — `harness-legacy` in the loop map), the install-hook emitter path, and
 `identity/` — move under this directory as their migration steps land, and change only to
 stay working.

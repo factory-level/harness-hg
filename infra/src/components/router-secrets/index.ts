@@ -30,7 +30,7 @@
 
 import * as pulumi from "@pulumi/pulumi";
 import * as k8s from "@pulumi/kubernetes";
-import type { BootstrapConfig } from "../../control-flow/config.ts";
+import { RUNTIME_PREFIX, runtimeOfInstance, type AgentRuntime, type BootstrapConfig } from "../../control-flow/config.ts";
 
 export const ROUTER_NS = "hermes-system";
 export const ROUTER_SECRET = "hermes-event-router-secrets";
@@ -40,8 +40,8 @@ export const WEBHOOK_SECRET_VAR = "WEBHOOK_SECRET";
 /** Secret KEY for a profile's signing secret. Mirrors
  * `${inst.namespace}-env` in cli/src/topology/communication.ts:448, with
  * the single-layout namespace from cli/src/topology/compile.ts:219. */
-export function routerSecretKey(profile: string): string {
-  return `hermes-${profile}-env`;
+export function routerSecretKey(profile: string, runtime: AgentRuntime = "hermes"): string {
+  return `${RUNTIME_PREFIX[runtime]}${profile}-env`;
 }
 
 /** {key: WEBHOOK_SECRET} for every agent that declares one, plus any
@@ -53,11 +53,12 @@ export function routerSecretKey(profile: string): string {
 export function routerSecretEntries(
   agentSecrets: Record<string, Record<string, string>>,
   extraSecrets: Record<string, string> = {},
+  agents: BootstrapConfig["agents"] = [],
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [instance, vars] of Object.entries(agentSecrets)) {
     const secret = vars[WEBHOOK_SECRET_VAR];
-    if (secret !== undefined) out[routerSecretKey(instance)] = secret;
+    if (secret !== undefined) out[routerSecretKey(instance, runtimeOfInstance(agents, instance))] = secret;
   }
   for (const [key, value] of Object.entries(extraSecrets)) {
     if (out[key] !== undefined) {
@@ -110,7 +111,7 @@ export class RouterSecrets extends pulumi.ComponentResource {
   constructor(name: string, args: RouterSecretsArgs, opts?: pulumi.ComponentResourceOptions) {
     super("hermes-gitops:bootstrap:RouterSecrets", name, {}, opts);
 
-    const stringData = routerSecretEntries(args.config.agentSecrets, args.config.routerSecrets);
+    const stringData = routerSecretEntries(args.config.agentSecrets, args.config.routerSecrets, args.config.agents);
     if (Object.keys(stringData).length === 0) {
       this.secret = null;
       this.registerOutputs({});

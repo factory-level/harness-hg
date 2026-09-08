@@ -246,7 +246,7 @@ config:
   # keyed here, and the record prune doesn't reach into stack config. ---
   # hermes-gitops-bootstrap:agentSecrets:
   #   support-agent:
-  #     DISCORD_BOT_TOKEN: (set as a secret, see above)
+  #     SLACK_BOT_TOKEN: (set as a secret, see above)
   #     OPENAI_API_KEY: (set as a secret, see above)
 
   # --- private spec.source credentials (issue #18 [G1]). Materialized as

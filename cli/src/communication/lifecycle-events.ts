@@ -1,4 +1,4 @@
-// Platform lifecycle events -> the Discord operations channel (Fable 1
+// Platform lifecycle events -> the Slack operations channel (Fable 1
 // §18/§33, ADR-65). Delivered DIRECTLY from the CLI via the existing
 // ChatOps provider, never through the in-cluster event router: bootstrap,
 // destroy and restore happen precisely when the router does not exist or
@@ -8,13 +8,13 @@
 //
 // Delivery NEVER fails the operation it narrates. A backup that succeeded
 // but could not be announced is a successful backup with a warning - the
-// inverse would let a Discord outage block a restore.
+// inverse would let a Slack outage block a restore.
 
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { log, ok, parseDotenv, warn, writeJsonAtomic } from "../lib.ts";
-import { discordDeliverAndVerify, discordWebhookDeliver, type DiscordTestReceipt, type LogicalMessage } from "./index.ts";
+import { slackDeliver, type SlackDeliveryReceipt, type LogicalMessage } from "./index.ts";
 
 // Read at CALL time, not import time - lib.ts's HG_HOME freezes at first
 // import, which is exactly the trap that once let a test suite write into
@@ -36,6 +36,7 @@ export interface LifecycleEvent {
 /** The registration record - which channel this environment reports to.
  * Non-sensitive by construction (ids, never the token). */
 export interface LifecycleRegistration {
+  provider: "slack";
   environment: string;
   channelId: string;
   roleId?: string;
@@ -49,7 +50,8 @@ export function readRegistration(): LifecycleRegistration | null {
   const file = LIFECYCLE_FILE();
   if (!fs.existsSync(file)) return null;
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as LifecycleRegistration;
+    const registration = JSON.parse(fs.readFileSync(file, "utf8")) as LifecycleRegistration;
+    return registration.provider === "slack" ? registration : null;
   } catch {
     return null;
   }
@@ -92,23 +94,16 @@ export function lifecycleMessage(
   };
 }
 
-/** The delivery credential, from the env or the operator's shared env
- * file - the same declared-credential path everything else uses
- * (design 18: env/ is operator-placed, never archived). An Incoming
- * Webhook (§18's original shape - mintable per channel without owning a
- * bot) wins over a bot token when both exist. NEVER logged, never in
- * receipts. */
-export type LifecycleCredential = { kind: "webhook"; url: string } | { kind: "bot"; token: string };
+/** Slack bot credential from the operator environment or shared env file.
+ * Legacy Discord credentials are never read. Values never enter receipts. */
+export type LifecycleCredential = { kind: "bot"; token: string };
 
 export function lifecycleCredential(): LifecycleCredential | null {
   const env = (k: string) => process.env[k];
   const shared = path.join(hgHome(), "env", "shared.env");
   const fromFile = fs.existsSync(shared) ? parseDotenv(fs.readFileSync(shared, "utf8")) : {};
-  const webhook = env("HG_DISCORD_WEBHOOK_URL") ?? env("DISCORD_WEBHOOK_URL") ??
-    fromFile["HG_DISCORD_WEBHOOK_URL"] ?? fromFile["DISCORD_WEBHOOK_URL"];
-  if (webhook) return { kind: "webhook", url: webhook };
-  const token = env("HG_DISCORD_BOT_TOKEN") ?? env("DISCORD_BOT_TOKEN") ??
-    fromFile["HG_DISCORD_BOT_TOKEN"] ?? fromFile["DISCORD_BOT_TOKEN"];
+  const token = env("HG_SLACK_BOT_TOKEN") ?? env("SLACK_BOT_TOKEN") ??
+    fromFile["HG_SLACK_BOT_TOKEN"] ?? fromFile["SLACK_BOT_TOKEN"];
   if (token) return { kind: "bot", token };
   return null;
 }
@@ -117,10 +112,8 @@ async function deliver(
   credential: LifecycleCredential,
   channelId: string,
   message: LogicalMessage,
-): Promise<DiscordTestReceipt> {
-  return credential.kind === "webhook"
-    ? discordWebhookDeliver(credential.url, message)
-    : discordDeliverAndVerify(credential.token, channelId, message, { cleanup: false });
+): Promise<SlackDeliveryReceipt> {
+  return slackDeliver(credential.token, channelId, message);
 }
 
 /** Fire one lifecycle event. Best-effort by contract: no registration or
@@ -131,7 +124,7 @@ export async function emitLifecycleEvent(event: LifecycleEvent): Promise<void> {
   if (!registration) return;
   const credential = lifecycleCredential();
   if (!credential) {
-    warn(`lifecycle event ${event.kind}.${event.phase} not delivered: no Discord credential on this host`);
+    warn(`lifecycle event ${event.kind}.${event.phase} not delivered: no Slack credential on this host`);
     return;
   }
   try {
@@ -165,11 +158,12 @@ export async function registerEnvironment(args: {
   const credential = lifecycleCredential();
   if (!credential) {
     throw new Error(
-      "no Discord credential: set HG_DISCORD_WEBHOOK_URL or HG_DISCORD_BOT_TOKEN in the env or " +
+      "no Slack credential: set HG_SLACK_BOT_TOKEN in the env or " +
         `${path.join(hgHome(), "env", "shared.env")}`,
     );
   }
   const registration: LifecycleRegistration = {
+    provider: "slack",
     environment: args.environment,
     channelId: args.channelId,
     ...(args.roleId ? { roleId: args.roleId } : {}),

@@ -28,7 +28,7 @@ options, never a second control plane. The desired state is the `harness/` secti
   `charts/hermes-bundle`, `charts/hermes-endpoint`, and `identity/` (this repo's own
   Hermes-facing assets, was `.hermes/`: `skills/hermes-gitops-template`,
   `skills/higgsfield-brandkit`, `examples/`). The Hermes-native CLI groups (`hg cron`,
-  `hg discord`, `hg agent apply`) are tagged `harness-legacy` in the loop map and follow the
+  `hg agent apply`) are tagged `harness-legacy` in the loop map and follow the
   freeze.
 - **The harness contract** ([ADR 0162](../adr/0162-gateway-in-harness-contract.md)): every
   harness in the `DRIVERS` registry (`cli/src/harness/index.ts`) must carry

@@ -5,7 +5,7 @@
 version: 1
 
 chatopsConnections:
-  company_discord:
+  company_chat:
     provider: recording
 
 durableProvider:

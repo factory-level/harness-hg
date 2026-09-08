@@ -54,7 +54,6 @@ import {
   publishEvalReport,
 } from "./eval/publish.ts";
 import { proveAuth } from "./auth/prove.ts";
-import { cmdDiscord } from "./discord/index.ts";
 import { cmdCron } from "./cron/index.ts";
 import { cmdDebugWebhook } from "./debug/index.ts";
 import {
@@ -696,7 +695,7 @@ async function main(): Promise<void> {
       }
       // The connections subject (ADR-152) - only when the environment
       // declares one, for the same reason. A fleet whose agents reach
-      // Discord and GitHub through a shared registration has a gateway and
+      // GitHub through a shared registration has a gateway and
       // a projection chain in its launch configuration, and the launch gate
       // is the one place that is supposed to notice every subject.
       if (connectionDeclarationFile(state)) {
@@ -1073,9 +1072,6 @@ async function main(): Promise<void> {
         event: flagValue("--event"),
       });
       break;
-    case "discord":
-      cmdDiscord(json, args, flagValue("--profile"));
-      break;
     case "cron": {
       // The scheduler surface. `soleTarget` because every cron verb acts
       // on ONE profile's job registry - a fleet-wide `cron run` would be
@@ -1131,7 +1127,6 @@ async function main(): Promise<void> {
         syncRoot: flagValue("--home"),
         allowLocalState: flags.has("--allow-local-state"),
         channel: flagValue("--channel"),
-        role: flagValue("--role"),
         environment: flagValue("--environment"),
         backup: flagValue("--backup"),
         sink: flagValue("--sink"),

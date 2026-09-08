@@ -1950,7 +1950,7 @@ export function ensureFleetDashboard(state: HgState): void {
   const values = manifest.spec.source.helm.valuesObject ?? {};
   const alert = (values["alert"] ?? {}) as Record<string, unknown>;
   values["alert"] = alert;
-  if (!alert["webhookUrl"] && !alert["discordUrl"]) {
+  if (!alert["webhookUrl"]) {
     alert["webhookUrl"] = sinkUrl(state);
   }
   const valuesFile = path.join(HG_HOME, "fleet-dashboard-values.yaml");

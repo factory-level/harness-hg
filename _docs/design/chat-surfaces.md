@@ -14,11 +14,13 @@ approval callbacks must be provisioned alongside message subscriptions. See ADR 
   handle, avatar, scopes) is a platform-provisioned resource keyed to the agent's
   instance name. Provisioning is idempotent and survives re-runs without minting
   duplicates.
-- **Provider constraints decide the surface, not the tooling.** Discord's gateway
-  model (one token, one live session — ADR-154) reserves Discord for the Hermes
-  originals; Slack's webhook model lets the eve twins converse without competing.
-  A surface is granted per agent by declaration, and an agent with no declared
-  surface is mute by contract, not by accident.
+- **Slack is the supported chat provider.** Discord, Teams and Telegram are roadmap
+  capabilities, not active integrations. GitHub event connections remain a separate
+  non-chat capability. A surface is granted per agent by declaration.
+- **Operational alerts use the declared chat provider.** Outbound Slack delivery uses a bot
+  credential reference and a channel ID, records a provider message ID only after Slack
+  confirms acceptance, and retains failed attempts in the delivery policy (ADR 0183). Agent
+  webhook signing keys follow the receiving runtime namespace.
 - **Membership is declarative.** Which bots sit in which channels is environment
   configuration; reconciliation adds missing members and never removes humans.
 - **Credentials are captured at provisioning, never copied.** The platform mints

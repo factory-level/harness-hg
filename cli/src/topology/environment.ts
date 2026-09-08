@@ -65,7 +65,7 @@ export interface ChatopsInbound {
 }
 
 export interface ChatopsConnection {
-  provider: "recording" | "discord" | "slack" | "generic-webhook";
+  provider: "recording" | "slack" | "generic-webhook";
   credentialRef?: { name?: string; key?: string; env?: string };
   /** #348/#476: who may make this connection DO something. Absent =
    * deny-all at the gateway. Carried through so the emitter can
@@ -611,6 +611,12 @@ function loadCommunication(
       findings.push({ profile: "*", severity: "error", check: "environment", message: line });
     }
     return undefined;
+  }
+  for (const [alias, connection] of Object.entries(raw.chatopsConnections ?? {})) {
+    if (!["recording", "slack", "generic-webhook"].includes(connection.provider)) {
+      findings.push({ profile: "*", severity: "error", check: "environment", message: `${file}: ${alias} uses an unsupported provider; Discord is roadmap-only. Configure Slack.` });
+      return undefined;
+    }
   }
   return {
     chatopsConnections: raw.chatopsConnections ?? {},

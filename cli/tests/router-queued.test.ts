@@ -123,7 +123,7 @@ beforeAll(async () => {
       spec: {
         router: { id: "router", scope: "global", namespace: "hermes-system", service: "hermes-event-router" },
         durableProvider: { plugin: "redis-streams", config: { retryBaseMs: 20 } },
-        chatopsConnections: { company_discord: { provider: "recording" } },
+        chatopsConnections: { company_chat: { provider: "recording" } },
         producers: [
           {
             id: "platform-sre/monitoring#alerts",
@@ -170,7 +170,7 @@ beforeAll(async () => {
             from: { producer: "platform-sre/monitoring#alerts" },
             event: "observability.alert/v1",
             kind: "chatops",
-            chatops: { space: "company_discord#channel-1", alias: "company_discord", destination: "channel-1", provider: "recording" },
+            chatops: { space: "company_chat#channel-1", alias: "company_chat", destination: "channel-1", provider: "recording" },
             delivery: { mode: "queued", retry: { maxAttempts: 3, backoff: "exponential" }, deadLetter: { enabled: true } },
           },
         ],

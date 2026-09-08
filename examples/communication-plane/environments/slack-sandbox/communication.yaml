@@ -1,0 +1,15 @@
+# The SANDBOX binding: same authored routes, real Slack plugin. The bot
+# token is an operator-host env var REFERENCE - the value never appears in
+# Git, plans, receipts, or logs. Use with:
+#   hg chatops test company_chat#<sandbox-channel-id> \
+#     --environment examples/communication-plane/environments/slack-sandbox/topology.yaml ...
+version: 1
+
+chatopsConnections:
+  company_chat:
+    provider: slack
+    credentialRef:
+      env: HG_SLACK_BOT_TOKEN
+
+durableProvider:
+  plugin: redis-streams

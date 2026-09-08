@@ -2,7 +2,7 @@
 Grafana alerting provisioning for this profile, delivered as a ConfigMap:
 the platform Grafana's alerts sidecar (bootstrap/monitoring-grafana.yaml,
 label grafana_alert: "1", all namespaces) imports it as a provisioning
-file. One contact point (Discord and/or generic webhook, from values) and
+file. One contact point (generic webhook, from values) and
 one rule group; every rule routes to the contact point directly via
 notification_settings — no notification-policy-tree edits, so profiles
 never fight over Grafana's root policy.
@@ -30,7 +30,7 @@ data:
     groups:
       - orgId: 1
         name: {{ .Release.Name | quote }}
-        folder: Hermes GitOps
+        folder: Harness Hg
         interval: {{ .Values.alert.evaluationInterval }}
         rules:
           {{- if .Values.alert.siteVisits5m.enabled }}
@@ -238,7 +238,7 @@ data:
           {{- end }}
           {{- if .Values.alert.health.enabled }}
           - uid: {{ printf "%s-agent" $uid | quote }}
-            title: {{ printf "HermesAgentDown (%s)" $persona | quote }}
+            title: {{ printf "AgentDown (%s)" $persona | quote }}
             condition: B
             data:
               - refId: A

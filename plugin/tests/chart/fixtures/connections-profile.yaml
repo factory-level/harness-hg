@@ -2,10 +2,6 @@
 # two projected connections, the keys the compiler fixes per provider.
 spec:
   connections:
-    - name: company-discord
-      provider: discord
-      secretName: connection-company-discord
-      keys: [DISCORD_BOT_TOKEN, DISCORD_APPLICATION_ID, DISCORD_PUBLIC_KEY]
     - name: platform-github
       provider: github
       secretName: connection-platform-github

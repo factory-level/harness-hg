@@ -501,40 +501,6 @@ export async function proveEve(ctxs: ProfileCtx[], opts: ProveEveOptions = {}): 
       }
     });
 
-    // EVE021 the Discord channel (HTTP Interactions): when the project
-    // authors agent/channels/discord.ts the route is mounted and refuses
-    // an unsigned interaction - Ed25519 verification is the only gate
-    // Discord's callers get. With DISCORD_PUBLIC_KEY absent eve cannot
-    // verify anything, and the leg says so rather than passing.
-    const discordChannelFile = ["discord.ts", "discord.js", "discord.mjs"].some((f) => fs.existsSync(path.join(ctx.dir, "agent", "channels", f)));
-    if (!discordChannelFile) {
-      add("EVE021", "unknown", component, "no agent/channels/discord.ts authored");
-    } else {
-      try {
-        // The key may arrive through the agent's env Secret OR through a
-        // bound connection's projection - the pod reads both, so this leg
-        // must too, or it reports "not supplied" about a supplied key.
-        const keyPresent = effectiveEnv(ctx, mountedManifest(ctx)).keys.get("DISCORD_PUBLIC_KEY") === true;
-        const r = await withEveForward(ctx, async (b) => {
-          const unsigned = await fetch(`${b}/eve/v1/discord`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: 1 }) });
-          const forged = await fetch(`${b}/eve/v1/discord`, {
-            method: "POST",
-            headers: { "content-type": "application/json", "x-signature-ed25519": "00".repeat(64), "x-signature-timestamp": String(Math.floor(Date.now() / 1000)) },
-            body: JSON.stringify({ type: 1 }),
-          });
-          return { unsigned: unsigned.status, forged: forged.status };
-        });
-        const refused = (s: number) => s === 401 || s === 403;
-        const mounted = r.unsigned !== 404 && r.forged !== 404;
-        if (!mounted) add("EVE021", "fail", component, `POST /eve/v1/discord -> ${r.unsigned} (route not mounted)`);
-        else if (!keyPresent) add("EVE021", "unknown", component, `route mounted (unsigned ${r.unsigned}, forged ${r.forged}); DISCORD_PUBLIC_KEY reaches the pod empty - supply it where the credential lives: \`hg connection set <connection> DISCORD_PUBLIC_KEY=...\` when a connection is bound (ADR-152), or \`hg env\` otherwise`);
-        else add("EVE021", refused(r.unsigned) && refused(r.forged) ? "pass" : "fail", component,
-          `POST /eve/v1/discord: unsigned -> ${r.unsigned}, forged signature -> ${r.forged}` + (refused(r.unsigned) && refused(r.forged) ? " (Ed25519 verification gates the route)" : " - expected 401/403 for both"));
-      } catch (e) {
-        add("EVE021", "fail", component, `discord route probe failed: ${(e as Error).message}`);
-      }
-    }
-
     // EVE015 schedules fire in-process: the world store holds a run whose
     // input is the schedule's prompt, once the pod has been up for two
     // intervals. Read from the pod, never from the dev dispatch route
@@ -649,40 +615,6 @@ export async function proveEve(ctxs: ProfileCtx[], opts: ProveEveOptions = {}): 
     const env = effectiveEnv(ctx, mountedManifest(ctx));
 
     // EVE024 the chat conversation transport (ADR-154). A Chat SDK
-    // Discord channel answers @mentions over an OUTBOUND websocket, so
-    // there is no route to probe from here and no request that proves it:
-    // the only evidence a connection exists is the agent's own log saying
-    // the Gateway is ready. That is also the thing that silently breaks -
-    // the pod stays healthy, the route still answers, and mentions simply
-    // stop arriving.
-    if (fs.existsSync(path.join(ctx.dir, "agent", "channels", "discord.ts"))) {
-      const source = fs.readFileSync(path.join(ctx.dir, "agent", "channels", "discord.ts"), "utf8");
-      if (!/chat-sdk/.test(source)) {
-        add("EVE024", "unknown", component, "the discord channel is eve's HTTP Interactions channel - no gateway connection to prove (slash commands only, no @mentions)");
-      } else if (env.keys.get("DISCORD_BOT_TOKEN") !== true) {
-        add("EVE024", "unknown", component, "DISCORD_BOT_TOKEN reaches the pod empty - the channel is inert, so no gateway connection is expected");
-      } else {
-        const log = kubectl(
-          ["-n", where.namespace, "logs", where.pod, "-c", where.container, "--tail=4000"],
-          { allowFail: true, quiet: true },
-        );
-        const ready = /\[discord\] gateway ready as (\S+)/.exec(log);
-        // More than one READY with no reconnect between them means two
-        // listeners on one bot token, which answers every mention twice.
-        const readies = (log.match(/\[discord\] gateway ready as /g) ?? []).length;
-        const failed = /\[discord\] (login failed|gateway error)/.test(log);
-        if (!ready) {
-          add("EVE024", "fail", component, `no gateway connection in the agent's log${failed ? " (login failed or errored - see the pod log)" : ""}`);
-        } else if (readies > 1) {
-          add("EVE024", "fail", component, `${readies} gateway connections on one bot token - every mention would be answered ${readies} times`);
-        } else {
-          add("EVE024", "pass", component, `discord gateway connected as ${ready[1]} (one session; @mentions reach the agent over an outbound websocket)`);
-        }
-      }
-    } else {
-      add("EVE024", "unknown", component, "no agent/channels/discord.ts authored");
-    }
-
     // EVE022 the runtime manifest the pod GOT equals the one this CLI
     // resolves offline from the same value documents. Two independent
     // producers - a Helm template and cli/src/harness/manifest.ts - so a

@@ -70,10 +70,10 @@ describe("one envDir (the bundle-blind regression)", () => {
       "harness-hg/bundles.yaml": BUNDLES,
       "harness-hg/communication.yaml": { version: 1, chatopsConnections: { company: { provider: "recording" } } },
       "environments/sandbox/topology.yaml": LEGACY_TOPO,
-      "environments/sandbox/communication.yaml": { version: 1, chatopsConnections: { company: { provider: "discord", credentialRef: { name: "s", key: "k" } } } },
+      "environments/sandbox/communication.yaml": { version: 1, chatopsConnections: { company: { provider: "slack", credentialRef: { name: "s", key: "k" } } } },
     });
     const env = loadEnvironment(root, join(root, "environments", "sandbox", "topology.yaml"));
-    expect(env.environment.communication?.chatopsConnections["company"]?.provider).toBe("discord");
+    expect(env.environment.communication?.chatopsConnections["company"]?.provider).toBe("slack");
     expect(env.environment.bundledProfiles?.["manager"]).toBeDefined();
   });
 

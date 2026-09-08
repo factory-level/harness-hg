@@ -14,6 +14,8 @@
 
 **What this page tells you:** every field of this contract, with types, constraints and defaults — generated from the frozen schema, so it cannot drift from what validates.
 
+> This frozen contract includes historical Discord syntax. Current loaders and runtimes reject Discord integrations; they are roadmap-only. Schema acceptance alone does not establish current provider support.
+
 Written by the **team** as `harness-hg/*.yaml` at the root and `agents/<harness>/<name>/harness-hg/*.yaml` per agent. `harness-hg/` at any level is exactly what the platform reads. This family holds the shapes that are new: the team identity, the per-agent declaration, the team's apps with their routes, the agent's endpoints with its inbound routes, backup, the test config, and the target-free topology whose cluster half is the environment spec's `grants`.
 
 ## `team` (v1alpha1)

@@ -96,9 +96,7 @@ export interface LogicalMessage {
   status?: string;
   facts: Record<string, string>;
   links: { label: string; url: string }[];
-  /** Operator role to PING (approval gates, critical lifecycle events).
-   * A mention inside an embed body does not notify - Discord only pings
-   * from top-level content, so the renderer must lift it there. */
+  /** Legacy role metadata; Slack delivery does not activate mentions. */
   mention?: { roleId: string };
 }
 
@@ -128,145 +126,41 @@ export function renderLogicalMessage(envelope: EventEnvelope): LogicalMessage {
 }
 
 // ---------------------------------------------------------------------------
-// The Discord provider (CLI side): used by `hg chatops test` when the
-// selected environment binds the alias to the real plugin with an
-// operator-host env credential. Posts the embed, reads it back, deletes
-// it (a sandbox test never leaves residue), and fails closed on a
-// missing token or a bad channel. The token appears in the Authorization
-// header ONLY - never in receipts, artifacts, or errors.
-
-// Read lazily so tests and stub-backed evals can point it at a fake;
-// production is the real API.
-const discordApiBase = () => process.env["HG_DISCORD_API_BASE"] ?? "https://discord.com/api/v10";
-
-export interface DiscordTestReceipt {
+// Slack bot-token delivery. Credentials never enter receipts or error messages.
+export interface SlackDeliveryReceipt {
   status: "delivered" | "failed";
   classification?: string;
   providerMessageId?: string;
-  verified?: boolean; // read-back matched the sent title
-  cleanedUp?: boolean; // the test message was deleted
   httpStatus?: number;
 }
 
-/** Deliver a logical message through a Discord Incoming Webhook - the
- * credential shape an operator can mint per channel without owning a
- * bot. `?wait=true` makes Discord return the created message, which is
- * the read-back a webhook can give. The URL IS the credential (ADR-53
- * said so about webhook URLs generally) - never in receipts or errors. */
-export async function discordWebhookDeliver(
-  webhookUrl: string,
-  message: LogicalMessage,
-): Promise<DiscordTestReceipt> {
-  let resp: Response;
-  try {
-    resp = await fetch(`${webhookUrl}?wait=true`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(renderDiscordEmbed(message)),
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch {
-    return { status: "failed", classification: "unreachable" };
-  }
-  if (resp.status === 401 || resp.status === 403) return { status: "failed", classification: "credential-rejected", httpStatus: resp.status };
-  if (resp.status === 404) return { status: "failed", classification: "unknown-channel", httpStatus: resp.status };
-  if (resp.status >= 500) return { status: "failed", classification: "provider-5xx", httpStatus: resp.status };
-  if (!resp.ok) return { status: "failed", classification: `provider-${resp.status}`, httpStatus: resp.status };
-  let id: string | undefined;
-  try {
-    id = ((await resp.json()) as { id?: string }).id;
-  } catch {
-    id = undefined;
-  }
-  return { status: "delivered", verified: Boolean(id), httpStatus: resp.status, ...(id ? { providerMessageId: id } : {}) };
+export function renderSlackMessage(msg: LogicalMessage): Record<string, unknown> {
+  const plain = (value: unknown) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const text = [plain(msg.title), `Severity: ${plain(msg.severity)}`, plain(msg.summary),
+    ...(msg.status ? [`Status: ${plain(msg.status)}`] : []),
+    ...Object.entries(msg.facts).map(([key, value]) => `${plain(key)}: ${plain(value)}`)].filter(Boolean).join("\n").slice(0, 10000);
+  return { text, mrkdwn: false, parse: "none", unfurl_links: false, unfurl_media: false };
 }
 
-export async function discordDeliverAndVerify(
-  token: string,
-  channelId: string,
-  message: LogicalMessage,
-  opts: { cleanup?: boolean } = {},
-): Promise<DiscordTestReceipt> {
-  const headers = { authorization: `Bot ${token}`, "content-type": "application/json" };
-  let resp: Response;
+export async function slackDeliver(token: string, channelId: string, message: LogicalMessage): Promise<SlackDeliveryReceipt> {
   try {
-    resp = await fetch(`${discordApiBase()}/channels/${encodeURIComponent(channelId)}/messages`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(renderDiscordEmbed(message)),
-      signal: AbortSignal.timeout(30_000),
+    const api = process.env["HG_SLACK_API_BASE"] ?? "https://slack.com/api";
+    const response = await fetch(`${api}/chat.postMessage`, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ channel: channelId, ...renderSlackMessage(message) }), signal: AbortSignal.timeout(30_000),
     });
-  } catch {
-    return { status: "failed", classification: "unreachable" };
-  }
-  if (!resp.ok) {
-    return {
-      status: "failed",
-      httpStatus: resp.status,
-      classification:
-        resp.status === 401 || resp.status === 403
-          ? "credential-rejected"
-          : resp.status === 404
-            ? "unknown-channel"
-            : resp.status >= 500
-              ? "provider-5xx"
-              : "provider-rejected",
-    };
-  }
-  const posted = (await resp.json()) as { id: string };
-  const receipt: DiscordTestReceipt = { status: "delivered", providerMessageId: posted.id, httpStatus: resp.status };
-  // Read-back: the provider's own record of the message, where supported.
-  try {
-    const read = await fetch(`${discordApiBase()}/channels/${encodeURIComponent(channelId)}/messages/${posted.id}`, {
-      headers,
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (read.ok) {
-      const doc = (await read.json()) as { embeds?: { title?: string }[] };
-      receipt.verified = doc.embeds?.[0]?.title === message.title;
+    const body = await response.json().catch(() => ({})) as { ok?: boolean; ts?: string; error?: string };
+    if (response.ok && body.ok === true && typeof body.ts === "string" && body.ts) {
+      return { status: "delivered", providerMessageId: body.ts, httpStatus: response.status };
     }
-  } catch {
-    /* read-back unsupported/unavailable - receipt says nothing either way */
-  }
-  if (opts.cleanup !== false) {
-    try {
-      const del = await fetch(`${discordApiBase()}/channels/${encodeURIComponent(channelId)}/messages/${posted.id}`, {
-        method: "DELETE",
-        headers,
-        signal: AbortSignal.timeout(15_000),
-      });
-      receipt.cleanedUp = del.ok;
-    } catch {
-      receipt.cleanedUp = false;
-    }
-  }
-  return receipt;
+    const classification = response.status === 429 || body.error === "ratelimited" ? "rate-limited"
+      : response.status === 401 || response.status === 403 || ["invalid_auth", "token_revoked", "account_inactive"].includes(body.error ?? "") ? "credential-rejected"
+      : ["channel_not_found", "not_in_channel", "is_archived"].includes(body.error ?? "") ? "unknown-channel"
+      : response.status >= 500 ? "provider-5xx" : "provider-rejected";
+    return { status: "failed", classification, httpStatus: response.status };
+  } catch { return { status: "failed", classification: "unreachable" }; }
 }
 
-/** The Discord projection of a logical message (an embed). Pure - used by
- * `hg chatops render` and, identically, by the live Discord plugin. */
-export function renderDiscordEmbed(msg: LogicalMessage): Record<string, unknown> {
-  const color = msg.severity === "critical" ? 0xe01e5a : msg.severity === "warning" ? 0xecb22e : 0x2eb67d;
-  return {
-    // The ping must be top-level content WITH an allowed_mentions grant -
-    // embeds never notify, and without the grant Discord renders the
-    // mention as inert text. Scoped to exactly the one role.
-    ...(msg.mention
-      ? { content: `<@&${msg.mention.roleId}>`, allowed_mentions: { roles: [msg.mention.roleId] } }
-      : {}),
-    embeds: [
-      {
-        title: msg.title,
-        description: msg.summary,
-        color,
-        fields: Object.entries(msg.facts).map(([name, value]) => ({ name, value, inline: true })),
-        ...(msg.status ? { footer: { text: `status: ${msg.status}` } } : {}),
-      },
-    ],
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Payload -> envelope (offline preview; the router does the same live)
 
 export function envelopeForPayload(
@@ -1329,7 +1223,7 @@ export async function cmdChatops(
             body,
           );
       const logical = renderLogicalMessage(envelope);
-      const preview = known.provider === "discord" ? renderDiscordEmbed(logical) : logical;
+      const preview = known.provider === "slack" ? renderSlackMessage(logical) : logical;
       if (json) {
         jsonOut({ command: "chatops-render", ok: true, space: ref, provider: known.provider, logical, preview });
       } else {
@@ -1360,8 +1254,8 @@ export async function cmdChatops(
       if (!ref) throw new CliError("chatops test requires a space (<alias>#<destination>)");
       // The configured environment binding decides the provider: the
       // recording default flows through the RUNNING router (test path =
-      // production path); a discord binding with an operator-host env
-      // credential delivers live from here - post, read back, delete.
+      // production path); a Slack binding with an operator-host env
+      // credential delivers live from here and records Slack acceptance.
       const ctx = loadComm(opts.dir, opts.environment);
       const hash = ref.indexOf("#");
       if (hash <= 0) throw new CliError(`not a space address: ${ref} (expected <alias>#<destination>)`);
@@ -1371,16 +1265,16 @@ export async function cmdChatops(
       if (!envConnection) throw new CliError(`unknown ChatOps alias ${JSON.stringify(alias)}`);
       const payload = opts.payload ? readPayload(opts.payload, ctx.root) : undefined;
 
-      if (envConnection.provider === "discord") {
+      if (envConnection.provider === "slack") {
         const envVar = envConnection.credentialRef?.env;
         if (!envVar) {
           throw new CliError(
-            `alias ${alias} binds discord through a cluster Secret - hg chatops test needs an env-form credentialRef (the sandbox environment)`,
+            `alias ${alias} binds slack through a cluster Secret - hg chatops test needs an env-form credentialRef (the sandbox environment)`,
           );
         }
         const token = process.env[envVar];
         // Fail closed, and never echo anything credential-shaped.
-        if (!token) throw new CliError(`discord credential env var ${envVar} is not set - export it and retry`);
+        if (!token) throw new CliError(`slack credential env var ${envVar} is not set - export it and retry`);
         let message: LogicalMessage;
         if (opts.event && payload !== undefined) {
           const { event, producers, externalInputs } = requireEvent(ctx, opts.event);
@@ -1405,17 +1299,17 @@ export async function cmdChatops(
             links: [],
           };
         }
-        const receipt = await discordDeliverAndVerify(token, destination, message);
-        const result = { command: "chatops-test", ok: receipt.status === "delivered", space: ref, provider: "discord", ...receipt };
+        const receipt = await slackDeliver(token, destination, message);
+        const result = { command: "chatops-test", ok: receipt.status === "delivered", space: ref, provider: "slack", ...receipt };
         if (json) jsonOut(result);
         else if (receipt.status === "delivered") {
           ok(
-            `delivered to ${ref} via discord (provider message ${receipt.providerMessageId}` +
-              `${receipt.verified ? ", read back verified" : ""}${receipt.cleanedUp ? ", test message deleted" : ""})`,
+            `delivered to ${ref} via slack (provider message ${receipt.providerMessageId}` +
+              ")",
           );
         }
         if (receipt.status !== "delivered") {
-          throw new CliError(`chatops test: discord delivery failed (${receipt.classification})`);
+          throw new CliError(`chatops test: slack delivery failed (${receipt.classification})`);
         }
         return;
       }

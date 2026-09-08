@@ -176,49 +176,6 @@ export function renderTree(
       envInjections.set(b.consumer, cur);
     }
   }
-  // Inbound authorization materialization (#348/#476): the declared
-  // approved lists become the gateway's ENFORCED allowlist env vars
-  // (DISCORD_ALLOWED_USERS/ROLES/CHANNELS - the adapter's deny-by-default
-  // gates), applied to every agent instance. This is what closes
-  // ADR-96's "authoring `inbound` must not be mistaken for having
-  // authorization": the block now IS the allowlist the gateway reads.
-  // Identifiers only (snowflakes), already non-sensitive and already in
-  // Git in the declaration itself. mentionPolicy/threadPolicy have no
-  // adapter env today and stay contract-only. Non-discord providers have
-  // no allowlist env mapping yet and are skipped, not guessed at.
-  //
-  // EXACTLY ONE discord connection may carry inbound (Codex catch): the
-  // gateway's allowlist is process-wide, so materializing several
-  // connections' lists would merge their security boundaries - a user
-  // approved on connection A becoming authorized via connection B. With
-  // more than one, NOTHING materializes (the compiler warns via
-  // CHATOPS002) - silence in the env, loud in the plan.
-  const inboundConns = Object.values(env.communication?.chatopsConnections ?? {}).filter(
-    (c) => c.provider === "discord" && c.inbound,
-  );
-  const inboundEnv: Record<string, string> = {};
-  if (inboundConns.length === 1) {
-    const inbound = inboundConns[0]!.inbound!;
-    for (const [field, varName] of [
-      ["approvedUsers", "DISCORD_ALLOWED_USERS"],
-      ["approvedRoles", "DISCORD_ALLOWED_ROLES"],
-      ["approvedChannels", "DISCORD_ALLOWED_CHANNELS"],
-    ] as const) {
-      const ids = inbound[field] ?? [];
-      if (ids.length > 0) inboundEnv[varName] = [...new Set(ids)].sort().join(",");
-    }
-  }
-  if (Object.keys(inboundEnv).length > 0) {
-    for (const a of plan.agents) {
-      const cur = envInjections.get(a.id) ?? {};
-      // Inbound WINS on collision (Codex catch): a capability injection
-      // must never widen or replace an authorization boundary. The
-      // compiler additionally refuses such injections outright
-      // (RESERVED_INJECT_ENV, TOPO014), so this precedence is the
-      // belt to that suspender.
-      envInjections.set(a.id, { ...cur, ...inboundEnv });
-    }
-  }
   for (const a of plan.agents) {
     const id = a.id.replace(/[@/]/g, "-");
     files.set(

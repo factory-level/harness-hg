@@ -15,7 +15,7 @@ const GOOD_FACTS: Record<string, string> = {
   dns_ok: "yes",
   reach_github: "200",
   reach_gcs: "400",
-  reach_discord: "401",
+  reach_slack: "401",
   ntp_synced: "yes",
   port_6443: "free",
   present_k3s: "no",
@@ -47,10 +47,10 @@ describe("evaluatePreflight", () => {
   });
 
   test("an unreachable endpoint names itself in SRV004", () => {
-    const findings = evaluatePreflight({ ...GOOD_FACTS, reach_discord: "000" }, GS);
+    const findings = evaluatePreflight({ ...GOOD_FACTS, reach_slack: "000" }, GS);
     const f = byId(findings, "SRV004");
     expect(f.status).toBe("fail");
-    expect(f.message).toContain("discord");
+    expect(f.message).toContain("slack");
   });
 
   test("a DIFFERENT k3s version is a failure, not a skip - the pin is the contract", () => {

@@ -67,7 +67,8 @@ function collectSecure(node: unknown, at: string, into: SecureMap): void {
   if (typeof node !== "object" || node === null) return;
   const rec = node as Record<string, unknown>;
   if (typeof rec["secure"] === "string" && Object.keys(rec).length === 1) {
-    into.set(at, rec["secure"] as string);
+    // Generated missing-value markers are not encrypted credentials.
+    if (rec["secure"] !== "<UNSET - see findings>") into.set(at, rec["secure"] as string);
     return;
   }
   if (Array.isArray(node)) {

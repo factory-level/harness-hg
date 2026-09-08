@@ -31,7 +31,7 @@ three loops, front doors, grammar); the diff is the gap list.
   (`make cli-docs`, `cli-docs-drift` in `make test`); `hg help <command>` renders one command's
   detail.
 - **One directory per subject** (#657): `cli/src/` holds `agent/`, `auth/`, `backup/`,
-  `communication/`, `connection/`, `cron/`, `dash/`, `debug/`, `discord/`, `edge/`, `eval/`,
+  `communication/`, `connection/`, `cron/`, `dash/`, `debug/`, `edge/`, `eval/`,
   `eve/`, `gitops/`, `grafana/`, `harness/`, `launch/`, `local/`, `nexus/`, `observability/`,
   `platform/`, `reconcile/`, `server/`, `topology/`, `validate/`, `workspace/`, plus the shared
   `commands.ts`, `proof.ts`, `lib.ts`, `main.ts`.
@@ -43,7 +43,7 @@ three loops, front doors, grammar); the diff is the gap list.
   (`event publish`, `chatops tail`, `platform backup prove`) are canonical-only — the warning
   aliases were deleted by [#672](https://github.com/factory-level/harness-hg/issues/672) and
   `make retired-paths` keeps them dead. ADR 0177 hard-renamed `hg eve prove|evals` to
-  `hg agent prove|evals` (no alias, by decision), made `cron`/`discord` engine-neutral (Hermes
+  `hg agent prove|evals` (no alias, by decision), made `cron` engine-neutral (Hermes
   depth, honest refusals on Eve), added `hg harness list`, and renamed `--hermes-home` to
   `--harness-home` (the stored `hermesHome` config key is still read); `hg launch prove` now
   registers the `agent` subject for any non-empty fleet — previously a Hermes-only fleet's
@@ -117,3 +117,8 @@ blocked on fleet convergence #703).
   suites and the nightly `loop-dev` run only when a developer runs them. `make test` reaches
   the CLI end-to-end via `e2e-offline` but none of the unit suites — a green `make test` after
   a `cli/` change is necessary, not sufficient.
+
+The `env-drift` build gate compares environment specifications with their generated stack files
+without requiring deployment credentials. Public examples retain unset secret placeholders.
+`hg env plan` and `hg env apply` separately reject missing credentials, including when the
+projection itself matches. The gate uses the same generator and never writes stack files.

@@ -481,6 +481,13 @@ def generate_contract(entry: dict) -> str:
         "drift from what validates."
     )
     out.append("")
+    if any("discord" in p.read_text(encoding="utf-8").lower() for p in resolved):
+        out.append(
+            "> This frozen contract includes historical Discord syntax. Current loaders and "
+            "runtimes reject Discord integrations; they are roadmap-only. Schema acceptance "
+            "alone does not establish current provider support."
+        )
+        out.append("")
     out.append(entry["intro"])
     out.append("")
 

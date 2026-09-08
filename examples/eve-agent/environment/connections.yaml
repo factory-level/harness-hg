@@ -8,18 +8,11 @@
 # binding's match rule selects; the agent's own eve channel then verifies
 # again, threads, and replies.
 #
-# Discord: HTTP Interactions (slash commands). GitHub: a GitHub App's
-# webhooks (issue_comment, pull_request_review_comment). Both bound to
-# echo; a second guild or repository would route to another agent with a
-# second binding.
+# GitHub App webhooks route by repository.
 apiVersion: hermes.gitops/v1alpha1
 kind: Connections
 
 connections:
-  - name: company-discord
-    provider: discord
-    bindings:
-      - profile: echo            # catch-all: every guild this bot is in
   - name: platform-github
     provider: github
     bindings:

@@ -8,6 +8,8 @@
 
 **What this page tells you:** every field of this contract, with types, constraints and defaults — generated from the frozen schema, so it cannot drift from what validates.
 
+> This frozen contract includes historical Discord syntax. Current loaders and runtimes reject Discord integrations; they are roadmap-only. Schema acceptance alone does not establish current provider support.
+
 The shared telemetry envelope (#349): one record shape for every plane that emits lifecycle telemetry — the Discord gateway, the native cron scheduler, the event router, alerting, and agent and tool execution. Carries **metadata only**, never message content; a digest stands in for the payload.
 
 Schema: `agent-bundle-contracts/lifecycle-record/v1alpha1/lifecycle-record.schema.json` — **Lifecycle record**

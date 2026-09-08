@@ -1,6 +1,6 @@
 // Platform lifecycle events (ADR-65): severity mapping, mention
 // rendering, registration idempotency and delivery - the last against
-// the same fake Discord API the provider tests use. HG_HOME is a temp
+// the same fake Slack API the provider tests use. HG_HOME is a temp
 // dir so nothing touches the operator's real ~/.hermes-gitops. Module
 // paths read env at call time via LIFECYCLE_FILE(), which is what makes
 // this isolation possible (the M0 lesson about frozen module state).
@@ -9,14 +9,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { renderDiscordEmbed } from "../src/communication/index.ts";
+import { renderSlackMessage } from "../src/communication/index.ts";
 
 const TOKEN = "fake-lifecycle-token-SENTINEL";
 const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "hg-lifecycle-"));
 const savedHome = process.env["HERMES_GITOPS_HOME"];
-const savedToken = process.env["HG_DISCORD_BOT_TOKEN"];
+const savedToken = process.env["HG_SLACK_BOT_TOKEN"];
 process.env["HERMES_GITOPS_HOME"] = tempHome;
-process.env["HG_DISCORD_BOT_TOKEN"] = TOKEN;
+process.env["HG_SLACK_BOT_TOKEN"] = TOKEN;
 
 // lifecycle-events reads HERMES_GITOPS_HOME at CALL time (per-call hgHome()),
 // so this redirection works regardless of module-load order in the suite.
@@ -39,11 +39,11 @@ beforeAll(() => {
       const call: FakeCall = { method: req.method };
       if (req.method === "POST") call.body = await req.json();
       calls.push(call);
-      if (req.headers.get("authorization") !== `Bot ${TOKEN}`) return new Response("{}", { status: 401 });
+      if (req.headers.get("authorization") !== `Bearer ${TOKEN}`) return new Response("{}", { status: 401 });
       if (req.method === "POST") {
         const id = String(nextId++);
         messages.set(id, call.body);
-        return new Response(JSON.stringify({ id }), { status: 200 });
+        return new Response(JSON.stringify({ ok: true, ts: id }), { status: 200 });
       }
       if (req.method === "GET") {
         const id = new URL(req.url).pathname.split("/").filter(Boolean)[3]!;
@@ -53,15 +53,15 @@ beforeAll(() => {
       return new Response(null, { status: 204 });
     },
   });
-  process.env["HG_DISCORD_API_BASE"] = `http://127.0.0.1:${fake.port}`;
+  process.env["HG_SLACK_API_BASE"] = `http://127.0.0.1:${fake.port}`;
 });
 
 afterAll(() => {
-  delete process.env["HG_DISCORD_API_BASE"];
+  delete process.env["HG_SLACK_API_BASE"];
   if (savedHome === undefined) delete process.env["HERMES_GITOPS_HOME"];
   else process.env["HERMES_GITOPS_HOME"] = savedHome;
-  if (savedToken === undefined) delete process.env["HG_DISCORD_BOT_TOKEN"];
-  else process.env["HG_DISCORD_BOT_TOKEN"] = savedToken;
+  if (savedToken === undefined) delete process.env["HG_SLACK_BOT_TOKEN"];
+  else process.env["HG_SLACK_BOT_TOKEN"] = savedToken;
   fake?.stop(true);
   fs.rmSync(tempHome, { recursive: true, force: true });
 });
@@ -93,11 +93,11 @@ describe("lifecycleMessage + mention rendering", () => {
     facts: { backupId: "hg-x" },
   };
 
-  test("approval pings the operator role - top-level content plus the allowed_mentions grant", () => {
-    const msg = lifecycleMessage(APPROVAL, { roleId: "9001" });
-    const payload = renderDiscordEmbed(msg) as { content?: string; allowed_mentions?: { roles: string[] } };
-    expect(payload.content).toBe("<@&9001>");
-    expect(payload.allowed_mentions).toEqual({ roles: ["9001"] });
+  test("approval retains severity without enabling automatic Slack mentions", () => {
+    const payload = renderSlackMessage(lifecycleMessage(APPROVAL, { roleId: "9001" }));
+    expect(payload.text).toContain("Severity: warning");
+    expect(payload.mrkdwn).toBe(false);
+    expect(payload.text).not.toContain("<@&9001>");
   });
 
   test("progress events never ping, even with a role registered", () => {
@@ -106,7 +106,7 @@ describe("lifecycleMessage + mention rendering", () => {
       { roleId: "9001" },
     );
     expect(msg.mention).toBeUndefined();
-    const payload = renderDiscordEmbed(msg) as { content?: string };
+    const payload = renderSlackMessage(msg) as { content?: string };
     expect(payload.content).toBeUndefined();
   });
 
@@ -151,12 +151,21 @@ describe("emitLifecycleEvent", () => {
 
   test("a delivery failure never throws - the operation it narrates must not die of a Discord outage", async () => {
     await registerEnvironment({ environment: "factory", channelId: "777", facts: {} });
-    const saved = process.env["HG_DISCORD_API_BASE"];
-    process.env["HG_DISCORD_API_BASE"] = "http://127.0.0.1:1"; // nothing listens
+    const saved = process.env["HG_SLACK_API_BASE"];
+    process.env["HG_SLACK_API_BASE"] = "http://127.0.0.1:1"; // nothing listens
     try {
       await emitLifecycleEvent({ kind: "backup", phase: "completed", environment: "factory", facts: {} });
     } finally {
-      process.env["HG_DISCORD_API_BASE"] = saved;
+      process.env["HG_SLACK_API_BASE"] = saved;
     }
   });
+});
+
+test("legacy registrations and Discord credentials cannot trigger delivery", async () => {
+  fs.writeFileSync(LIFECYCLE_FILE(), JSON.stringify({ environment: "factory", channelId: "123", registeredAt: new Date().toISOString() }));
+  process.env.HG_DISCORD_BOT_TOKEN = "legacy-sentinel";
+  try {
+    await emitLifecycleEvent({ kind: "backup", phase: "completed", environment: "factory", facts: {} });
+    expect(calls).toHaveLength(0);
+  } finally { delete process.env.HG_DISCORD_BOT_TOKEN; }
 });

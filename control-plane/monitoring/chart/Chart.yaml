@@ -2,9 +2,8 @@ apiVersion: v2
 name: monitoring
 description: >
   Per-profile observability payload: a Grafana dashboard, alert rules
-  (site visits per 5m over a configurable threshold, Hermes agent down,
-  agent-app deployments unhealthy) and their contact point (Discord and/or
-  generic webhook, e.g. a GitHub dispatch endpoint), all rendered as
+  (site visits per 5m over a configurable threshold, agent unavailable,
+  agent-app deployments unhealthy) and their generic webhook contact point, all rendered as
   ConfigMaps the platform Grafana's sidecars pick up from this profile's
   namespace (see bootstrap/monitoring-grafana.yaml). Referenced from
   hermes-gitops.yaml as {chart: charts/monitoring, repo: local} — local

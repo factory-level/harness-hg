@@ -49,7 +49,6 @@ spec:
           # fails the render otherwise (an alert with no receiver is a
           # silent no-op, and silent is worse than loud).
           webhookUrl: ""
-          discordUrl: ""
           # Optional fleet-total rule: sum of every profile's MTD
           # estimated spend. 0 = off.
           fleetBudgetUsd: 0

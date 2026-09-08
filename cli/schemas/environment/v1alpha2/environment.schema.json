@@ -690,6 +690,49 @@
             },
             "kubeContext": {
               "type": "string"
+            },
+            "instances": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "repoUrl": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "intervalSeconds": {
+                    "type": "integer",
+                    "minimum": 10
+                  },
+                  "checks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "apply": {
+                    "type": "string"
+                  },
+                  "statusNamespace": {
+                    "type": "string"
+                  },
+                  "kubeContext": {
+                    "type": "string"
+                  }
+                }
+              }
             }
           }
         }

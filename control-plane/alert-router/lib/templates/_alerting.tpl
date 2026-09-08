@@ -17,18 +17,22 @@ from knowing either.
 {{- /*
 hermes-alerting.contactPoints - the whole `contactPoints:` block.
 
-  uidPrefix   string  receiver uids are "<prefix>-wh" / "<prefix>-dc". MUST be
+  uidPrefix   string  receiver uids are "<prefix>-wh". MUST be
                       stable per consumer: Grafana treats a changed uid as
                       delete+create, which resets alert state and silences.
   name        string  the contact point name every rule routes to.
   webhookUrl  string  generic JSON webhook, or "".
-  discordUrl  string  Discord incoming webhook, or "".
+  discordUrl  obsolete input, rejected when non-empty.
 
 At least one URL must be non-empty - enforce that with receiversGuard BEFORE
 rendering, or you get a contact point with an empty receivers list, which
 Grafana accepts and then silently drops every notification into.
 */ -}}
 {{- define "hermes-alerting.contactPoints" -}}
+{{- if .discordUrl }}{{ fail "Discord is roadmap-only; configure alert.webhookUrl for the Slack event router" }}{{ end -}}
+deleteContactPoints:
+  - orgId: 1
+    uid: {{ printf "%s-dc" .uidPrefix | quote }}
 contactPoints:
   - orgId: 1
     name: {{ .name | quote }}
@@ -39,12 +43,6 @@ contactPoints:
         settings:
           url: {{ . | quote }}
           httpMethod: POST
-      {{- end }}
-      {{- with .discordUrl }}
-      - uid: {{ printf "%s-dc" $.uidPrefix | quote }}
-        type: discord
-        settings:
-          url: {{ . | quote }}
       {{- end }}
 {{- end -}}
 
@@ -95,9 +93,10 @@ nowhere to send them.
 An alert with no receiver is a silent no-op, and silent is worse than loud.
 */ -}}
 {{- define "hermes-alerting.receiversGuard" -}}
+{{- if .discordUrl }}{{ fail "Discord is roadmap-only; configure alert.webhookUrl for the Slack event router" }}{{ end -}}
 {{- if .render -}}
-{{- if and (not .webhookUrl) (not .discordUrl) -}}
-{{- fail (printf "%s: alert rules are enabled but neither alert.webhookUrl nor alert.discordUrl is set - %s, or disable the rules" .chart .remedy) -}}
+{{- if not .webhookUrl -}}
+{{- fail (printf "%s: alert rules are enabled but alert.webhookUrl is not set - %s, or disable the rules" .chart .remedy) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

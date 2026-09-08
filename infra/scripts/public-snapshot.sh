@@ -22,8 +22,11 @@ OVERLAY=(
   factory-system-reference.md
   infra/environments/factory.yaml
   infra/environments/factory-proactive-secrets.py
+  infra/environments/factory-inferops-prepare.py
+  infra/environments/tests/test_factory_inferops_prepare.py
   infra/environments/factory-proactive-volumes.py
   infra/environments/factory-proactive-topology.ts
+  infra/environments/factory-communication
   infra/Pulumi.factory.yaml
   state/Pulumi.factory.yaml
   _old-docs

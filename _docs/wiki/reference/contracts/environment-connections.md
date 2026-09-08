@@ -8,6 +8,8 @@
 
 **What this page tells you:** every field of this contract, with types, constraints and defaults — generated from the frozen schema, so it cannot drift from what validates.
 
+> This frozen contract includes historical Discord syntax. Current loaders and runtimes reject Discord integrations; they are roadmap-only. Schema acceptance alone does not establish current provider support.
+
 Written by the **team** as `harness-hg/connections.yaml` (`kind: Connections`): one third-party app registration per connection, declared once and bound to agents. No secret is in the file. The keys live in one platform Secret, `hermes-secrets/connection-<name>`, projected into every bound agent and mounted by the event router, whose gateway verifies the provider's signature on `/v1/connect/<provider>/<name>`.
 
 Schema: `agent-bundle-contracts/environment-connections/v1alpha1/connections.schema.json` — **Platform connections**

@@ -32,7 +32,7 @@ fi
 emit dns_ok "$(getent hosts github.com >/dev/null 2>&1 && echo yes || echo no)"
 for pair in "reach_github https://github.com" \
             "reach_gcs https://storage.googleapis.com" \
-            "reach_discord https://discord.com/api/v10"; do
+            "reach_slack https://slack.com/api/api.test"; do
   key="${pair%% *}"; url="${pair#* }"
   code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$url" 2>/dev/null || echo 000)"
   emit "$key" "$code"

@@ -166,11 +166,9 @@ export async function proveConnections(state: HgState): Promise<ProofResult> {
           return 0;
         }
       };
-      const body = r.provider === "discord" ? JSON.stringify({ type: 1 }) : JSON.stringify({ zen: "hg" });
+      const body = JSON.stringify({ zen: "hg" });
       const unsigned = await post(r.provider === "github" ? { "x-github-event": "ping" } : {}, body);
-      const forged = r.provider === "discord"
-        ? await post({ "x-signature-ed25519": "00".repeat(64), "x-signature-timestamp": String(Math.floor(Date.now() / 1000)) }, body)
-        : await post({ "x-github-event": "ping", "x-hub-signature-256": "sha256=" + "00".repeat(32) }, body);
+      const forged = await post({ "x-github-event": "ping", "x-hub-signature-256": "sha256=" + "00".repeat(32) }, body);
       const refused = (s: number) => s === 401 || s === 403;
       if (!verifyKeySet) {
         add("CONN003", "unknown", r.name, `gateway: unsigned -> ${unsigned}, forged -> ${forged}; ${PROVIDER_VERIFY_KEY[r.provider]} is not set - put it in the env overlay (\`hg env\`, seeded into the connection by \`hg up\`) or set it explicitly: hg connection set ${r.name} ${PROVIDER_VERIFY_KEY[r.provider]}=@<file>`);
@@ -203,10 +201,6 @@ export async function proveConnections(state: HgState): Promise<ProofResult> {
             `signed issue_comment for ${repo} through the gateway -> ${fwd}` +
               (fwd === 200 ? " (the agent's channel re-verified with its projected secret and accepted)" : fwd === 401 ? " - the agent refused: its projection is stale (pod started before the Secret synced) or differs" : ""));
         }
-      } else {
-        // Discord signs with a key only Discord holds; the gate is what we can prove.
-        add("CONN003", refused(unsigned) && refused(forged) ? "pass" : "fail", r.name,
-          `gateway: unsigned -> ${unsigned}, forged -> ${forged} (Ed25519 gate on; a valid signature needs Discord's own key)`);
       }
     }
   }

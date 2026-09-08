@@ -23,7 +23,7 @@ Not scaffolded, because absent means honestly off - add one when you need it:
 - `harness-hg/apps.yaml` - shared workloads (a board, a publisher): one chart each, with the agent that owns it - absent = none
 - `harness-hg/bundles.yaml` - which agents share one pod (ADR-28) - absent = every agent standalone
 - `harness-hg/communication.yaml` - ChatOps connection aliases + the durable transport - absent = no ChatOps, no queued routes
-- `harness-hg/connections.yaml` - third-party app registrations (Discord, GitHub App) the team binds to - absent = none
+- `harness-hg/connections.yaml` - third-party app registrations (GitHub App) the team binds to - absent = none
 - `harness-hg/capabilities.yaml` - capability -> provider bindings the team brings - absent = only peer endpoints provide
 - `harness-hg/topology.yaml` - the layout the team is built for (regions, no cluster names) - absent = single
 - `agents/<harness>/<name>/harness-hg/endpoints.yaml` - what the agent exposes and receives - absent = nothing

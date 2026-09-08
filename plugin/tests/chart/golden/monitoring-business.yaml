@@ -24,6 +24,9 @@ metadata:
 data:
   monitoring-alerts.yaml: |
     apiVersion: 1
+    deleteContactPoints:
+      - orgId: 1
+        uid: "hermes-social-media-dc"
     contactPoints:
       - orgId: 1
         name: "hermes-social-media-alerts"
@@ -36,7 +39,7 @@ data:
     groups:
       - orgId: 1
         name: "monitoring"
-        folder: Hermes GitOps
+        folder: Harness Hg
         interval: 1m
         rules:
           - uid: "hermes-social-media-visits"
@@ -267,7 +270,7 @@ data:
               # recent resolve in the same group by up to 5 minutes.
               group_interval: 1m
           - uid: "hermes-social-media-agent"
-            title: "HermesAgentDown (social-media)"
+            title: "AgentDown (social-media)"
             condition: B
             data:
               - refId: A
