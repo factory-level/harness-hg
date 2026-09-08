@@ -36,10 +36,23 @@ import * as os from "node:os";
 function hgHome(): string {
   return process.env["HERMES_GITOPS_HOME"] ?? path.join(os.homedir(), ".hermes-gitops");
 }
-export const reconcileDir = (): string => path.join(hgHome(), "reconcile");
+let selectedInstance: string | undefined;
+export function selectInstance(value?: string): void {
+  if (value !== undefined && !/^[a-z](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(value)) {
+    throw new CliError("reconcile instance must start with a lowercase letter, end with a letter or digit, and contain at most 40 lowercase letters, digits or hyphens");
+  }
+  selectedInstance = value;
+}
+export const instanceName = (): string | undefined => selectedInstance;
+export const unitName = (): string => `hermes-reconcile${instanceName() ? `-${instanceName()}` : ""}`;
+export const statusName = (): string => `hermes-reconciliation-status${instanceName() ? `-${instanceName()}` : ""}`;
+export const reconcileDir = (): string => instanceName()
+  ? path.join(hgHome(), "reconcile", "instances", instanceName()!)
+  : path.join(hgHome(), "reconcile");
 export const configFile = (): string => path.join(reconcileDir(), "config.json");
 export const ledgerFile = (): string => path.join(reconcileDir(), "state.json");
-export const lockFile = (): string => path.join(reconcileDir(), "lock");
+// Keep the old lock path so old and new timers cannot overlap a shared stack apply.
+export const lockFile = (): string => path.join(hgHome(), "reconcile", "lock");
 export const checkoutDir = (): string => path.join(reconcileDir(), "checkout");
 export const logsDir = (): string => path.join(reconcileDir(), "logs");
 const credentialsFile = (): string => path.join(reconcileDir(), "git-credentials");
@@ -659,7 +672,7 @@ export function publishRecord(cfg: ReconcileConfig, record: Record<string, unkno
     apiVersion: "v1",
     kind: "ConfigMap",
     metadata: {
-      name: "hermes-reconciliation-status",
+      name: statusName(),
       namespace: ns,
       labels: { "hermes.dev/overlay-source": "reconciliation" },
     },
@@ -716,7 +729,7 @@ Type=oneshot
 Environment=HERMES_GITOPS_HOME=${hgHome()}
 Environment=HERMES_HOME=${cfg.hermesHome}
 Environment=PATH=${binDir}:/usr/local/bin:/usr/bin:/bin${passthrough}
-ExecStart=${hgEntry.bun} ${hgEntry.main} reconcile run
+ExecStart=${hgEntry.bun} ${hgEntry.main} reconcile run${instanceName() ? ` --instance ${instanceName()}` : ""}
 # The tick's own Argo wait plus generous apply headroom - systemd kills
 # a hung run rather than letting it hold the flock forever.
 TimeoutStartSec=${cfg.argocdTimeoutSec + 600}
@@ -731,7 +744,7 @@ OnBootSec=2min
 # a burst of overlapping ticks (flock is the second, free layer).
 OnUnitInactiveSec=${cfg.intervalSeconds}s
 AccuracySec=5s
-Unit=hermes-reconcile.service
+Unit=${unitName()}.service
 
 [Install]
 WantedBy=timers.target
@@ -753,9 +766,9 @@ export function installReconcile(cfg: ReconcileConfig, opts: { enable: boolean }
   const units = unitFiles(cfg, { bun, main });
   const dir = userUnitDir();
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "hermes-reconcile.service"), units.service);
-  fs.writeFileSync(path.join(dir, "hermes-reconcile.timer"), units.timer);
-  ok(`wrote ${dir}/hermes-reconcile.{service,timer} (version ${cfg.version})`);
+  fs.writeFileSync(path.join(dir, `${unitName()}.service`), units.service);
+  fs.writeFileSync(path.join(dir, `${unitName()}.timer`), units.timer);
+  ok(`wrote ${dir}/${unitName()}.{service,timer} (version ${cfg.version})`);
   const sysd = (args: string[], allowFail = false) => {
     const r = Bun.spawnSync(["systemctl", "--user", ...args], { stdout: "pipe", stderr: "pipe" });
     if ((r.exitCode ?? 1) !== 0 && !allowFail) {
@@ -765,24 +778,24 @@ export function installReconcile(cfg: ReconcileConfig, opts: { enable: boolean }
   };
   sysd(["daemon-reload"]);
   if (opts.enable) {
-    sysd(["enable", "--now", "hermes-reconcile.timer"]);
+    sysd(["enable", "--now", `${unitName()}.timer`]);
     // Best-effort: without linger the timer dies with the login session.
     const linger = Bun.spawnSync(["loginctl", "enable-linger"], { stdout: "pipe", stderr: "pipe" });
     if ((linger.exitCode ?? 1) !== 0) {
       log("warning: loginctl enable-linger failed - the timer stops when this user logs out");
     }
-    ok("timer enabled (systemctl --user list-timers hermes-reconcile.timer)");
+    ok(`timer enabled (systemctl --user list-timers ${unitName()}.timer)`);
   } else {
-    log("units written but not enabled - rerun with --enable, or: systemctl --user enable --now hermes-reconcile.timer");
+    log(`units written but not enabled - rerun with --now, or: systemctl --user enable --now ${unitName()}.timer`);
   }
 }
 
 export function uninstallReconcile(): void {
   const sysd = (args: string[]) =>
     Bun.spawnSync(["systemctl", "--user", ...args], { stdout: "pipe", stderr: "pipe" });
-  sysd(["disable", "--now", "hermes-reconcile.timer"]);
+  sysd(["disable", "--now", `${unitName()}.timer`]);
   const dir = userUnitDir();
-  for (const f of ["hermes-reconcile.service", "hermes-reconcile.timer"]) {
+  for (const f of [`${unitName()}.service`, `${unitName()}.timer`]) {
     fs.rmSync(path.join(dir, f), { force: true });
   }
   sysd(["daemon-reload"]);
@@ -814,14 +827,14 @@ export function proveReconcile(): ProofResult {
   if (cfg) {
     // RECON001 - the timer is installed, enabled, and pinned to the
     // configured version.
-    const enabled = Bun.spawnSync(["systemctl", "--user", "is-enabled", "hermes-reconcile.timer"], {
+    const enabled = Bun.spawnSync(["systemctl", "--user", "is-enabled", `${unitName()}.timer`], {
       stdout: "pipe",
       stderr: "pipe",
     });
     if ((enabled.exitCode ?? 1) !== 0) {
       add("RECON001", "unknown", "install", "timer not enabled under systemd --user (hand-run mode?)");
     } else {
-      const unit = path.join(os.homedir(), ".config", "systemd", "user", "hermes-reconcile.service");
+      const unit = path.join(os.homedir(), ".config", "systemd", "user", `${unitName()}.service`);
       const pinned = fs.existsSync(unit) && fs.readFileSync(unit, "utf8").includes(`(version ${cfg.version})`);
       add(
         "RECON001",
@@ -933,7 +946,7 @@ export function proveReconcile(): ProofResult {
     // in the UI even when the host ledger is honest.
     try {
       const ns = cfg.statusNamespace ?? "hermes-gitops";
-      const cm = kubectlJson(cfg, ["-n", ns, "get", "configmap", "hermes-reconciliation-status"]) as {
+      const cm = kubectlJson(cfg, ["-n", ns, "get", "configmap", statusName()]) as {
         data?: { "status.json"?: string };
       };
       const record = JSON.parse(cm.data?.["status.json"] ?? "{}") as Record<string, unknown>;

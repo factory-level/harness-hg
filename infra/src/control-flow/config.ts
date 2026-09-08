@@ -595,6 +595,8 @@ export interface BootstrapConfig {
 }
 
 export interface ReconcileStackConfig {
+  /** Additional independent repository watchers, sharing the default deployment lock. */
+  instances?: Record<string, ReconcileStackConfig>;
   enabled: boolean;
   // Pinned version stamped into the unit and the ledger. Changing it and
   // running `pulumi up` IS the upgrade path.
@@ -1814,7 +1816,7 @@ export function controlPlaneHostnames(
 // they existed only in the host-side reconcile/config.json before
 // (hand-set on factory 2026-08-05), which meant two live-behavior
 // fields no environment spec could state.
-const RECONCILE_KEYS = ["enabled", "version", "repoUrl", "branch", "intervalSeconds", "checks", "apply", "statusNamespace", "kubeContext"];
+const RECONCILE_KEYS = ["enabled", "version", "repoUrl", "branch", "intervalSeconds", "checks", "apply", "statusNamespace", "kubeContext", "instances"];
 
 /** Parse + validate the `reconcile` stack key. Pure — unit-tested in
  * config.test.ts. */
@@ -1863,6 +1865,22 @@ export function parseReconcile(raw: unknown): ReconcileStackConfig {
     throw new ConfigError(
       `${where}.repoUrl is required when reconcile.enabled is true - the timer needs a repository to watch`,
     );
+  }
+  if (e["instances"] !== undefined) {
+    const instances = e["instances"];
+    if (!instances || typeof instances !== "object" || Array.isArray(instances)) {
+      throw new ConfigError(`${where}.instances must be a mapping of names to watcher configurations`);
+    }
+    out.instances = {};
+    for (const [name, value] of Object.entries(instances)) {
+      if (!/^[a-z](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(name)) {
+        throw new ConfigError(`${where}.instances has an invalid name: ${name}`);
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value) || "instances" in value) {
+        throw new ConfigError(`${where}.instances.${name} must be a watcher mapping without nested instances`);
+      }
+      out.instances[name] = parseReconcile(value);
+    }
   }
   return out;
 }
@@ -1959,6 +1977,7 @@ const SLACK_KEYS = [
   "channels",
 ];
 const SLACK_APP_KEYS = [
+  "previousName",
   "displayName",
   "description",
   "botScopes",
@@ -1969,6 +1988,8 @@ const SLACK_APP_KEYS = [
 const SLACK_CHANNEL_KEYS = ["name", "channelId", "topic", "private", "agents", "users"];
 
 export interface SlackAppSpec {
+  // Preserve a managed app's provisioning state when its agent is renamed.
+  previousName?: string;
   // The Slack app's display name ("Eve Manager") and bot handle are
   // derived: handle = the app key with "marketing-"/"-eve" trimmed is NOT
   // attempted — the manifest uses displayName and a kebab of it.
@@ -2090,6 +2111,7 @@ export function parseSlack(raw: unknown): SlackConfig {
     if (typeof apps !== "object" || apps === null || Array.isArray(apps)) {
       throw new ConfigError(`${where}.apps must be a mapping of instance name -> app spec`);
     }
+    const previousNames = new Set<string>();
     for (const [name, rawApp] of Object.entries(apps as Record<string, unknown>)) {
       if (typeof rawApp !== "object" || rawApp === null || Array.isArray(rawApp)) {
         throw new ConfigError(`${where}.apps.${name} must be a mapping`);
@@ -2120,6 +2142,16 @@ export function parseSlack(raw: unknown): SlackConfig {
         throw new ConfigError(`${where}.apps.${name}.appId must be a Slack app id (A…)`);
       }
       const scopes = strList("botScopes");
+      if (a.previousName !== undefined && (typeof a.previousName !== "string" ||
+        !/^[a-z0-9][a-z0-9-]*$/.test(a.previousName) || a.previousName in (apps as object))) {
+        throw new ConfigError(`${where}.apps.${name}.previousName must name a retired agent, not an active app`);
+      }
+      if (typeof a.previousName === "string") {
+        if (previousNames.has(a.previousName)) {
+          throw new ConfigError(`${where}.apps.${name}.previousName is already claimed by another app`);
+        }
+        previousNames.add(a.previousName);
+      }
       if (scopes.length === 0) {
         throw new ConfigError(
           `${where}.apps.${name}.botScopes must name at least one bot scope ` +
@@ -2127,6 +2159,7 @@ export function parseSlack(raw: unknown): SlackConfig {
         );
       }
       out.apps[name] = {
+        ...(a.previousName ? { previousName: a.previousName as string } : {}),
         displayName,
         description: typeof a.description === "string" ? a.description : "",
         botScopes: scopes,

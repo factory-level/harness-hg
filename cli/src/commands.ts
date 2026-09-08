@@ -69,6 +69,7 @@ export interface Command {
 
 // Flags shared by every sub of a command, declared once.
 const PROFILE: Flag = { name: "--profile", value: "<name>", desc: "Narrow to one profile; default is every onboarded profile." };
+const RECONCILE_INSTANCE: Flag = { name: "--instance", value: "<name>", desc: "Named repository watcher; omitted selects the existing default. All instances share the deployment lock." };
 const DIR_REPO: Flag = { name: "--dir", value: "<repo-path-or-git-url>", desc: "The persona/distribution repository to read declarations from." };
 const ENVIRONMENT: Flag = { name: "--environment", value: "<file>", desc: "The cluster half, overriding the repo's own: a legacy `topology.yaml`-shaped file (targets inline), or an environment spec (`infra/environments/<env>.yaml`) whose `grants` supply targets, DNS, policy and capability providers for the team's target-free `harness-hg/topology.yaml`. Team files (bundles, communication, capabilities) always come from the repo's `harness-hg/` (legacy: `environment/`)." };
 const CONTROL_PLANE: Flag = { name: "--control-plane", value: "<url>", desc: "Base URL of the control plane (the exposed Nexus)." };
@@ -518,6 +519,7 @@ export const COMMANDS: Command[] = [
         examples: ["hg reconcile install --repo https://github.com/org/persona.harness-hg --now", "hg reconcile status"],
         desc: "A re-install (a version bump through pulumi) may omit flags and keep the stored config; a first install must name the repo.",
         flags: [
+          RECONCILE_INSTANCE,
           { name: "--repo", value: "<url>", desc: "The repository the loop applies." },
           { name: "--branch", value: "<name>", default: "main", desc: "Branch to track." },
           { name: "--interval", value: "<seconds>", default: "60", desc: "Tick interval." },
@@ -531,12 +533,12 @@ export const COMMANDS: Command[] = [
           { name: "--now", desc: "Enable and start immediately (`--enable` is a value flag elsewhere; mirrors `systemctl enable --now`)." },
         ],
       },
-      { name: "run", summary: "apply once in the foreground (the timer's tick)" },
-      { name: "status", summary: "the last outcome — read-only, safe while a run is in flight" },
-      { name: "sync", summary: "force a cycle; SKIPPED, never queued, while the timer holds the lock" },
-      { name: "retry", summary: "clear the blocked gate and force a cycle" },
-      { name: "prove", summary: "verify the loop actually applies" },
-      { name: "uninstall", summary: "remove the timer and its units" },
+      { name: "run", summary: "apply once in the foreground (the timer's tick)", flags: [RECONCILE_INSTANCE] },
+      { name: "status", summary: "the last outcome — read-only, safe while a run is in flight", flags: [RECONCILE_INSTANCE] },
+      { name: "sync", summary: "force a cycle; SKIPPED, never queued, while the timer holds the lock", flags: [RECONCILE_INSTANCE] },
+      { name: "retry", summary: "clear the blocked gate and force a cycle", flags: [RECONCILE_INSTANCE] },
+      { name: "prove", summary: "verify the loop actually applies", flags: [RECONCILE_INSTANCE] },
+      { name: "uninstall", summary: "remove the timer and its units", flags: [RECONCILE_INSTANCE] },
     ],
   },
   {

@@ -39,6 +39,12 @@ hg status           # what runs, and every local URL
 
 ## The agent-bundle loop
 
+For repo-specific team creation or extension (choosing roles, authoring their instructions,
+and installing runtime skills), use `hg-team-onboard` when installed. It handles arbitrary
+team composition and ends at source validation. If unavailable, install it with
+`npx skills add factory-level/harness-hg --skill hg-team-onboard`, or use the authoring guide:
+https://factory-level.github.io/harness-hg/docs/get-started/agent-team-repo/
+
 ```bash
 hg bundle init <dir> --agent <name> --gitops <url>
 hg validate --dir <dir>

@@ -526,6 +526,9 @@ describe("emission", () => {
     expect(() => workspaceFiles([binding, second], new Set(["research"]))).toThrow(
       /multi-repository independent profiles/,
     );
+    const explicit = workspaceFiles([binding, second], new Set(["research"]), { manager: "/workspaces/playbooks" });
+    expect(explicit.get("deployments/workspaces/profiles/manager.yaml")).toContain("terminalCwd: /workspaces/playbooks");
+    expect(() => workspaceFiles([binding, second], new Set(["research"]), { manager: "/unbound" })).toThrow(/bound repository mount/);
     // The same pair is fine when the profile is bundled.
     expect(workspaceFiles([binding, second], new Set(["manager", "research"])).size).toBe(1);
   });

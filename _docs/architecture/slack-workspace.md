@@ -5,6 +5,11 @@ Present tense, defects included. Decisions: [ADR 0174](../adr/0174-slack-workspa
 
 ## What runs
 
+- Ready Slack manifests enable interactivity at the same signed webhook URL as
+  Events API callbacks. This is required for Eve approval buttons and question
+  controls; registering message events alone does not enable those callbacks.
+  `infra/tests/slack.test.ts` covers both the ready and withheld manifests.
+
 - `infra/src/components/slack-workspace/index.ts` — stage-3 component, gated by
   `slack.enabled`, constructed **before** `AgentSecrets` in
   `control-flow/control-plane.ts` (its outputs feed it). Host-side only; it
@@ -91,3 +96,12 @@ cross-checks each events URL's host against the published endpoints.
   subscriptions; the events attach waits bounded for the endpoint and a
   timeout names the re-run.
 - `hg slack prove` SLK003 reads only the first page of `conversations.members`.
+
+Provisioned app renames use `previousName` aliases. Provisioning ignores legacy
+Command replacement triggers: manifest and project-path changes update through the
+environment inputs, carrying the prior signing secret and app ID forward.
+
+Independent workspace projections accept an explicit terminal directory from their
+operator caller. Multiple repositories still fail closed when none is provided, and
+an unbound terminal directory is rejected. The factory projection chooses the content
+workspace and resolves strategy clone credentials in each role's namespace.

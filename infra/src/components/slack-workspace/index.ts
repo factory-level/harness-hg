@@ -87,6 +87,10 @@ export function buildSlackManifest(cfg: SlackConfig, app: SlackAppSpec): object 
               request_url: app.eventsUrl,
               bot_events: [...app.botEvents].sort(),
             },
+            interactivity: {
+              is_enabled: true,
+              request_url: app.eventsUrl,
+            },
           }
         : {}),
     },
@@ -186,6 +190,11 @@ export class SlackWorkspace extends pulumi.ComponentResource {
             // Load-bearing: stdout carries the signing secret + bot token.
             // Secret-marking encrypts it in state and masks every render.
             additionalSecretOutputs: ["stdout"],
+            // Command triggers force replacement, which loses previous stdout and
+            // would create a new Slack app. Manifest/project changes already live
+            // in environment and use update, preserving the signing secret.
+            ignoreChanges: ["triggers"],
+            ...(app.previousName ? { aliases: [{ name: `slack-app-provision-${app.previousName}` }] } : {}),
           },
         );
         const parsed = provision.stdout.apply((out) => parseProvisionStdout(agent, out));
@@ -211,7 +220,9 @@ export class SlackWorkspace extends pulumi.ComponentResource {
           },
           triggers: [this.appIds[agent], sl.teamId],
         },
-        { parent: this },
+        { parent: this,
+          ...(app.previousName ? { aliases: [{ name: `slack-bot-identity-${app.previousName}` }] } : {}),
+        },
       );
       this.botUserIds[agent] = identity.stdout.apply((out) => {
         const parsed = JSON.parse(out.trim()) as { user_id?: string };

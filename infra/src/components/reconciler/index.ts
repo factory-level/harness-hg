@@ -18,6 +18,7 @@ import type { BootstrapConfig } from "../../control-flow/config.ts";
 
 export interface ReconcilerArgs {
   config: BootstrapConfig;
+  instance?: string;
   dependsOn?: pulumi.Resource[];
 }
 
@@ -37,6 +38,7 @@ export class Reconciler extends pulumi.ComponentResource {
     // ESM, node does not - and Pulumi's runtime is node (found live).
     const cliMain = path.resolve(import.meta.dirname, "..", "..", "..", "..", "cli", "src", "main.ts");
     const flags = [
+      args.instance ? `--instance ${shellQuote(args.instance)}` : "",
       `--repo ${shellQuote(rc.repoUrl)}`,
       `--branch ${shellQuote(rc.branch)}`,
       `--interval ${rc.intervalSeconds}`,
@@ -57,7 +59,7 @@ export class Reconciler extends pulumi.ComponentResource {
         // Same command on update: `install` is idempotent and rewrites
         // units + daemon-reloads, which IS the upgrade path.
         update: `bun ${shellQuote(cliMain)} reconcile install ${flags}`,
-        delete: `bun ${shellQuote(cliMain)} reconcile uninstall`,
+        delete: `bun ${shellQuote(cliMain)} reconcile uninstall${args.instance ? ` --instance ${shellQuote(args.instance)}` : ""}`,
         // Rerun exactly when the declared reconciler config changes -
         // the JSON is the trigger, so no field can change silently.
         triggers: [JSON.stringify(rc)],

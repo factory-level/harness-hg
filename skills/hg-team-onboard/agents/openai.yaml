@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Hg Team Onboarding"
+  short_description: "Survey and configure any repo's Eve agent team"
+  default_prompt: "Use $hg-team-onboard to guide me through a survey and configure this repository as an Eve agent team with tailored roles and skills."

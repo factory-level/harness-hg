@@ -18,6 +18,11 @@ day-0 from stack-init onward; only the root of trust stays manual
 
 ## Surface discipline
 
+`hg reconcile` supports optional `--instance <name>` selection for independent repository
+watchers on one host (ADR 0182). Each watcher owns its checkout, state, timer, and status;
+all watchers in one Harness Hg home serialize applies through the existing lock. Omitting
+the flag retains the existing single-repository behavior.
+
 - One meaning per verb, everywhere it appears — `prove`, `emit`, `doctor`, `restore` each
   mean exactly one thing, enforced by lint from the command manifest
   ([#656](https://github.com/factory-level/harness-hg/issues/656)).

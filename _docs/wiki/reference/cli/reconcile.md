@@ -11,12 +11,12 @@ The destination host's reconcile timer.
 
 ```text
 hg reconcile install [flags]
-hg reconcile run
-hg reconcile status
-hg reconcile sync
-hg reconcile retry
-hg reconcile prove
-hg reconcile uninstall
+hg reconcile run [flags]
+hg reconcile status [flags]
+hg reconcile sync [flags]
+hg reconcile retry [flags]
+hg reconcile prove [flags]
+hg reconcile uninstall [flags]
 ```
 
 `--json` prints one JSON document on stdout; narration goes to stderr.
@@ -37,6 +37,7 @@ A re-install (a version bump through pulumi) may omit flags and keep the stored 
 
 | Flag | Value | Default | What it does |
 |---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
 | `--repo` | `<url>` | — | The repository the loop applies. |
 | `--branch` | `<name>` | `main` | Branch to track. |
 | `--interval` | `<seconds>` | `60` | Tick interval. |
@@ -59,50 +60,74 @@ hg reconcile status
 ## `hg reconcile run`
 
 ```text
-hg reconcile run
+hg reconcile run [flags]
 ```
 
 Apply once in the foreground (the timer's tick).
 
+| Flag | Value | Default | What it does |
+|---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
+
 ## `hg reconcile status`
 
 ```text
-hg reconcile status
+hg reconcile status [flags]
 ```
 
 The last outcome — read-only, safe while a run is in flight.
 
+| Flag | Value | Default | What it does |
+|---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
+
 ## `hg reconcile sync`
 
 ```text
-hg reconcile sync
+hg reconcile sync [flags]
 ```
 
 Force a cycle; skipped, never queued, while the timer holds the lock.
 
+| Flag | Value | Default | What it does |
+|---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
+
 ## `hg reconcile retry`
 
 ```text
-hg reconcile retry
+hg reconcile retry [flags]
 ```
 
 Clear the blocked gate and force a cycle.
 
+| Flag | Value | Default | What it does |
+|---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
+
 ## `hg reconcile prove`
 
 ```text
-hg reconcile prove
+hg reconcile prove [flags]
 ```
 
 Verify the loop actually applies.
 
+| Flag | Value | Default | What it does |
+|---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
+
 ## `hg reconcile uninstall`
 
 ```text
-hg reconcile uninstall
+hg reconcile uninstall [flags]
 ```
 
 Remove the timer and its units.
+
+| Flag | Value | Default | What it does |
+|---|---|---|---|
+| `--instance` | `<name>` | — | Named repository watcher; omitted selects the existing default. All instances share the deployment lock. |
 
 ## See also
 

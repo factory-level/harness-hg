@@ -14,7 +14,7 @@ const HOME = mkdtempSync(join(tmpdir(), "hg-reconcile-"));
 process.env["HERMES_GITOPS_HOME"] = HOME;
 
 const {
-  configFile, ledgerFile, logsDir,
+  configFile, ledgerFile, logsDir, lockFile, unitName, statusName, selectInstance,
   emptyLedger, gitArgs, nexusRecord, readLedger, reconcileOnce, recoverLedger,
   saveLedger, scrub, shouldApply, summarize, unitFiles, writeConfig,
 } = await import("../src/reconcile/index.ts");
@@ -64,8 +64,64 @@ function ledgerWith(over: Partial<Ledger> = {}): Ledger {
 }
 
 beforeEach(() => {
+  selectInstance();
   rmSync(configFile(), { force: true });
   rmSync(ledgerFile(), { force: true });
+});
+
+describe("named repository watchers", () => {
+  test("isolate paths and units, preserve the default, and share the existing lock", () => {
+    const defaultConfig = configFile();
+    const sharedLock = lockFile();
+    try {
+      selectInstance("inferops");
+      expect(configFile()).not.toBe(defaultConfig);
+      expect(lockFile()).toBe(sharedLock);
+      expect(unitName()).toBe("hermes-reconcile-inferops");
+      expect(statusName()).toBe("hermes-reconciliation-status-inferops");
+      const units = unitFiles(baseConfig(), { bun: "/bin/bun", main: "/app/main.ts" });
+      expect(units.service).toContain("reconcile run --instance inferops");
+      expect(units.timer).toContain("Unit=hermes-reconcile-inferops.service");
+      expect(() => selectInstance("../escape")).toThrow(/instance must/);
+      expect(() => selectInstance("inferops-")).toThrow(/instance must/);
+    } finally { selectInstance(); }
+    expect(configFile()).toBe(defaultConfig);
+    expect(unitName()).toBe("hermes-reconcile");
+  });
+
+  test("selection stays process-local and a second instance cannot take the shared flock", () => {
+    selectInstance("inferops");
+    try {
+      const modulePath = join(import.meta.dir, "../src/reconcile/index.ts");
+      const child = `const m = await import(${JSON.stringify(modulePath)}); console.log(m.unitName());`;
+      expect(execFileSync(process.execPath, ["-e", child], { encoding: "utf8" }).trim()).toBe("hermes-reconcile");
+      mkdirSync(join(HOME, "reconcile"), { recursive: true });
+      const contend = `const m = await import(${JSON.stringify(modulePath)}); m.selectInstance("other"); const r = Bun.spawnSync(["flock", "-n", "-E", "75", m.lockFile(), "true"]); console.log(JSON.stringify({ lock: m.lockFile(), exitCode: r.exitCode, error: r.stderr.toString() })); process.exit(r.exitCode === 75 ? 0 : 1);`;
+      const result = Bun.spawnSync(["flock", lockFile(), process.execPath, "-e", contend], { env: { ...process.env } });
+      expect({ code: result.exitCode, output: result.stdout.toString().trim(), error: result.stderr.toString() }).toEqual({
+        code: 0, output: JSON.stringify({ lock: lockFile(), exitCode: 75, error: "" }), error: "",
+      });
+    } finally { selectInstance(); }
+  });
+
+  test("a failed named source cannot overwrite or block the default source ledger", async () => {
+    const sha = push("named-watchers");
+    writeConfig(baseConfig());
+    const initial = await reconcileOnce({ manual: false, retry: false }, { argocdConverged: async () => true });
+    expect(initial.appliedSha).toBe(sha);
+    try {
+      selectInstance("independent");
+      writeConfig(baseConfig({ checks: ["exit 1"] }));
+      const failed = await reconcileOnce({ manual: false, retry: false }, {});
+      expect(failed.state).toBe("failed");
+      expect(failed.appliedSha).toBeUndefined();
+      writeConfig(baseConfig());
+      const retried = await reconcileOnce({ manual: true, retry: true }, { argocdConverged: async () => true });
+      expect(retried.appliedSha).toBe(sha);
+    } finally { selectInstance(); }
+    expect(readLedger(baseConfig()).appliedSha).toBe(sha);
+    expect(readLedger(baseConfig()).blocked).toBeUndefined();
+  });
 });
 afterAll(() => rmSync(HOME, { recursive: true, force: true }));
 

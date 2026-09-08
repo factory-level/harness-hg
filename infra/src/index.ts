@@ -67,6 +67,13 @@ new Reconciler("reconciler", {
   config: cfg,
   dependsOn: hermesStages.stage1Resources,
 });
+for (const [instance, reconcile] of Object.entries(cfg.reconcile.instances ?? {})) {
+  new Reconciler(`reconciler-${instance}`, {
+    config: { ...cfg, reconcile },
+    instance,
+    dependsOn: hermesStages.stage1Resources,
+  });
+}
 
 let controlPlane = {
   clusterSecretStoreName: null as string | null,
@@ -114,4 +121,3 @@ export const edge_targets =
         noAccess,
       }))
     : [];
-

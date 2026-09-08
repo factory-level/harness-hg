@@ -209,6 +209,7 @@ nav:
       - Google sign-in at the edge: runbooks/google-sso.md
       - Alert destinations: runbooks/alert-destinations.md
       - Slack apps: runbooks/slack-apps.md
+      - Multiple repositories: runbooks/multiple-repositories.md
       - Recovery: runbooks/recovery.md
       - The destructive test: runbooks/destructive-test.md
       - Workspace bindings: runbooks/workspace-bindings.md

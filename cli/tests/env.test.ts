@@ -50,6 +50,21 @@ function writeSpec(): string {
 }
 
 describe("environment spec", () => {
+  test("Slack rename aliases survive environment generation", () => {
+    for (const version of ["v1alpha1", "v1alpha2"]) {
+      const file = writeSpec();
+      writeFileSync(file, SPEC_YAML.replace("environment/v1alpha1", `environment/${version}`) + `
+  slack:
+    apps:
+      manager:
+        displayName: Marketing Manager
+        botScopes: [chat:write]
+        previousName: manager-eve
+`);
+      const spec = loadEnvironmentSpec(file);
+      expect((spec.infra.slack as any).apps.manager.previousName).toBe("manager-eve");
+    }
+  });
   test("URIs are assembled, never typed", () => {
     const spec = loadEnvironmentSpec(writeSpec());
     expect(rootSecretsProviderUri(spec)).toBe(

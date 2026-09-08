@@ -905,8 +905,9 @@ async function main(): Promise<void> {
     case "reconcile": {
       const {
         reconcileOnce, readConfig: readReconcileConfig, readLedger: readReconcileLedger,
-        realDeps, withLock,
+        realDeps, withLock, selectInstance,
       } = await import("./reconcile/index.ts");
+      selectInstance(flagValue("--instance")); // Process-local: never inherited by apply children.
       const sub = args[0];
       if (sub === "install") {
         const { installReconcile, readConfig: readExisting } = await import("./reconcile/index.ts");

@@ -4,6 +4,12 @@ What the system should be: every agent that is meant to converse has a chat
 surface whose **identity, credentials, and membership are declared, provisioned,
 and reconciled by the platform** — never hand-assembled in a provider console.
 
+Operational teams initiate scheduled check-ins and decision requests through that
+surface. The team owns its durable occurrences, task state and approval policy; the
+platform owns runtime, declared bindings and provider registration. Delivery health
+must include confirmed messages and overdue work, not merely running pods. Interactive
+approval callbacks must be provisioned alongside message subscriptions. See ADR 0181.
+
 - **One app registration per agent, per provider.** An agent's chat identity (its
   handle, avatar, scopes) is a platform-provisioned resource keyed to the agent's
   instance name. Provisioning is idempotent and survives re-runs without minting

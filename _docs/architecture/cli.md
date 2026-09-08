@@ -5,6 +5,24 @@ three loops, front doors, grammar); the diff is the gap list.
 
 ## What exists
 
+- **Installable authoring guidance**: `skills/hg-team-onboard/` configures arbitrary Eve team
+  compositions through a repo-aware user survey and the existing scaffold and contracts.
+  Survey answers and configuration decisions persist in the target's team document for
+  revisions and resumed onboarding. Its references cover additive
+  onboarding, per-agent skills.sh packages, runtime capability requirements, and source/build
+  validation. `skills/hg-loops/` routes team authoring to it. This is coding-agent guidance,
+  not another CLI command or an automated integration provisioner; generated teams require
+  their own validation evidence and runtime evaluations.
+- **Named repository reconciliation** (ADR 0182): `hg reconcile --instance <name>` selects
+  isolated state under `reconcile/instances/<name>`, named systemd units, and a named status
+  ConfigMap. The default instance keeps its existing paths. All instances share the original
+  `reconcile/lock`, so their check/apply cycles cannot race on one environment. The factory
+  stack can declare additional watchers through `reconcile.instances`; each retains its own
+  failure/retry and crash-recovery history. CLI reconciliation tests cover independent ticks
+  and shared-lock behavior; infra configuration tests cover invalid and nested instances.
+  Named watcher status is inspected through the CLI; Nexus's existing reconciliation card
+  continues to read the default watcher's ConfigMap.
+
 - **The manifest everything derives from**: `cli/src/commands.ts` holds every command,
   subcommand, and flag as data, and three consumers render it — `main.ts` (now ~1.2k lines, the
   dispatch only) derives `VALUE_FLAGS`/`JSON_COMMANDS` and its usage output, so an undocumented

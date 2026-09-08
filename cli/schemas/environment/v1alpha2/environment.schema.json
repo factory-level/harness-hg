@@ -479,6 +479,11 @@
                       "minLength": 1
                     }
                   },
+                  "previousName": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]*$",
+                    "description": "Retired app key whose Pulumi provisioning identity is preserved during a rename."
+                  },
                   "appId": {
                     "type": "string",
                     "description": "Adopt an existing app (A...) instead of creating one - the recovery slot after state loss. Empty = create."

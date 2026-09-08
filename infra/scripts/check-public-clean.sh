@@ -17,6 +17,9 @@ PATTERN='192\.168\.[0-9]+\.[0-9]+|inferlab-dev|neonware-cloud|T0BSL59DCJK|C0BSV8
 OVERLAY=(
   ':(exclude)factory-system-reference.md'
   ':(exclude)infra/environments/factory.yaml'
+  ':(exclude)infra/environments/factory-proactive-secrets.py'
+  ':(exclude)infra/environments/factory-proactive-volumes.py'
+  ':(exclude)infra/environments/factory-proactive-topology.ts'
   ':(exclude)infra/Pulumi.factory.yaml'
   ':(exclude)state/Pulumi.factory.yaml'
   ':(exclude)_old-docs'

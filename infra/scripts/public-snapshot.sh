@@ -21,6 +21,9 @@ SUBJECT="${2:-chore: initial public release}"
 OVERLAY=(
   factory-system-reference.md
   infra/environments/factory.yaml
+  infra/environments/factory-proactive-secrets.py
+  infra/environments/factory-proactive-volumes.py
+  infra/environments/factory-proactive-topology.ts
   infra/Pulumi.factory.yaml
   state/Pulumi.factory.yaml
   _old-docs

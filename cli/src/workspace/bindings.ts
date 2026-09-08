@@ -451,6 +451,7 @@ const WORKSPACES_ROOT = "deployments/workspaces";
 export function workspaceFiles(
   bindings: NormalizedWorkspaceBinding[],
   bundledProfiles: ReadonlySet<string> = new Set(),
+  terminalCwds: Readonly<Record<string, string>> = {},
 ): Map<string, string> {
   const files = new Map<string, string>();
   if (bindings.length === 0) return files;
@@ -467,7 +468,7 @@ export function workspaceFiles(
     }
   }
   for (const [profile, assigned] of byProfile) {
-    if (assigned.length > 1) {
+    if (assigned.length > 1 && !terminalCwds[profile]) {
       // The declaration has no per-profile terminalCwd surface yet, and
       // the chart refuses several repositories without one - fail here,
       // at compile, instead of shipping values Argo cannot render.
@@ -476,6 +477,10 @@ export function workspaceFiles(
           "deployed profile - multi-repository independent profiles need a terminalCwd authoring " +
           "surface that does not exist yet (bind one repository, or bundle the profile)",
       );
+    }
+    const terminalCwd = terminalCwds[profile] || assigned[0]!.mountPath;
+    if (!assigned.some(binding => binding.mountPath === terminalCwd)) {
+      throw new Error(`profile ${profile}: terminalCwd must name a bound repository mount`);
     }
     const repositories = assigned.map((binding) => ({
       name: binding.repository,
@@ -487,7 +492,7 @@ export function workspaceFiles(
     }));
     files.set(
       `${WORKSPACES_ROOT}/profiles/${profile}.yaml`,
-      dump({ spec: { workspace: { repositories, terminalCwd: repositories[0]!.mountPath } } }),
+      dump({ spec: { workspace: { repositories, terminalCwd } } }),
     );
   }
   return files;

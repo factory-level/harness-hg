@@ -11,6 +11,22 @@ import {
 // parseSlack — the five-move parser idiom: defaults, closed keys, shapes.
 
 describe("parseSlack", () => {
+  test("a renamed app retains its previous provisioning identity", () => {
+    const config = parseSlack({ apps: {
+      "marketing-manager": { displayName: "Marketing Manager", botScopes: ["chat:write"], previousName: "marketing-manager-eve" },
+    } });
+    expect(config.apps["marketing-manager"]!.previousName).toBe("marketing-manager-eve");
+    expect(() => parseSlack({ apps: {
+      manager: { displayName: "Manager", botScopes: ["chat:write"], previousName: "research" },
+      research: { displayName: "Research", botScopes: ["chat:write"] },
+    } })).toThrow(/retired agent/);
+  });
+  test("two renamed apps cannot claim one previous identity", () => {
+    expect(() => parseSlack({ apps: {
+      manager: { displayName: "Manager", botScopes: ["chat:write"], previousName: "old" },
+      research: { displayName: "Research", botScopes: ["chat:write"], previousName: "old" },
+    } })).toThrow(/already claimed/);
+  });
   test("absent block is a complete disabled default", () => {
     const out = parseSlack(undefined);
     expect(out.enabled).toBe(false);
@@ -112,6 +128,7 @@ describe("buildSlackManifest", () => {
   test("events are withheld until eventsReady - Slack challenges the URL at apply", () => {
     const manifest = buildSlackManifest(slackCfg(), APP) as Record<string, any>;
     expect(manifest.settings.event_subscriptions).toBeUndefined();
+    expect(manifest.settings.interactivity).toBeUndefined();
     expect(manifest.settings.socket_mode_enabled).toBe(false);
   });
 
@@ -120,6 +137,10 @@ describe("buildSlackManifest", () => {
     expect(manifest.settings.event_subscriptions).toEqual({
       request_url: "https://slack-manager.example.dev/eve/v1/slack",
       bot_events: ["app_mention", "message.im"],
+    });
+    expect(manifest.settings.interactivity).toEqual({
+      is_enabled: true,
+      request_url: APP.eventsUrl,
     });
   });
 
