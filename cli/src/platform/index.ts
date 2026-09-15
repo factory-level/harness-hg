@@ -1417,6 +1417,7 @@ export function identitySecrets(): IdentitySecrets {
     clients: { nexus: rand(), argocd: rand(), grafana: rand(), hermes: rand(), proof: rand() },
     passwords: Object.fromEntries(IDENTITY_USERS.map((u) => [u, rand()])) as Record<IdentityUser, string>,
   };
+  fs.mkdirSync(HG_HOME, { recursive: true }); // first call on a fresh host precedes `hg up`
   fs.writeFileSync(file, JSON.stringify(doc, null, 2), { mode: 0o600 });
   return doc;
 }

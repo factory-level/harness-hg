@@ -47,11 +47,9 @@ def main() -> None:
         if not m:
             continue
         kind, breaking = m.group("type"), bool(m.group("bang")) or "BREAKING CHANGE" in body
-        text = subject[m.end():].strip()
-        pr = PR_REF.search(text)
-        line = PR_REF.sub("", text)
-        if pr:
-            line += f" (#{pr.group(1)})"
+        # The (#NNN) suffix names a PR in the private ops fork; on the
+        # public repository it would auto-link to an unrelated issue.
+        line = PR_REF.sub("", subject[m.end():].strip())
         for name, pick in SECTIONS:
             if pick(kind, breaking):
                 buckets[name].append(line)

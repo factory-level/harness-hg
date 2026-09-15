@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # quickstart-drift reads the command manifest through bun.
+      - uses: oven-sh/setup-bun@v2
       - name: No living references to retired trees or deleted aliases (#672)
         run: make retired-paths
       - name: Quickstarts carry their loop runs' asserted sequences (#675)
@@ -100,9 +102,14 @@ jobs:
   # (ADR-42) - before that, cli/ had no PR gate at all.
   cli-test:
     runs-on: ubuntu-latest
+    env:
+      # The operator home the CLI reads and writes; never the runner's own.
+      HERMES_GITOPS_HOME: ${{ runner.temp }}/hg-home
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+      # `hg validate` renders records through the Python emitter (uv run).
+      - uses: astral-sh/setup-uv@v5
       - name: Install dependencies
         run: cd cli && bun install --frozen-lockfile
       - name: Typecheck
@@ -156,7 +163,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
-        run: cd infra && bun install --frozen-lockfile
+        # infra imports cli/src (team delivery), so its typecheck resolves
+        # cli's dependencies too.
+        run: cd infra && bun install --frozen-lockfile && cd ../cli && bun install --frozen-lockfile
       - name: Typecheck
         run: cd infra && bun run typecheck
       - name: Unit tests
