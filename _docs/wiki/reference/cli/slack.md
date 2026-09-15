@@ -35,8 +35,8 @@ The slack acceptance matrix against an environment spec.
 **Examples**
 
 ```bash
-hg slack prove factory
-hg slack prove factory --agent marketing-manager-eve
+hg slack prove staging
+hg slack prove staging --agent manager
 ```
 
 ## See also

@@ -16,14 +16,14 @@ operator deployment to install the timers.
 Inspect or operate one named watcher:
 
 ```bash
-hg reconcile status --instance inferops --json
-hg reconcile sync --instance inferops
-hg reconcile prove --instance inferops --json
+hg reconcile status --instance second-team --json
+hg reconcile sync --instance second-team
+hg reconcile prove --instance second-team --json
 ```
 
 Omitting `--instance` selects the original watcher. A busy shared lock skips the competing
 tick; its next timer interval tries again. A failed revision stays blocked for that watcher
-until its source changes or the operator runs `hg reconcile retry --instance inferops`. A team
+until its source changes or the operator runs `hg reconcile retry --instance second-team`. A team
 watcher that is waiting on a person (an approval, a review, an activation) reports `pending`
 with the reason; it is not blocked, and `hg reconcile sync` re-attempts it at once.
 Removing a watcher removes its timer while retaining its history and checkout.
@@ -34,13 +34,14 @@ reconciliation card shows the default watcher.
 **Proof:** each watcher's status reports the expected source revision as applied, its timer
 is enabled, and its deployed workloads are healthy. An unavailable proof is not a pass.
 
-## Inferlab internal company team
+## A second team on the same destination
 
-Use `infra/environments/factory-inferops-prepare.py` to prepare the three `inferops-*` Eve
-identities from HQ's encrypted Slack outputs. HQ owns all three apps and channels. The
-proposal uses the existing shared factory GitOps destination and named `inferops` watcher,
-preserving social-media. New agents remain inactive until explicit activation and live proofs.
-See the source repository's `docs/agent-team.md` for role capabilities and rollout details.
+A second team repository registers with its own named watcher (`--instance <name>`) and shares
+the environment's GitOps destination; the first team's records are preserved untouched. Its
+agents stay inactive until you activate them and run their live proofs. Credentials for its
+chat apps are provisioned through the same state path as the first team's (see the Slack
+runbook); nothing is pasted by hand.
+
 ## Compile the shared Nexus view
 
 After every registered team's deployment records have converged, prepare clean checkouts at

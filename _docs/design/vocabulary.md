@@ -8,7 +8,7 @@ two never disagree on a term.
 
 Executed by [#649](https://github.com/factory-level/harness-hg/issues/649); the per-identifier
 dispositions (rename / alias / frozen-legacy, each with its owning issue) live in
-[`maintainers/final-pass/naming-scheme.md`](../../maintainers/final-pass/naming-scheme.md).
+`maintainers/final-pass/naming-scheme.md` (ops fork).
 
 ## The register
 

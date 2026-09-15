@@ -20,8 +20,9 @@ Thanks for helping. This page is the whole checklist.
    it. Subject form: `type(scope): imperative summary`, under 72 characters.
 
 3. **Update the docs in the same PR.** A behaviour change touches at least one of: the owning
-   page under `_docs/wiki/`, `maintainers/built.md` (a build unit or its gate), or
-   `maintainers/gaps.md` (a gap closed or opened). A change to what the system *should* be
+   page under `_docs/wiki/`, or the maintainers' ledgers `built.md` (a build unit or its gate)
+   and `gaps.md` (a gap closed or opened), which live in the ops fork and are not part of this
+   snapshot. A change to what the system *should* be
    gets a new `_docs/adr/NNNN-<name>.md` with its cost. The rules are in
    [`_docs/README.md`](_docs/README.md).
 

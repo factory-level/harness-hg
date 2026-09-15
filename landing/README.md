@@ -359,5 +359,5 @@ It is deployed by `.github/workflows/wiki.yaml` as the root of the GitHub Pages 
 `make site` assembles (`infra/scripts/build-site.sh`): this directory at `/`, the wiki at `/docs/`,
 the Nexus UI demo at `/demo/`. The docs and demo links are relative (`docs/`, `../docs/`), so they
 resolve wherever that artifact is mounted — Pages serves it under `/harness-hg/`. See
-[`maintainers/landing.md`](../maintainers/landing.md)
+`maintainers/landing.md` (ops fork)
 and ADR-69.

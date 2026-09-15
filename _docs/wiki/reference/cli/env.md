@@ -57,7 +57,7 @@ Diff the spec against the generated stack config - exit 1 on drift (the doctor f
 **Examples**
 
 ```bash
-hg env plan factory
+hg env plan staging
 ```
 
 ## `hg env apply`
@@ -89,7 +89,7 @@ One-shot: existing hand-written stack config -> environment.yaml (the migration 
 **Examples**
 
 ```bash
-hg env import factory
+hg env import staging
 ```
 
 ## See also

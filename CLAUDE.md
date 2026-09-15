@@ -50,8 +50,10 @@ ops fork beside `infra/environments/<name>.yaml`; read it before touching a live
 environment and update it in the same change.
 
 **If you are reading this in `factory-level/harness-hg-ops`**, that is the ops fork: full
-history plus the operator overlay (`factory-system-reference.md`, the factory env spec and
-its two Pulumi configs, `_old-docs/`). The public repo `factory-level/harness-hg` is one
+history plus the operator overlay listed in `infra/scripts/public-overlay.txt`: the
+environment reference and spec, its Pulumi configs, `_old-docs/`, `_docs/architecture/`,
+`maintainers/` and the legacy ADR ledger. The public snapshot carries none of those, so any
+reference to them below is to the ops fork. The public repo `factory-level/harness-hg` is one
 squashed snapshot cut by `infra/scripts/public-snapshot.sh`. Develop here as before; when a
 change should go public, re-cut and push the snapshot (main only, tag the version). Nothing
 flows the other way yet: public PRs are cherry-picked into this repo by hand.

@@ -58,16 +58,16 @@ describe("environment spec", () => {
     enabled: true
     repoUrl: https://github.com/example/social.git
     instances:
-      inferops:
+      platops:
         enabled: true
-        repoUrl: https://github.com/example/inferops.git
+        repoUrl: https://github.com/example/platops.git
         branch: develop
         checks: ["hg topology doctor --dir ."]
         apply: "pulumi up --yes"
 `;
       writeFileSync(file, yaml);
       const spec = loadEnvironmentSpec(file);
-      expect((spec.infra.reconcile as any).instances.inferops.branch).toBe("develop");
+      expect((spec.infra.reconcile as any).instances.platops.branch).toBe("develop");
       const generated = generateStack(spec, "infra", { stackDir: "/tmp/infra", project: "test", existingFile: "/tmp/nonexistent-inferlab-fixture.yaml" });
       expect(generated.text).toContain("instances:");
       expect(generated.text).toContain("branch: develop");

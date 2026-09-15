@@ -596,12 +596,12 @@ class TestAdapters:
         def watcher(name, phase, at="2026-07-31T11:59:00Z"):
             return {"metadata": {"name": "hermes-reconciliation-status" + ("-" + name if name else "")},
                     "data": {"status.json": json.dumps({"phase": phase, "observedAt": at, "retryable": True})}}
-        src, per = api.reconciliation_sources([watcher("", "synced"), watcher("inferops", "failed")], "2026-07-31T12:00:00Z")
+        src, per = api.reconciliation_sources([watcher("", "synced"), watcher("platops", "failed")], "2026-07-31T12:00:00Z")
         assert per == {}
         assert src["level"] == "unhealthy"
-        assert "inferops" in src["summary"]
-        assert any("--instance inferops" in reason["message"] for reason in src["reasons"])
-        src, _ = api.reconciliation_sources([watcher("", "synced"), watcher("inferops", "synced", "2026-07-30T12:00:00Z")], "2026-07-31T12:00:00Z")
+        assert "platops" in src["summary"]
+        assert any("--instance platops" in reason["message"] for reason in src["reasons"])
+        src, _ = api.reconciliation_sources([watcher("", "synced"), watcher("platops", "synced", "2026-07-30T12:00:00Z")], "2026-07-31T12:00:00Z")
         assert src["level"] == "unknown"
 
     def test_reconciliation_absent_is_not_configured(self, api):

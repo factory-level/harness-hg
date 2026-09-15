@@ -57,10 +57,10 @@ describe("bundles wire shape", () => {
 
 
 describe("deployment instance details", () => {
-  const data = { ...DEMO_DATA, plan: { components: [{ id: "sre", kind: "agent", bind: { profile: "inferops-sre" }, instances: [{ id: "inferops-sre", application: "ag-eve-inferops-sre", namespace: "ag-eve-inferops-sre" }] }] } };
+  const data = { ...DEMO_DATA, plan: { components: [{ id: "sre", kind: "agent", bind: { profile: "platops-sre" }, instances: [{ id: "platops-sre", application: "ag-eve-platops-sre", namespace: "ag-eve-platops-sre" }] }] } };
   test("display IDs do not need to prefix deployment IDs", () => {
-    const health = { ...DEMO_HEALTH, instances: { "inferops-sre": { level: "healthy", reasons: [] }, "sre-other": { level: "unhealthy" } } };
-    expect(agentInstances(data, health, "sre")).toEqual([{ id: "inferops-sre", application: "ag-eve-inferops-sre", namespace: "ag-eve-inferops-sre", level: "healthy", reasons: [] }]);
+    const health = { ...DEMO_HEALTH, instances: { "platops-sre": { level: "healthy", reasons: [] }, "sre-other": { level: "unhealthy" } } };
+    expect(agentInstances(data, health, "sre")).toEqual([{ id: "platops-sre", application: "ag-eve-platops-sre", namespace: "ag-eve-platops-sre", level: "healthy", reasons: [] }]);
   });
   test("missing health remains unknown while declared identity remains visible", () => {
     expect(agentInstances(data, null, "sre")[0].level).toBe("unknown");

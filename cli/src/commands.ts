@@ -899,7 +899,7 @@ export const COMMANDS: Command[] = [
       {
         name: "plan",
         summary: "diff the spec against the generated stack config - exit 1 on drift (the doctor finding)",
-        examples: ["hg env plan factory"],
+        examples: ["hg env plan staging"],
         flags: [{ name: "--spec", value: "<file>", desc: "Spec path override (default infra/environments/<name>.yaml)." }],
       },
       {
@@ -910,7 +910,7 @@ export const COMMANDS: Command[] = [
       {
         name: "import",
         summary: "one-shot: existing hand-written stack config -> environment.yaml (the migration path)",
-        examples: ["hg env import factory"],
+        examples: ["hg env import staging"],
         flags: [
           { name: "--state", value: "<file>", desc: "State stack config (default state/Pulumi.<name>.yaml)." },
           { name: "--infra", value: "<file>", desc: "Infra stack config (default infra/Pulumi.<name>.yaml)." },
@@ -1168,7 +1168,7 @@ export const COMMANDS: Command[] = [
         name: "prove",
         args: "<environment>",
         summary: "the Slack acceptance matrix against an environment spec",
-        examples: ["hg slack prove factory", "hg slack prove factory --agent marketing-manager-eve"],
+        examples: ["hg slack prove staging", "hg slack prove staging --agent manager"],
         flags: [
           { name: "--agent", value: "<name>", desc: "Restrict the matrix to one app." },
           { name: "--spec", value: "<file>", desc: "Spec path override (default infra/environments/<env>.yaml)." },

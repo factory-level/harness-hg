@@ -17,7 +17,7 @@ def test_emitter_checks_locked_content(tmp_path):
     contract.mkdir()
     package = project / "agent/skills/research"
     package.mkdir(parents=True)
-    content = b"---\nname: research\ndescription: Research workshops.\n---\n"
+    content = b"---\nname: research\ndescription: Research events.\n---\n"
     (package / "SKILL.md").write_bytes(content)
     source = {"repository": "https://github.com/example/skills", "root": ".",
               "entrypoint": "SKILL.md", "ref": {"commit": "a" * 40}}

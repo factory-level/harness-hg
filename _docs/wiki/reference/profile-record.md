@@ -110,5 +110,4 @@ _Unknown fields are rejected (`additionalProperties: false`)._
 
 - `agent-bundle-contracts/hermesprofile/v1alpha3/examples/` — fixtures validated against this exact schema by `make schema-validate` (`invalid-*` fixtures must fail; everything else must pass).
 - `harness/hermes/identity/examples/persona-echo/` — a realistic, non-minimal `distribution.yaml` (the gitops-emitter INPUT this record is rendered from, not the record itself) and its rendered output (`harness/hermes/identity/examples/rendered/profile-echo.yaml`).
-- `maintainers/built.md` — how this record fits into the rest of the system.
 

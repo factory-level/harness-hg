@@ -16,27 +16,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="${1:?usage: public-snapshot.sh <out-dir> [<subject>]}"
 SUBJECT="${2:-chore: initial public release}"
 
-# The operator overlay. Everything else in the tree is public by the
-# public-clean gate's definition.
-OVERLAY=(
-  factory-system-reference.md
-  infra/environments/factory.yaml
-  infra/environments/factory-proactive-secrets.py
-  infra/environments/factory-inferops-prepare.py
-  infra/environments/tests/test_factory_inferops_prepare.py
-  infra/environments/factory-proactive-volumes.py
-  infra/environments/factory-proactive-topology.ts
-  infra/environments/factory-communication
-  infra/environments/factory-workshops
-  infra/Pulumi.factory.yaml
-  state/Pulumi.factory.yaml
-  _old-docs
-  _docs/adr/CHANGES.md
-  DOCS_REFACTOR.md
-  avatars
-  PRODUCT.md
-  .github/workflows/DISABLED.md
-)
+# The operator overlay (infra/scripts/public-overlay.txt). Everything else in
+# the tree is public by the public-clean gate's definition.
+mapfile -t OVERLAY < <(grep -vE '^\s*(#|$)' "$ROOT/infra/scripts/public-overlay.txt")
 
 [ -e "$OUT" ] && { echo "public-snapshot: $OUT exists - refusing to overwrite"; exit 1; }
 mkdir -p "$OUT"

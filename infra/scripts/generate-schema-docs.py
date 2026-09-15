@@ -448,10 +448,6 @@ def generate_profile() -> str:
         "rendered from, not the record itself) and its rendered output "
         "(`harness/hermes/identity/examples/rendered/profile-echo.yaml`)."
     )
-    out.append(
-        "- `maintainers/built.md` — how this record fits into the "
-        "rest of the system."
-    )
     out.append("")
     return "\n".join(out) + "\n"
 

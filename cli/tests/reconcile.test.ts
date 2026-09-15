@@ -75,23 +75,23 @@ describe("named repository watchers", () => {
     const defaultConfig = configFile();
     const sharedLock = lockFile();
     try {
-      selectInstance("inferops");
+      selectInstance("platops");
       expect(configFile()).not.toBe(defaultConfig);
       expect(lockFile()).toBe(sharedLock);
-      expect(unitName()).toBe("hermes-reconcile-inferops");
-      expect(statusName()).toBe("hermes-reconciliation-status-inferops");
+      expect(unitName()).toBe("hermes-reconcile-platops");
+      expect(statusName()).toBe("hermes-reconciliation-status-platops");
       const units = unitFiles(baseConfig(), { bun: "/bin/bun", main: "/app/main.ts" });
-      expect(units.service).toContain("reconcile run --instance inferops");
-      expect(units.timer).toContain("Unit=hermes-reconcile-inferops.service");
+      expect(units.service).toContain("reconcile run --instance platops");
+      expect(units.timer).toContain("Unit=hermes-reconcile-platops.service");
       expect(() => selectInstance("../escape")).toThrow(/instance must/);
-      expect(() => selectInstance("inferops-")).toThrow(/instance must/);
+      expect(() => selectInstance("platops-")).toThrow(/instance must/);
     } finally { selectInstance(); }
     expect(configFile()).toBe(defaultConfig);
     expect(unitName()).toBe("hermes-reconcile");
   });
 
   test("selection stays process-local and a second instance cannot take the shared flock", () => {
-    selectInstance("inferops");
+    selectInstance("platops");
     try {
       const modulePath = join(import.meta.dir, "../src/reconcile/index.ts");
       const child = `const m = await import(${JSON.stringify(modulePath)}); console.log(m.unitName());`;
@@ -747,7 +747,7 @@ describe("the team-kind watcher", () => {
     const configFile = join(WORK, "infra", "Pulumi.factory.yaml");
     writeFileSync(configFile, stringify({ config: {
       "hermes-gitops-bootstrap:gitopsGitToken": { secure: "v1:fixture:CIPHERTEXT-FIXTURE" },
-      "hermes-gitops-bootstrap:agentGitAuth": { "workshop-coordinator": { password: { secure: UNSET_SECRET_MARKER } } },
+      "hermes-gitops-bootstrap:agentGitAuth": { "event-coordinator": { password: { secure: UNSET_SECRET_MARKER } } },
     } }));
     pushPlan("infra");
     writeConfig(teamConfig());
@@ -758,7 +758,7 @@ describe("the team-kind watcher", () => {
       expect(ledger.state).toBe("failed");
       expect(calls).toHaveLength(0);
       expect(ledger.installation).toBe("factory-teams");
-      expect(ledger.blocked!.summary).toContain("hermes-gitops-bootstrap:agentGitAuth.workshop-coordinator.password");
+      expect(ledger.blocked!.summary).toContain("hermes-gitops-bootstrap:agentGitAuth.event-coordinator.password");
       expect(ledger.blocked!.summary).toContain("pulumi config set --secret --path");
       expect(JSON.stringify(ledger)).not.toContain("CIPHERTEXT-FIXTURE");
     } finally { rmSync(configFile, { force: true }); }

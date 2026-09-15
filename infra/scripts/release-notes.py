@@ -28,6 +28,18 @@ SECTIONS = [
     ("Chores", lambda k, b: k in ("chore", "refactor", "test", "build", "ci", "style", "revert")),
 ]
 PR_REF = re.compile(r"\s*\(#(\d+)\)\s*$")
+OVERLAY = [
+    line.strip()
+    for line in (Path(__file__).resolve().parent / "public-overlay.txt").read_text().splitlines()
+    if line.strip() and not line.startswith("#")
+]
+
+
+def overlay_only(paths: list[str]) -> bool:
+    """True when every path a commit touched is private overlay: not a public change."""
+    return bool(paths) and all(
+        any(p == o or p.startswith(o.rstrip("/") + "/") for o in OVERLAY) for p in paths
+    )
 
 
 def main() -> None:
@@ -36,13 +48,17 @@ def main() -> None:
     args = ap.parse_args()
     since = args.since or base_tag()[0]
     rng = [f"{since}..HEAD"] if since else []
-    log = git("log", "--reverse", "--pretty=%s%x1f%b%x1e", *rng)
+    # %x1f: subject | body | changed paths (name-only, newline separated).
+    log = git("log", "--reverse", "--name-only", "--pretty=%x1e%s%x1f%b%x1f", *rng)
     buckets: dict[str, list[str]] = {name: [] for name, _ in SECTIONS}
     for entry in log.split("\x1e"):
         if not entry.strip():
             continue
-        subject, _, body = entry.strip().partition("\x1f")
+        subject, _, rest = entry.strip().partition("\x1f")
+        body, _, files = rest.partition("\x1f")
         subject = subject.strip()
+        if overlay_only([f for f in files.split("\n") if f.strip()]):
+            continue
         m = HEADER.match(subject)
         if not m:
             continue

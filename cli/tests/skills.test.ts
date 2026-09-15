@@ -13,20 +13,20 @@ const dirs: string[] = [];
 const temp = () => { const root = fs.mkdtempSync(path.join(os.tmpdir(), "hg-skills-test-")); dirs.push(root); return root; };
 afterEach(() => { for (const root of dirs.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });
 const write = (file: string, text: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
-function fixture(agent = "workshop-coordinator") {
+function fixture(agent = "event-coordinator") {
   const root = temp(), project = path.join(root, `agents/eve/${agent}/src`), bootstrap = temp(), staging = temp();
-  scaffoldBundle({ dir: root, team: "workshops", agents: [{ name: agent, harness: "eve" }], gitopsRepoUrl: "https://github.com/example/generated" });
+  scaffoldBundle({ dir: root, team: "events", agents: [{ name: agent, harness: "eve" }], gitopsRepoUrl: "https://github.com/example/generated" });
   const manifest: SkillManifest = { apiVersion: SKILL_API, kind: "AgentSkills", skills: [{ name: "venue-research",
     source: { repository: "https://github.com/example/skills", root: "packages/plugin", entrypoint: "skills/research/SKILL.md", ref: { tag: "v1.0.0" } },
     resources: ["references"], tools: ["search"], executables: [], writes: [], scenario: "venue-research" }] };
   const manifestFile = path.join(root, `agents/eve/${agent}/harness-hg/skills.yaml`);
   write(manifestFile, dump(manifest));
-  const subject = `https://github.com/example/workshops#${agent}`, approvals = path.join(bootstrap, "skills-approved.yaml");
+  const subject = `https://github.com/example/events#${agent}`, approvals = path.join(bootstrap, "skills-approved.yaml");
   let fetches = 0, revision = "a".repeat(40), content = "venue checklist";
   const fetch: FetchSkill = async (_url, ref, checkout) => {
     fetches++;
     const sha = /^[a-f0-9]{40}$/.test(ref) ? ref : revision;
-    write(path.join(checkout, "packages/plugin/skills/research/SKILL.md"), "---\nname: venue-research\ndescription: Research workshop venues.\n---\nRead `../../references/checklist.md`.\n");
+    write(path.join(checkout, "packages/plugin/skills/research/SKILL.md"), "---\nname: venue-research\ndescription: Research event venues.\n---\nRead `../../references/checklist.md`.\n");
     write(path.join(checkout, "packages/plugin/references/checklist.md"), content);
     write(path.join(checkout, "packages/plugin/LICENSE"), "MIT");
     return sha;
@@ -152,16 +152,16 @@ describe("locked per-agent skills", () => {
   });
   test("approval policy checks source ownership, scenarios and nested undeclared skills", async () => {
     const f = fixture(), review = await f.prepare(); f.approveInstall("review", review.fingerprint);
-    const agent = { name: "workshop-coordinator", subdir: "agents/eve/workshop-coordinator/src", skills: [], tools: ["search"], environment: [], writablePaths: [] };
-    const source = { root: f.root, sha: "a".repeat(40), definition: { id: "workshops", repository: "https://github.com/example/workshops", ref: "main", private: false, agents: [agent], skillPolicy: { approvals: "skills-approved.yaml" } } };
-    const plan = { acceptance: [{ id: "venue-research", source: "workshops", agent: agent.name }] } as TeamPlan;
+    const agent = { name: "event-coordinator", subdir: "agents/eve/event-coordinator/src", skills: [], tools: ["search"], environment: [], writablePaths: [] };
+    const source = { root: f.root, sha: "a".repeat(40), definition: { id: "events", repository: "https://github.com/example/events", ref: "main", private: false, agents: [agent], skillPolicy: { approvals: "skills-approved.yaml" } } };
+    const plan = { acceptance: [{ id: "venue-research", source: "events", agent: agent.name }] } as TeamPlan;
     expect(verifySourceApproval(plan, f.bootstrap, source, agent)).toHaveLength(64);
     expect(() => verifySourceApproval({ acceptance: [] } as unknown as TeamPlan, f.bootstrap, source, agent)).toThrow("acceptance");
     const noPolicy = { ...source, definition: { ...source.definition, skillPolicy: undefined } };
     expect(() => verifySourceApproval({ acceptance: [] } as unknown as TeamPlan, f.bootstrap, noPolicy, agent)).toThrow("acceptance");
     source.definition.repository = "https://github.com/example/other";
     expect(() => verifySourceApproval(plan, f.bootstrap, source, agent)).toThrow("approval");
-    source.definition.repository = "https://github.com/example/workshops";
+    source.definition.repository = "https://github.com/example/events";
     write(path.join(f.project, "agent/skills/rogue/nested/SKILL.md"), "unapproved");
     expect(() => verifySourceApproval(plan, f.bootstrap, source, agent)).toThrow("undeclared");
   });

@@ -1480,13 +1480,13 @@ describe("contract v2 (ADR-33): extension-file dispatch + override rejection", (
 describe("parseReconcile", () => {
   test("named watchers keep independent explicit configuration", () => {
     const cfg = parseReconcile({ enabled: true, repoUrl: "social", instances: {
-      inferops: { enabled: true, repoUrl: "inferops", branch: "develop" },
+      platops: { enabled: true, repoUrl: "platops", branch: "develop" },
     } });
     expect(cfg.repoUrl).toBe("social");
-    expect(cfg.instances?.inferops?.branch).toBe("develop");
-    expect(cfg.instances?.inferops?.repoUrl).toBe("inferops");
+    expect(cfg.instances?.platops?.branch).toBe("develop");
+    expect(cfg.instances?.platops?.repoUrl).toBe("platops");
     expect(() => parseReconcile({ instances: { "../oops": {} } })).toThrow(/invalid name/);
-    expect(() => parseReconcile({ instances: { "inferops-": {} } })).toThrow(/invalid name/);
+    expect(() => parseReconcile({ instances: { "platops-": {} } })).toThrow(/invalid name/);
     expect(() => parseReconcile({ instances: { nested: { instances: {} } } })).toThrow(/without nested/);
     expect(() => parseReconcile({ instances: { missing: { enabled: true } } })).toThrow(/repoUrl is required/);
     expect(() => parseReconcile({ instances: [] })).toThrow(/must be a mapping/);

@@ -31,24 +31,12 @@ if [ "${1:-}" = "--file" ]; then
   echo "OK   no operator identifiers in $2"; exit 0
 fi
 
-# The operator overlay: files the public snapshot does not carry.
-OVERLAY=(
-  ':(exclude)factory-system-reference.md'
-  ':(exclude)infra/environments/factory.yaml'
-  ':(exclude)infra/environments/factory-proactive-secrets.py'
-  ':(exclude)infra/environments/factory-inferops-prepare.py'
-  ':(exclude)infra/environments/tests/test_factory_inferops_prepare.py'
-  ':(exclude)infra/environments/factory-proactive-volumes.py'
-  ':(exclude)infra/environments/factory-proactive-topology.ts'
-  ':(exclude)infra/environments/factory-communication'
-  ':(exclude)infra/environments/factory-workshops'
-  ':(exclude)infra/Pulumi.factory.yaml'
-  ':(exclude)state/Pulumi.factory.yaml'
-  ':(exclude)_old-docs'
-  ':(exclude)_docs/adr/CHANGES.md'
-  ':(exclude)PRODUCT.md'
-  ':(exclude).github/workflows/DISABLED.md'
-)
+# The operator overlay (public-overlay.txt): files the public snapshot does not carry.
+# Absent in the public snapshot (it names the private files), which is exactly
+# the no-exclusions posture --strict wants.
+OVERLAY=()
+[ -f "$(dirname "$0")/public-overlay.txt" ] && \
+  mapfile -t OVERLAY < <(grep -vE '^\s*(#|$)' "$(dirname "$0")/public-overlay.txt" | sed 's/^/:(exclude)/')
 # Image pins that still name the private registry until the images are
 # published to ghcr.io (tracked in the OSS-readiness epic). Each is one line.
 ALLOW=(

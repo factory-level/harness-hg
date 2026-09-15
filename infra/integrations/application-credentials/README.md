@@ -9,5 +9,5 @@ Generated resources are protected: changing/removing credentials requires an
 explicit rotation/recovery procedure, not routine reconciliation. This provider
 does not create application users or API roles. No outputs belong in Git or chat.
 
-The factory-workshops configuration uses the existing managed KMS provider. Hg
+The factory-events configuration uses the existing managed KMS provider. Hg
 runs this integration in its provision phase and captures outputs in memory.

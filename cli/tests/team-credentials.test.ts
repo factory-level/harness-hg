@@ -106,11 +106,11 @@ describe("delivery to the pod Secret ag-eve-<name>-env", () => {
       "hermes-gitops-bootstrap:slack": { enabled: true, apps: { "marketing-research": { displayName: "R" }, "marketing-manager": { displayName: "M", appId: "A0ADOPTED01" } } },
     });
     const p = plan({ credentials: { configFile: "infra/Pulumi.factory.yaml",
-      bindings: { HG_WORKSHOP_MODEL: "hermes-gitops-bootstrap:agentSecrets.workshop-coordinator.ANTHROPIC_API_KEY", HG_CRM: "hermes-gitops-bootstrap:applicationSecrets.workshop-coordinator.crm.KEY" },
+      bindings: { HG_EVENT_MODEL: "hermes-gitops-bootstrap:agentSecrets.event-coordinator.ANTHROPIC_API_KEY", HG_CRM: "hermes-gitops-bootstrap:applicationSecrets.event-coordinator.crm.KEY" },
       inputs: { HG_READS_ONLY: "hermes-gitops-bootstrap:agentSecrets.inputs-only.READ_KEY" } } });
     expect(deliveredSecretNames(p, root)).toEqual({
       "marketing-research": ["ANTHROPIC_API_KEY", "CONTENT_BRANCH", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "WORKFLOW_ENABLED"],
-      "workshop-coordinator": ["ANTHROPIC_API_KEY"],
+      "event-coordinator": ["ANTHROPIC_API_KEY"],
     });
   });
   test("with no credentials block the bootstrap stack's own config file is the baseline", () => {
@@ -168,7 +168,7 @@ describe("the completeness preflight lists every gap at once", () => {
     const root = bootstrap({
       "hermes-gitops-bootstrap:gitopsGitToken": secure(),
       "hermes-gitops-bootstrap:cloudflareApiToken": secure(UNSET_SECRET_MARKER),
-      "hermes-gitops-bootstrap:agentGitAuth": { "workshop-coordinator": { password: secure(UNSET_SECRET_MARKER) } },
+      "hermes-gitops-bootstrap:agentGitAuth": { "event-coordinator": { password: secure(UNSET_SECRET_MARKER) } },
       "hermes-gitops-bootstrap:agentSecrets": { "marketing-research": { ANTHROPIC_API_KEY: secure(), WORKFLOW_ENABLED: PLAIN } },
     }, { "infra/environments/factory.yaml": SPEC });
     const p = plan({
@@ -177,8 +177,8 @@ describe("the completeness preflight lists every gap at once", () => {
           agent("marketing-research", ["ANTHROPIC_API_KEY", "SLACK_BOT_TOKEN"], { gitAuthSecretRef: "g", environmentBindings: { ANTHROPIC_API_KEY: "HG_RESEARCH_MODEL", SLACK_BOT_TOKEN: "HG_RESEARCH_SLACK" } }),
           agent("marketing-engagement", ["ANTHROPIC_API_KEY"], { gitAuthSecretRef: "g", environmentBindings: { ANTHROPIC_API_KEY: "HG_ENGAGEMENT_MODEL" }, appValueBindings: { "postiz.auth.jwtSecret": "HG_POSTIZ_JWT" } }),
         ] },
-        { id: "workshops", repository: "https://github.com/example/workshops", ref: "main", private: true, credentialEnv: "HG_WORKSHOPS_GIT", agents: [
-          agent("workshop-coordinator", ["ANTHROPIC_API_KEY"], { gitAuthSecretRef: "g", environmentBindings: { ANTHROPIC_API_KEY: "HG_WORKSHOP_MODEL" } }),
+        { id: "events", repository: "https://github.com/example/events", ref: "main", private: true, credentialEnv: "HG_EVENTS_GIT", agents: [
+          agent("event-coordinator", ["ANTHROPIC_API_KEY"], { gitAuthSecretRef: "g", environmentBindings: { ANTHROPIC_API_KEY: "HG_EVENT_MODEL" } }),
         ] },
       ],
       credentials: { configFile: "infra/Pulumi.factory.yaml",
@@ -189,9 +189,9 @@ describe("the completeness preflight lists every gap at once", () => {
           HG_CLOUDFLARE: "hermes-gitops-bootstrap:cloudflareApiToken",                                     // placeholder
         },
         bindings: {
-          HG_WORKSHOP_MODEL: "hermes-gitops-bootstrap:agentSecrets.workshop-coordinator.ANTHROPIC_API_KEY", // no source at all
-          HG_GIT_WORKSHOP: "hermes-gitops-bootstrap:agentGitAuth.workshop-coordinator.password",             // from the shell env
-          HG_CRM_KEY: "hermes-gitops-bootstrap:applicationSecrets.workshop-coordinator.crm.KEY",             // integration output
+          HG_EVENT_MODEL: "hermes-gitops-bootstrap:agentSecrets.event-coordinator.ANTHROPIC_API_KEY", // no source at all
+          HG_GIT_EVENT: "hermes-gitops-bootstrap:agentGitAuth.event-coordinator.password",             // from the shell env
+          HG_CRM_KEY: "hermes-gitops-bootstrap:applicationSecrets.event-coordinator.crm.KEY",             // integration output
         },
         secretInputs: {
           HG_RESEARCH_SLACK: { namespace: "ag-eve-marketing-research", secret: "ag-eve-marketing-research-env", key: "SLACK_BOT_TOKEN" },
@@ -203,17 +203,17 @@ describe("the completeness preflight lists every gap at once", () => {
   }
   test("present, absent, placeholder and shell-only entries resolve to the complete list", () => {
     const { root, p } = mixed();
-    const { findings, deferred } = credentialFindings(p, root, { HG_GIT_WORKSHOP: ENV_VALUE });
+    const { findings, deferred } = credentialFindings(p, root, { HG_GIT_EVENT: ENV_VALUE });
     expect(findings.map(f => [f.kind, f.envNames.join(","), f.pulumiPath ?? "-"]).sort()).toEqual([
-      ["binding", "HG_WORKSHOP_MODEL", "hermes-gitops-bootstrap:agentSecrets.workshop-coordinator.ANTHROPIC_API_KEY"],
+      ["binding", "HG_EVENT_MODEL", "hermes-gitops-bootstrap:agentSecrets.event-coordinator.ANTHROPIC_API_KEY"],
       ["input", "HG_CLOUDFLARE", "hermes-gitops-bootstrap:cloudflareApiToken"],
       ["input", "HG_ENGAGEMENT_MODEL", "hermes-gitops-bootstrap:agentSecrets.marketing-engagement.ANTHROPIC_API_KEY"],
-      ["source-credential", "HG_WORKSHOPS_GIT", "-"],
-      ["unset", "HG_GIT_WORKSHOP", "hermes-gitops-bootstrap:agentGitAuth.workshop-coordinator.password"],
+      ["source-credential", "HG_EVENTS_GIT", "-"],
+      ["unset", "HG_GIT_EVENT", "hermes-gitops-bootstrap:agentGitAuth.event-coordinator.password"],
     ].sort());
     const binding = findings.find(f => f.kind === "binding")!;
-    expect(binding.neededBy).toContainEqual({ kind: "agent", name: "workshop-coordinator", as: "ANTHROPIC_API_KEY" });
-    expect(binding.fix.join("\n")).toContain("credentials.inputs: { HG_WORKSHOP_MODEL: hermes-gitops-bootstrap:agentSecrets.workshop-coordinator.ANTHROPIC_API_KEY }");
+    expect(binding.neededBy).toContainEqual({ kind: "agent", name: "event-coordinator", as: "ANTHROPIC_API_KEY" });
+    expect(binding.fix.join("\n")).toContain("credentials.inputs: { HG_EVENT_MODEL: hermes-gitops-bootstrap:agentSecrets.event-coordinator.ANTHROPIC_API_KEY }");
     expect(findings.find(f => f.envNames[0] === "HG_ENGAGEMENT_MODEL")!.neededBy).toContainEqual({ kind: "agent", name: "marketing-engagement", as: "ANTHROPIC_API_KEY" });
     expect(deferred.map(d => d.envName).sort()).toEqual(["HG_POSTIZ_JWT", "HG_RESEARCH_SLACK"]);
     expectNoValues({ findings, deferred });
@@ -224,12 +224,12 @@ describe("the completeness preflight lists every gap at once", () => {
       ["pulumi stack ls", { stdout: JSON.stringify([{ name: "factory" }]) }],
       ["kubectl config get-contexts", { stdout: "default\n" }],
       ["kubectl --context default", { stdout: "yes" }],
-    ]), { HG_GIT_WORKSHOP: ENV_VALUE }));
+    ]), { HG_GIT_EVENT: ENV_VALUE }));
     expect(error).toBeInstanceOf(CredentialGateError);
     expect(error.findings).toHaveLength(5);
     expect(error.message).toContain("team factory-teams");
-    expect(error.message).toMatch(/^agent workshop-coordinator$/m);
-    expect(error.message).toMatch(/^source workshops$/m);
+    expect(error.message).toMatch(/^agent event-coordinator$/m);
+    expect(error.message).toMatch(/^source events$/m);
     expect(error.message).toContain("pulumi config set --secret --path 'hermes-gitops-bootstrap:cloudflareApiToken' --stack factory --config-file Pulumi.factory.yaml");
     expect(error.message).toContain("HG_POSTIZ_JWT"); // named as checked when the run reads the cluster
     expect(error.message).toContain("(cd infra && PULUMI_BACKEND_URL=gs://example-project-factory-state pulumi config set --secret --path 'hermes-gitops-bootstrap:cloudflareApiToken'");
@@ -239,8 +239,8 @@ describe("the completeness preflight lists every gap at once", () => {
     const { root, p } = mixed();
     fs.writeFileSync(path.join(root, "infra/crm.yaml"), stringify({ config: { "hg-crm:dsn": secure(UNSET_SECRET_MARKER) } }));
     const found = unsetMarkerFindings(p, root);
-    expect(found.map(f => f.pulumiPath)).toEqual(["hermes-gitops-bootstrap:cloudflareApiToken", "hermes-gitops-bootstrap:agentGitAuth.workshop-coordinator.password", "hg-crm:dsn"]);
-    expect(found[1]!.neededBy).toContainEqual({ kind: "agent", name: "workshop-coordinator", as: "password" });
+    expect(found.map(f => f.pulumiPath)).toEqual(["hermes-gitops-bootstrap:cloudflareApiToken", "hermes-gitops-bootstrap:agentGitAuth.event-coordinator.password", "hg-crm:dsn"]);
+    expect(found[1]!.neededBy).toContainEqual({ kind: "agent", name: "event-coordinator", as: "password" });
     expect(found[2]!.fix[0]).toContain("(cd infra/integrations/crm && pulumi config set --secret --path 'hg-crm:dsn' --stack factory --config-file ../../crm.yaml)");
   });
 });
@@ -294,15 +294,15 @@ describe("classified child failures", () => {
   test("an Eve build validation error names the agent, the source file and the Expected line, without npm noise", () => {
     const stderr = [
       "npm notice", "npm notice New minor version of npm available! 10.8.2 -> 10.9.0", "",
-      "> workshop-coordinator@0.1.0 build", "> eve build",
+      "> event-coordinator@0.1.0 build", "> eve build",
       'Expected the connection export "default" from "connections/twenty.ts" to match the public eve shape. The "url" field must be a valid URL.',
       "npm notice To update run: npm install -g npm@10.9.0",
     ].join("\n");
-    const argv = ["docker", "run", "--rm", "--name", "hg-startup-workshop-coordinator-4242", "--platform", "linux/amd64", "example/eve@sha256:abc", "sh", "-c", "..."];
-    const failure = childFailure("docker", 1, stderr, { ...process.env, HG_PROJECT_SUBDIR: "agents/eve/workshop-coordinator/src" }, { argv });
+    const argv = ["docker", "run", "--rm", "--name", "hg-startup-event-coordinator-4242", "--platform", "linux/amd64", "example/eve@sha256:abc", "sh", "-c", "..."];
+    const failure = childFailure("docker", 1, stderr, { ...process.env, HG_PROJECT_SUBDIR: "agents/eve/event-coordinator/src" }, { argv });
     expect(failure.failure?.kind).toBe("eve-build-validation");
-    expect(failure.message).toContain('Eve build validation failed for agent workshop-coordinator: Expected the connection export "default" from "connections/twenty.ts" to match the public eve shape. The "url" field must be a valid URL.');
-    expect(failure.message).toContain("fix connections/twenty.ts in the persona repository's agent source (agents/eve/workshop-coordinator/src)");
+    expect(failure.message).toContain('Eve build validation failed for agent event-coordinator: Expected the connection export "default" from "connections/twenty.ts" to match the public eve shape. The "url" field must be a valid URL.');
+    expect(failure.message).toContain("fix connections/twenty.ts in the persona repository's agent source (agents/eve/event-coordinator/src)");
     expect(failure.message).not.toContain("npm notice");
     expect(failure.message).not.toContain("repair the declared input");
   });
@@ -329,7 +329,7 @@ describe("the access probe runs before any credential is judged", () => {
     secretInputs: { HG_SLACK: { namespace: "ag-eve-marketing-research", secret: "ag-eve-marketing-research-env", key: "SLACK_BOT_TOKEN" } } } });
 
   test("the backend is derived from the environment spec named by the stack, beside or under environments/", () => {
-    const root = bootstrap({}, { "infra/environments/factory-workshops/environment.yaml": SPEC, "infra/environments/factory.yaml": { ...SPEC, apiVersion: "hermes-gitops.factorylevel.dev/environment/v1alpha1" },
+    const root = bootstrap({}, { "infra/environments/factory-events/environment.yaml": SPEC, "infra/environments/factory.yaml": { ...SPEC, apiVersion: "hermes-gitops.factorylevel.dev/environment/v1alpha1" },
       "infra/environments/factory-communication/topology.yaml": { version: 1 } });
     expect(teamBackend(plan(), root, undefined)).toMatchObject({ derived: "gs://example-project-factory-state" });
     expect(teamBackend(plan(), bootstrap({}), undefined).derived).toBeUndefined();
