@@ -22,7 +22,7 @@ import { HermesMark, HermesMarkLive } from "../../primitives/HermesMark";
 import { flagOn, viewAvailable, type DataStore } from "../../stores/data";
 import type { ChromeStore } from "../../stores/chrome";
 import { tabs } from "../routes";
-import { opsModel } from "./ops";
+import { opsModel, telemetryDescription } from "./ops";
 import "./chrome.css";
 
 export function ChromeRegion({ ds, cs, view }: { ds: DataStore; cs: ChromeStore; view: string }) {
@@ -86,8 +86,8 @@ export function ChromeRegion({ ds, cs, view }: { ds: DataStore; cs: ChromeStore;
       {ds.stale ? (
         <Banner
           status="warning"
-          title="Telemetry stale"
-          description={`${ops.staleSources.length ? `${ops.staleSources.join(", ")} — ` : ""}showing the last good reading.`}
+          title={ds.pollFailed ? "Telemetry refresh failed" : "Telemetry stale"}
+          description={telemetryDescription(ds.health, ds.pollFailed === true, ops.staleSources)}
         />
       ) : null}
       {/* The live mark keeps the canvas's corner only: on a list view it

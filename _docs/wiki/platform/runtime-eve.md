@@ -42,6 +42,39 @@ hg agent inspect --profile echo      # the same manifest, no cluster
 `versions.json` holds the one Eve version. The image bakes it, the chart defaults to it, and
 a project whose lockfile resolves a different `eve` is refused before anything reaches Git.
 
+An installation may move **one agent** to a different runtime instead of moving all of them:
+give that agent `runtime: {image, eveVersion}` in the plan, naming a pair the platform
+publishes. Its own image and Eve release then govern everywhere — what the record renders, what
+the startup check builds against, and what readiness compares — while every other agent stays on
+the installation default. The installation lock records what each agent runs, so a canary is a
+reviewed commit like any other change. Promote by making the pinned version the default and
+deleting the pin; roll back by deleting the pin alone.
+
+A build refuses a runtime that disagrees with itself: if the pinned image ships a different Eve
+than the plan says it does, the agent stops before it clones anything and says so.
+
+## What an agent proves before it serves
+
+Every build writes a **receipt** on the agent's volume: the commit it built, the overlays it
+merged, the Eve release it resolved and when. The agent's startup check reads that receipt and
+compares it with what the deployment asked for. A pod that built something else never becomes
+ready, so a wrong version takes the agent out of service instead of serving quietly. A running
+agent is not re-checked — liveness and readiness ask only whether it answers.
+
+The receipt also reaches pod status through the build container's termination message, so
+`kubectl describe pod` shows what a volume actually built without any extra access. Backups keep
+it, because a restored volume the check cannot vouch for is not a restored agent.
+
+Every sync also runs a **smoke check** — a Job that verifies, from outside the pod, that the
+rollout finished, that the receipt matches what this sync deployed, and that the agent answers as
+itself and refuses anonymous callers. If it cannot prove that, the sync fails, so a bad revision
+shows up on the Application rather than only in a pod that quietly never went ready. The Job is
+removed when it succeeds; a failed one stays for you to read.
+
+What the deployment asked for is on the workload itself: `source-sha` and `eve-version` labels
+and `build-key`, `runtime-digest` and `overlay-digest` annotations, all under
+`harness-hg.factorylevel.dev/`. Desired values are labels; what was built stays in the receipt.
+
 ## Route auth
 
 The chart mints one Basic credential per instance in Secret `ag-eve-<name>-route-auth`. The
@@ -63,8 +96,11 @@ archives the shared volume. Every `hg` command resolves a bundled member to its 
 ## Workspaces
 
 A [workspace binding](../runbooks/workspace-bindings.md) reaches the pod as a checkout at
-the pinned sha. The agent finds it through `EVE_WORKSPACE_<NAME>`. A clone that fails
-degrades loudly; `hg workspace verify` reports it.
+the pinned sha, or at the tip of a branch the pod refreshes in place without restarting. The
+agent finds it through `EVE_WORKSPACE_<NAME>`. A clone that fails degrades loudly;
+`hg workspace verify` reports it. A branch-following workspace's freshness is in
+`.stamps/<name>.json` under `EVE_WORKSPACES_ROOT`, and a stale one raises `WorkspaceStale`
+([Repository mounts](../agent-team-install/repositories.md#freshness)).
 
 ## Schedules, hooks, sandbox
 

@@ -1,0 +1,94 @@
+{{- include "eve.runtimeGuard" . -}}
+{{- include "eve.computeGuard" . -}}
+{{- include "eve.workspaceGuard" . -}}
+{{- if and (include "eve.hasTrackedWorkspaces" .) .Values.alerts.workspaceStale.enabled }}
+{{- $fullname := include "eve.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+{{/*
+The receiver defaults to this namespace's monitoring contact point,
+<namespace>-alerts: the name control-plane/monitoring/chart provisions
+("monitoring.contactPoint"). The default depends on the agent's monitoring app
+being deployed in the SAME namespace; without it Grafana refuses the rule and
+nothing is delivered, so an agent without one sets alerts.contactPoint to a
+contact point that exists. Helm's Release.Namespace is never empty, so the
+resolved name always is a name: the old empty-receiver refusal is gone with it.
+*/}}
+{{- $contactPoint := default (printf "%s-alerts" $ns) .Values.alerts.contactPoint -}}
+{{/*
+WorkspaceStale (ADR 0197), provisioned the way the monitoring and fleet-dashboard
+charts provision theirs: a ConfigMap labelled grafana_alert: "1" in this
+namespace, imported by the platform Grafana's alerts sidecar, routed straight to
+a contact point through notification_settings so the root policy tree is never
+touched.
+
+The query is the stalest tracked workspace's seconds PAST its threshold:
+  time() - last successful refresh - 2 x refreshInterval
+(files/workspace-metrics.mjs reports a workspace that never refreshed as a last
+success of 0). Positive = stale. No series at all means the pod exports no
+freshness - the sidecar is down or nothing scrapes it - and that alerts too
+(noDataState: Alerting): freshness nobody can observe is not freshness.
+
+The uid is a digest of namespace and release: stable across renders (Grafana
+treats a changed uid as delete + create, which resets alert state) and inside
+Grafana's 40-character limit.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullname }}-workspace-alerts
+  namespace: {{ $ns }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    grafana_alert: "1"
+    {{- include "eve.labels" . | nindent 4 }}
+data:
+  {{ $fullname }}-workspace-alerts.yaml: |
+    apiVersion: 1
+    groups:
+      - orgId: 1
+        name: {{ printf "%s-workspaces" $fullname | quote }}
+        folder: Harness Hg
+        interval: {{ .Values.alerts.workspaceStale.evaluationInterval }}
+        rules:
+          - uid: {{ printf "hg-ws-%s" (printf "%s/%s" $ns $fullname | sha256sum | trunc 20) | quote }}
+            title: {{ printf "WorkspaceStale (%s)" $fullname | quote }}
+            condition: B
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: {{ .Values.alerts.datasourceUid | quote }}
+                model:
+                  refId: A
+                  instant: true
+                  expr: {{ printf "max(time() - hg_workspace_last_success_timestamp_seconds{namespace=%q} - 2 * hg_workspace_refresh_interval_seconds{namespace=%q})" $ns $ns | quote }}
+              - refId: B
+                relativeTimeRange:
+                  from: 0
+                  to: 0
+                datasourceUid: __expr__
+                model:
+                  refId: B
+                  type: threshold
+                  expression: A
+                  conditions:
+                    - evaluator:
+                        type: gt
+                        params:
+                          - 0
+            noDataState: Alerting
+            execErrState: Error
+            for: {{ .Values.alerts.workspaceStale.pendingFor }}
+            labels:
+              severity: warning
+              namespace: {{ $ns | quote }}
+            annotations:
+              summary: {{ printf "A tracked workspace of %s has not refreshed within twice its interval, or reports no freshness - the agent is reading stale or unobservable files; see the workspace-sync container's log and hg workspace verify" $fullname | quote }}
+            isPaused: false
+            notification_settings:
+              receiver: {{ $contactPoint | quote }}
+              group_wait: 10s
+              group_interval: 1m
+{{- end }}

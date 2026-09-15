@@ -3446,7 +3446,18 @@ _RECON_LEVEL = {
     "waiting-for-argocd": "degraded",
     "degraded": "degraded",
     "failed": "unhealthy",
+    # A team-kind watcher (v1alpha2) waiting on a human decision, an unmerged publication or
+    # in-flight convergence: not an outage, not green either.
+    "pending": "degraded",
     "authentication-required": "unhealthy",
+}
+_PENDING_REASONS = {
+    "approval-required": "a named human must approve staged skills or overlays (hg team overlays approve / hg skills approve)",
+    "merge-pending": "the generated publication awaits review or checks",
+    "authorization": "the installation plan does not authorize this stage",
+    "activation-change": "activation inputs changed; an attended `hg team apply` must flip them",
+    "acceptance-opt-in": "a write acceptance scenario is not opted in for unattended runs",
+    "in-flight": "workloads are still converging",
 }
 
 _SHA_RE = None  # compiled lazily in _recon_sha
@@ -3459,6 +3470,41 @@ def _recon_sha(value: Any) -> Optional[str]:
     if _SHA_RE is None:
         _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
     return value if isinstance(value, str) and _SHA_RE.fullmatch(value) else None
+
+
+def reconciliation_sources(configmaps, observed_at, stale_after_seconds=1800.0):
+    """Combine named watcher observations without letting one healthy source hide another."""
+    import re
+
+    rows = []
+    for cm in configmaps:
+        name = str((cm.get("metadata") or {}).get("name") or "")
+        if not re.fullmatch(r"hermes-reconciliation-status(?:-[a-z][a-z0-9-]{0,39})?", name):
+            continue
+        instance = name.removeprefix("hermes-reconciliation-status").removeprefix("-") or "default"
+        try:
+            doc = json.loads((cm.get("data") or {}).get("status.json") or "")
+        except (ValueError, TypeError):
+            doc = {"phase": "malformed"}
+        source, _ = reconciliation_source(doc, observed_at, stale_after_seconds)
+        rows.append((instance, source))
+    if not rows:
+        return reconciliation_source(None, observed_at, stale_after_seconds)
+    if len(rows) == 1 and rows[0][0] == "default":
+        return rows[0][1], {}
+    rows.sort(key=lambda row: (-_LEVEL_RANK.get(row[1]["level"], 1), row[0]))
+    worst = rows[0][1]["level"]
+    reasons = []
+    for instance, source in rows:
+        reasons.append({"message": _clip(f"{instance}: {source['summary']}", _MAX_REASON)})
+        for reason in source.get("reasons", []):
+            message = reason["message"]
+            if instance != "default":
+                message = message.replace("hg reconcile retry", f"hg reconcile retry --instance {instance}")
+            reasons.append({"message": _clip(f"{instance}: {message}", _MAX_REASON)})
+    return _source("reconciliation", "configured", worst,
+                   f"{len(rows)} repository watchers; {rows[0][0]}: {worst}", observed_at,
+                   reasons=reasons), {}
 
 
 def reconciliation_source(
@@ -3484,6 +3530,8 @@ def reconciliation_source(
     exists to prevent. The default covers a long `pulumi up` plus the
     timer interval. No per-component narrowing - reconciliation is a fact
     about the installation, not any one workload."""
+    import re
+
     if not isinstance(doc, dict):
         return _source("reconciliation", "not configured", "unknown", _UNWIRED_SUMMARY["reconciliation"]), {}
     phase = doc.get("phase")
@@ -3512,15 +3560,31 @@ def reconciliation_source(
     summary_raw = str(doc.get("summary") or "")
     if "//" in summary_raw:
         summary_raw = ""  # a URL-shaped summary survived the writer's scrub only by hand edit
+    pending = doc.get("pending") if isinstance(doc.get("pending"), dict) else {}
+    pending_reason = str(pending.get("reason") or "") if phase == "pending" else ""
+    installation = doc.get("installation") if isinstance(doc.get("installation"), str) else None
+    stage = doc.get("stage") if isinstance(doc.get("stage"), str) else None
     if phase == "failed" and desired:
         summary = f"commit {desired[:12]} rejected; running {applied[:12] if applied else 'nothing'}"
+    elif phase == "pending" and pending_reason in _PENDING_REASONS:
+        summary = f"pending ({pending_reason}){f' at {stage}' if stage else ''}; running {applied[:12] if applied else 'nothing'}"
     elif applied:
         summary = f"{phase}: at {applied[:12]}"
     else:
         summary = phase
+    if installation and re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", installation):
+        summary = f"{installation}: {summary}"
     reasons: List[Dict[str, Any]] = []
     if summary_raw:
         reasons.append({"message": _clip(summary_raw, _MAX_REASON)})
+    if pending_reason in _PENDING_REASONS:
+        reasons.append({"message": _clip(_PENDING_REASONS[pending_reason], _MAX_REASON)})
+        link = pending.get("link")
+        if isinstance(link, str) and re.fullmatch(r"https://[^\s@]+", link):
+            reasons.append({"message": _clip(f"decision: {link}", _MAX_REASON)})
+        next_at = pending.get("nextAttemptAt")
+        if isinstance(next_at, str) and _parse_ts(next_at):
+            reasons.append({"message": f"next attempt at {next_at}"})
     if bool(doc.get("retryable")):
         reasons.append({"message": "retryable: `hg reconcile retry` will re-attempt this commit"})
     return (
@@ -4199,15 +4263,11 @@ def collect_sources(
 
     def _reconciliation():
         ns = _own_namespace(cfg)
-        cm = _k8s_get_optional(f"/api/v1/namespaces/{ns}/configmaps/{RECONCILIATION_CONFIGMAP}", kube)
-        if cm is None:
-            raise _NotConfigured(_UNWIRED_SUMMARY["reconciliation"])
-        try:
-            doc = json.loads((cm.get("data") or {}).get("status.json") or "")
-        except Exception:
-            doc = {"phase": "malformed"}  # falls to the enum check -> failed
-        return reconciliation_source(
-            doc, observed_at, float(cfg.get("reconcileStaleSeconds", 1800))
+        collection = _k8s_get_optional(
+            f"/api/v1/namespaces/{ns}/configmaps?labelSelector=hermes.dev%2Foverlay-source%3Dreconciliation", kube
+        )
+        return reconciliation_sources(
+            (collection or {}).get("items", []), observed_at, float(cfg.get("reconcileStaleSeconds", 1800))
         )
 
     jobs = {

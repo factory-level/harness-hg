@@ -1,0 +1,20 @@
+{
+  "apiVersion": "hermes-gitops.factorylevel.dev/agent-skills/v1alpha1",
+  "kind": "AgentSkillsLock",
+  "manifest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "skills": [
+    {
+      "name": "research",
+      "source": {
+        "repository": "https://github.com/example/skills",
+        "root": "plugin",
+        "entrypoint": "skills/research/SKILL.md",
+        "ref": {
+          "tag": "v1.0.0"
+        }
+      },
+      "commit": "main",
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}

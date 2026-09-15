@@ -1,0 +1,26 @@
+{
+  "apiVersion": "hermes-gitops.factorylevel.dev/agent-skills/v1alpha1",
+  "kind": "AgentSkills",
+  "skills": [
+    {
+      "name": "research",
+      "source": {
+        "repository": "https://github.com/example/skills",
+        "root": "plugin",
+        "entrypoint": "skills/research/SKILL.md",
+        "ref": {
+          "tag": "v1.0.0"
+        }
+      },
+      "resources": [
+        "references"
+      ],
+      "tools": [
+        "search"
+      ],
+      "executables": [],
+      "writes": [],
+      "scenario": "research-pass"
+    }
+  ]
+}

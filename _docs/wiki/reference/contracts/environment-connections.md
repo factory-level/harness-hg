@@ -81,7 +81,7 @@ connections:
     bindings:
       - profile: echo
         match:
-          repositories: ["factory-level/hermes-gitops-plugin"]
+          repositories: ["factory-level/harness-hg"]
 ```
 
 ## See also

@@ -22,7 +22,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import * as pulumi from "@pulumi/pulumi";
-import { parseAgentGitAuth, parseAgentSecrets } from "../components/agent-secrets/index.ts";
+import { parseAgentGitAuth, parseAgentSecrets, parseApplicationSecrets } from "../components/agent-secrets/index.ts";
 import { parseRouterSecrets } from "../components/router-secrets/index.ts";
 
 // Chart versions pinned by default (overridable via stack config). The pin
@@ -227,6 +227,9 @@ export function agentInstanceName(agent: { name: string | null; subdir: string; 
  * Eve entry with a subdir whose basename is not a DNS label must set
  * agents[].name. */
 export function validateEveSecretOwnership(config: BootstrapConfig): void {
+  for (const owner of [...Object.keys(config.applicationSecrets ?? {}), ...Object.keys(config.applicationGitAuth ?? {})]) {
+    if (!config.agents.some(a => agentInstanceName(a) === owner)) throw new ConfigError("applicationSecrets owner matches no registered agents[] entry");
+  }
   const eveEntries = config.agents.filter((a) => a.runtime === "eve");
   if (eveEntries.length === 0) return;
   for (const a of eveEntries) {
@@ -281,6 +284,20 @@ export interface AgentSpec {
   // onto each app's own values). Null/empty means no per-instance
   // overrides.
   overrides: Record<string, unknown> | null;
+}
+
+export interface ApplicationGitAuth { repository: string; username: string; password: string }
+export function parseApplicationGitAuth(raw: unknown): Record<string, ApplicationGitAuth> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new ConfigError("applicationGitAuth must map owners to repository credentials");
+  const result: Record<string, ApplicationGitAuth> = {};
+  for (const [owner, value] of Object.entries(raw)) {
+    if (!/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(owner) || owner.length > 40 || ["__proto__", "constructor", "prototype"].includes(owner)) throw new ConfigError("Invalid applicationGitAuth owner");
+    const entry = value as ApplicationGitAuth;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry) || Object.keys(entry).some(k => !["repository", "username", "password"].includes(k)) || typeof entry.repository !== "string" || !/^https:\/\/[^/@\s]+\/[^\s?#]+$/.test(entry.repository) || typeof entry.username !== "string" || !entry.username || typeof entry.password !== "string" || !entry.password) throw new ConfigError("Invalid applicationGitAuth repository credentials");
+    result[owner] = entry;
+  }
+  return result;
 }
 
 export interface ArgoRepoCreds {
@@ -546,6 +563,8 @@ export interface BootstrapConfig {
   // values re-enter secret tracking via pulumi.secret() at the point of
   // use, so state/previews stay ciphertext.
   agentSecrets: Record<string, Record<string, string>>;
+  applicationGitAuth?: Record<string, ApplicationGitAuth>;
+  applicationSecrets?: Record<string, Record<string, Record<string, string>>>;
   // {secretKey: value} — EXTRA keys merged into the event router's
   // Secret (hermes-event-router-secrets) beside the per-agent
   // WEBHOOK_SECRET entries: external-input signing secrets and chatops
@@ -609,6 +628,12 @@ export interface ReconcileStackConfig {
   checks: string[];
   apply: string;
   statusNamespace?: string;
+  /** `team` (ADR 0191): watch a bootstrap repository and run `hg team resume --unattended`
+   * against `team.plan`; checks/apply are unused. Default `command`. */
+  kind?: "command" | "team";
+  team?: { plan: string };
+  /** A 0600 dotenv file the systemd unit loads for the plan's credential names. */
+  environmentFile?: string;
   kubeContext?: string;
 }
 
@@ -1816,7 +1841,7 @@ export function controlPlaneHostnames(
 // they existed only in the host-side reconcile/config.json before
 // (hand-set on factory 2026-08-05), which meant two live-behavior
 // fields no environment spec could state.
-const RECONCILE_KEYS = ["enabled", "version", "repoUrl", "branch", "intervalSeconds", "checks", "apply", "statusNamespace", "kubeContext", "instances"];
+const RECONCILE_KEYS = ["enabled", "version", "repoUrl", "branch", "intervalSeconds", "checks", "apply", "statusNamespace", "kubeContext", "instances", "kind", "team", "environmentFile"];
 
 /** Parse + validate the `reconcile` stack key. Pure — unit-tested in
  * config.test.ts. */
@@ -1860,6 +1885,27 @@ export function parseReconcile(raw: unknown): ReconcileStackConfig {
   }
   if (typeof e["kubeContext"] === "string" && e["kubeContext"] !== "") {
     out.kubeContext = e["kubeContext"];
+  }
+  if (e["kind"] !== undefined) {
+    if (e["kind"] !== "command" && e["kind"] !== "team") throw new ConfigError(`${where}.kind must be command or team`);
+    if (e["kind"] === "team") out.kind = "team";
+  }
+  if (e["team"] !== undefined) {
+    const team = e["team"] as Record<string, unknown> | null;
+    const plan = team && typeof team === "object" && !Array.isArray(team) ? team["plan"] : undefined;
+    if (typeof plan !== "string" || plan === "" || path.isAbsolute(plan) || plan.split(/[\\/]/).some((p) => p === "..")) {
+      throw new ConfigError(`${where}.team.plan must be a bootstrap-relative installation plan path`);
+    }
+    if (Object.keys(team!).some((k) => k !== "plan")) throw new ConfigError(`${where}.team accepts only plan`);
+    out.team = { plan };
+  }
+  if (out.kind === "team" && !out.team) throw new ConfigError(`${where}.kind=team needs team.plan`);
+  if (out.kind === "team" && (out.checks.length > 0 || out.apply !== "")) {
+    throw new ConfigError(`${where}.kind=team runs hg team resume --unattended; checks and apply do not apply`);
+  }
+  if (typeof e["environmentFile"] === "string" && e["environmentFile"] !== "") {
+    if (!path.isAbsolute(e["environmentFile"])) throw new ConfigError(`${where}.environmentFile must be an absolute path on the destination host`);
+    out.environmentFile = e["environmentFile"];
   }
   if (out.enabled && !out.repoUrl) {
     throw new ConfigError(
@@ -2599,6 +2645,8 @@ export function load(): BootstrapConfig {
     targetClusters,
     helmOciRegistries: parseHelmOciRegistries(cfg.getObject<unknown>("helmOciRegistries")),
     agentSecrets: parseAgentSecrets(cfg.getObject<unknown>("agentSecrets")),
+    applicationGitAuth: parseApplicationGitAuth(cfg.getObject<unknown>("applicationGitAuth")),
+    applicationSecrets: parseApplicationSecrets(cfg.getObject<unknown>("applicationSecrets")),
     routerSecrets: parseRouterSecrets(cfg.getObject<unknown>("routerSecrets")),
     agentGitAuth: parseAgentGitAuth(cfg.getObject<unknown>("agentGitAuth")),
     pluginConfig: parsePluginConfig(

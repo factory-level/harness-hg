@@ -147,6 +147,11 @@ def load_agent_declaration(
             f"gitops-emitter: {cdir}: agents/{harness}/ is not a declared harness ({', '.join(HARNESSES)})"
         )
     agent = _read(cdir / "agent.yaml", "agent") or {}
+    from .skills import verify_skills
+    try:
+        verify_skills(payload_dir, cdir, harness)
+    except (ValueError, OSError, yaml.YAMLError) as exc:
+        raise LayoutError(f"gitops-emitter: invalid agent skills: {exc}") from exc
     backup = _read(cdir / "backup.yaml", "backup")
     endpoints = _read(cdir / "endpoints.yaml", "endpoints") or {}
     apps_doc = _read(_team_dir(cdir) / "apps.yaml", "apps") or {}

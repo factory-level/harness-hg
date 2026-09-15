@@ -1,0 +1,36 @@
+apiVersion: team-status.hermes-gitops.factorylevel.dev/v1alpha1
+kind: TeamStatus
+installation: factory-teams
+observedAt: '2026-09-11T12:00:00Z'
+verdict: pass
+agents:
+- agent: manager
+  source: social
+  namespace: ag-eve-manager
+  verdict: pass
+  fields:
+    argo:
+      verdict: pass
+      running: Synced/Healthy
+    ready:
+      verdict: pass
+      running: Ready
+    source:
+      verdict: pass
+      desired: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      running: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    overlay:
+      verdict: pass
+      desired: none
+      running: none
+    eve:
+      verdict: pass
+      desired: 0.42.0
+      running: 0.42.0
+    image:
+      verdict: pass
+      desired: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      running: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    smoke:
+      verdict: pass
+      running: Succeeded

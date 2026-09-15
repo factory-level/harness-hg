@@ -194,6 +194,82 @@ class TestRenderOnly:
         assert rc == 0
         assert capsys.readouterr().out == plain
 
+    def test_app_values_accept_stdin_without_echoing_invalid_input(self, capsys, env_config, monkeypatch):
+        import io
+        monkeypatch.setattr(emit_cli.sys, "stdin", io.StringIO('{"other":{"x":"private-fixture"}}'))
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--app-values", "-", "--render-only"]) == 0
+        assert "private-fixture" not in capsys.readouterr().out
+        monkeypatch.setattr(emit_cli.sys, "stdin", io.StringIO('private-invalid-fixture'))
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--app-values", "-", "--render-only"]) == 1
+        assert "private-invalid-fixture" not in capsys.readouterr().err
+
+    def test_overlays_file_carries_operator_overlays_into_the_record(self, capsys, env_config, tmp_path):
+        doc = {
+            "overlays": [
+                {"id": "disable-bash", "kind": "tool", "mode": "remove", "target": "agent/tools/bash.ts"}
+            ],
+            "overlayTreeHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        }
+        path = tmp_path / "overlays.json"
+        path.write_text(json.dumps(doc))
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--overlays-file", str(path), "--render-only"]) == 0
+        spec = yaml.safe_load(capsys.readouterr().out)["spec"]
+        assert spec["overlays"] == doc["overlays"]
+        assert spec["overlayTreeHash"] == doc["overlayTreeHash"]
+
+    def test_overlays_file_is_refused_without_echoing_path_or_content(self, capsys, env_config, tmp_path):
+        missing = tmp_path / "private-missing-fixture.json"
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--overlays-file", str(missing), "--render-only"]) == 1
+        err = capsys.readouterr().err
+        assert "could not be read" in err and "private-missing-fixture" not in err
+        invalid = tmp_path / "invalid.json"
+        invalid.write_text("private-invalid-fixture")
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--overlays-file", str(invalid), "--render-only"]) == 1
+        err = capsys.readouterr().err
+        assert "not valid JSON" in err and "private-invalid-fixture" not in err
+        array = tmp_path / "array.json"
+        array.write_text("[1]")
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--overlays-file", str(array), "--render-only"]) == 1
+        assert "JSON object" in capsys.readouterr().err
+
+    def test_overlays_file_is_schema_checked_before_render(self, capsys, env_config, tmp_path):
+        unsafe = {
+            "overlays": [
+                {"id": "open-channel", "kind": "tool", "mode": "remove", "target": "agent/channels/eve.ts"}
+            ],
+            "overlayTreeHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        }
+        path = tmp_path / "overlays.json"
+        path.write_text(json.dumps(unsafe))
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--overlays-file", str(path), "--render-only"]) == 1
+        captured = capsys.readouterr()
+        assert "schema validation" in captured.err and captured.out == ""
+
+    def test_overlay_schema_errors_do_not_echo_credentials(self, capsys, env_config, tmp_path):
+        leaky = {
+            "overlays": [
+                {
+                    "id": "brand-voice",
+                    "kind": "skill",
+                    "mode": "append",
+                    "target": "agent/skills/brand-voice",
+                    "source": {
+                        "repository": "https://user:private-token-fixture@github.com/example/agent-skills.git",
+                        "commit": "9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c",
+                        "path": "skills/brand-voice",
+                    },
+                    "contentHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                }
+            ],
+            "overlayTreeHash": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+        }
+        path = tmp_path / "overlays.json"
+        path.write_text(json.dumps(leaky))
+        assert emit_cli.main(ARGS + ["--sha", SHA, "--overlays-file", str(path), "--render-only"]) == 1
+        captured = capsys.readouterr()
+        assert "schema validation" in captured.err
+        assert "private-token-fixture" not in captured.err + captured.out
+
 
 class TestPublish:
     def test_publish_then_rerun_is_a_no_op_then_update(self, capsys, env_config):

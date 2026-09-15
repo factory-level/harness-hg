@@ -60,7 +60,9 @@ export async function cmdWorkspace(
           (!opts.repository || r.repository === opts.repository) &&
           (!opts.profile || r.profiles.some((p) => p.profile === opts.profile)),
       )) {
-        const revisions = row.resolvedRevision.split(" | ").map((r) => r.slice(0, 12)).join(" | ");
+        const revisions = row.tracking
+          ? `tracks ${row.tracking.branch} every ${row.tracking.refreshInterval}`
+          : row.resolvedRevision.split(" | ").map((r) => r.slice(0, 12)).join(" | ");
         console.log(
           `  ${row.repository}  (${row.classification}, ${row.access}, ` +
             `${revisions}, ${row.purpose}` +
@@ -104,7 +106,11 @@ export async function cmdWorkspace(
           ? row.expected === "mounted"
             ? `${row.probe.present ? "mounted" : "ABSENT"} ${row.probe.revision?.slice(0, 12) ?? "-"}` +
               `${row.probe.writable === false ? " ro" : row.probe.writable === true ? " rw" : ""}` +
-              `${row.probe.marker !== "sha" ? ` marker=${row.probe.marker}` : ""}`
+              `${row.probe.marker !== "sha" ? ` marker=${row.probe.marker}` : ""}` +
+              (row.tracking
+                ? ` tracks ${row.tracking.branch}@${row.tracking.stampedSha?.slice(0, 12) ?? "-"}` +
+                  ` last ok ${row.tracking.lastSuccessAt ?? "never"}${row.tracking.stale ? " STALE" : ""}`
+                : "")
             : row.probe.present
               ? "VISIBLE"
               : "absent"

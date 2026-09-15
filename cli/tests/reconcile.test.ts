@@ -5,8 +5,9 @@
 // operator's real state.
 
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
+import { parse, stringify } from "yaml";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -483,5 +484,554 @@ describe("the M02 handshake", () => {
       expect(validate.errors ?? []).toEqual([]);
       expect(okRec).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The team-kind watcher (ADR 0191): `hg team resume --unattended` as the apply,
+// pending as a first-class state with capped backoff, the v1alpha2 record.
+
+const {
+  lastJsonDocument, nexusRecord: teamRecord, pendingBackoffSeconds, planBootstrapDirectory, readEnvironmentFile,
+  planLockFile, planPlatform, lockPlatformRevisions, platformDir, checkoutFile,
+} = await import("../src/reconcile/index.ts");
+type ExecResult = { exitCode: number; stdout: string; stderr: string };
+
+function teamConfig(over: Partial<Config> = {}): Config {
+  return baseConfig({ checks: [], apply: "", kind: "team", team: { plan: "teams/installation.yaml" }, ...over });
+}
+/** A valid version 2 plan (the tick loads it for the credential gate). `HG_FACTORY_GIT` is a
+ * bootstrap config input, so an empty environment satisfies it; `agentEnvironment` adds runtime
+ * names the environment must carry. */
+/** A bare platform repository whose worktrees carry a usable cli/src/main.ts, plus the two
+ * workspaces the watcher installs. Two commits, so a lock can move between revisions. */
+const PLATFORM_URL = "https://github.com/example/platform";
+function platformRepository(): { url: string; first: string; second: string } {
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const work = join(HOME, `platform-src-${stamp}`), bare = join(HOME, `platform-${stamp}.git`);
+  mkdirSync(work, { recursive: true });
+  git(work, "init", "-q", "-b", "main");
+  for (const workspace of ["cli", "infra"]) {
+    mkdirSync(join(work, workspace, "src"), { recursive: true });
+    writeFileSync(join(work, workspace, "package.json"), JSON.stringify({ name: workspace, private: true }));
+    writeFileSync(join(work, workspace, "bun.lock"), "");
+  }
+  writeFileSync(join(work, "cli", "src", "main.ts"), "// platform hg, revision one\n");
+  git(work, "add", "."); git(work, "commit", "-m", "platform one");
+  const first = git(work, "rev-parse", "HEAD");
+  writeFileSync(join(work, "cli", "src", "main.ts"), "// platform hg, revision two\n");
+  git(work, "add", "."); git(work, "commit", "-m", "platform two");
+  const second = git(work, "rev-parse", "HEAD");
+  execFileSync("git", ["clone", "--bare", "-q", work, bare], { encoding: "utf8" });
+  // The plan names the real URL; git resolves it to this bare copy for the duration of the test.
+  const config = join(HOME, `git-config-${stamp}`);
+  writeFileSync(config, `[user]\n\tname = test\n\temail = test@example.invalid\n[url "${bare}"]\n\tinsteadOf = ${PLATFORM_URL}\n`);
+  process.env["GIT_CONFIG_GLOBAL"] = config;
+  return { url: PLATFORM_URL, first, second };
+}
+
+/** The same plan, declaring a platform repository, with the lock that records its revision. */
+function pushPlanWithPlatform(repository: string | undefined, revision: string, previousRevision?: string): string {
+  pushPlan();
+  const planFile = join(WORK, "teams", "installation.yaml");
+  const plan = parse(readFileSync(planFile, "utf8"));
+  plan.lock = "teams/installation.lock.yaml";
+  if (repository) plan.platform = { repository, ref: revision };
+  writeFileSync(planFile, stringify(plan));
+  writeFileSync(join(WORK, "teams", "installation.lock.yaml"), stringify({
+    version: 2, installation: "factory-teams", planDigest: "0".repeat(64), sources: {}, agents: {},
+    platform: { ref: revision, revision, ...(previousRevision ? { previousRevision } : {}) },
+  }));
+  git(WORK, "add", "--all", ".");
+  git(WORK, "commit", "-m", `platform ${revision.slice(0, 8)} ${Date.now()}`, "--allow-empty");
+  git(WORK, "push", "origin", "HEAD:main", "--force");
+  return git(WORK, "rev-parse", "HEAD");
+}
+
+function pushPlan(bootstrapDir = "infra", agentEnvironment: string[] = []): string {
+  mkdirSync(join(WORK, "teams"), { recursive: true });
+  const plan = {
+    version: 2, id: "factory-teams", lock: "teams/installation.lock.yaml",
+    sources: [{ id: "social", repository: "https://github.com/example/social", ref: "a".repeat(40), private: false,
+      agents: [{ name: "manager", subdir: "agents/eve/manager/src", environment: agentEnvironment, tools: [], writablePaths: [], skills: [] }] }],
+    destination: { repository: "https://github.com/example/generated", branch: "main", credentialEnv: "HG_FACTORY_GIT", autoMerge: true },
+    environment: "environment.yaml", argoDestinations: ["in-cluster"],
+    runtime: { image: `example/eve@sha256:${"a".repeat(64)}`, platform: "linux/amd64" },
+    bootstrap: { directory: bootstrapDir, stack: "factory" }, kubeContext: "default", authorizations: ["publish"],
+    credentials: { configFile: `${bootstrapDir}/Pulumi.factory.yaml`, bindings: {}, inputs: { HG_FACTORY_GIT: "factory:git.token" } },
+    acceptance: [{ id: "verify", source: "social", agent: "manager", argv: ["node", "verify.mjs"], effect: "read" }],
+  };
+  writeFileSync(join(WORK, "teams", "installation.yaml"), stringify(plan));
+  rmSync(join(WORK, "teams", "installation.lock.yaml"), { force: true });
+  mkdirSync(join(WORK, bootstrapDir), { recursive: true });
+  writeFileSync(join(WORK, bootstrapDir, "package.json"), JSON.stringify({ name: "bootstrap", private: true }));
+  writeFileSync(join(WORK, bootstrapDir, "bun.lock"), "");
+  git(WORK, "add", "--all", ".");
+  git(WORK, "commit", "-m", `plan ${Date.now()}`, "--allow-empty");
+  git(WORK, "push", "origin", "HEAD:main", "--force");
+  return git(WORK, "rev-parse", "HEAD");
+}
+const resumeWith = (exitCode: number, report: Record<string, unknown>, seen: string[][] = []) =>
+  (checkout: string, planFile: string, env: Record<string, string>): ExecResult => {
+    seen.push([checkout, planFile, JSON.stringify(env)]);
+    return { exitCode, stdout: `team factory-teams: validated\n${JSON.stringify({ complete: exitCode === 0, report })}\n`, stderr: "" };
+  };
+const noInstall = (real: (argv: string[], opts?: { cwd?: string }) => ExecResult) => (argv: string[], opts?: { cwd?: string }): ExecResult =>
+  argv[1] === "install" ? { exitCode: 0, stdout: "", stderr: "" } : real(argv, opts);
+const realExecFor = async () => (await import("../src/reconcile/index.ts")).gitArgs && ((argv: string[], opts?: { cwd?: string }) => {
+  const r = Bun.spawnSync(argv, { cwd: opts?.cwd, stdout: "pipe", stderr: "pipe", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  return { exitCode: r.exitCode ?? 1, stdout: r.stdout.toString(), stderr: r.stderr.toString() };
+});
+
+describe("the team-kind watcher", () => {
+  test("a completing resume applies the commit and publishes a v1alpha2 record with the report", async () => {
+    const sha = pushPlan();
+    writeConfig(teamConfig());
+    const seen: string[][] = [], published: Record<string, unknown>[] = [];
+    const report = { installation: "factory-teams", stage: "complete",
+      sources: [{ id: "social", ref: "refs/tags/v1", desiredSha: SHA_A, appliedSha: SHA_A }],
+      agents: [{ name: "manager", source: "social", desiredSha: SHA_A, appliedSha: SHA_A, runtimeDigest: "example/eve@sha256:" + "a".repeat(64), eveVersion: "0.42.0", ready: true }] };
+    const ledger = await reconcileOnce({ manual: false, retry: false }, {
+      exec: noInstall((await realExecFor())!), teamResume: resumeWith(0, report, seen), argocdConverged: async () => true, publish: (r) => published.push(r),
+    });
+    expect(ledger.state).toBe("synced");
+    expect(ledger.appliedSha).toBe(sha);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]![1]).toBe("teams/installation.yaml");
+    const record = published.at(-1)!;
+    expect(record["apiVersion"]).toBe("nexus.hermes.ai/v1alpha2");
+    expect(record["installation"]).toBe("factory-teams");
+    expect(record["stage"]).toBe("complete");
+    expect(record["agents"]).toEqual([{ name: "manager", source: "social", desiredSha: SHA_A, appliedSha: SHA_A, runtimeDigest: "example/eve@sha256:" + "a".repeat(64), eveVersion: "0.42.0", ready: true }]);
+    expect(record["pending"]).toBeUndefined();
+  });
+
+  test("exit 75 is pending: backoff, no block, same commit retried after nextAttemptAt or on sync, cleared by a new commit", async () => {
+    const sha = pushPlan();
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    let clock = Date.parse("2026-09-10T10:00:00Z");
+    const now = () => clock;
+    const pendingReport = { installation: "factory-teams", stage: "published", pending: { reason: "merge-pending", link: "https://github.com/example/generated/pull/42" }, sources: [], agents: [] };
+    const attempts: number[] = [];
+    const resume = (code: number) => (c: string, p: string, e: Record<string, string>) => { attempts.push(code); return resumeWith(code, pendingReport)(c, p, e); };
+    const published: Record<string, unknown>[] = [];
+    const first = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resume(75), publish: (r) => published.push(r) });
+    expect(first.state).toBe("pending");
+    expect(first.blocked).toBeUndefined();
+    expect(first.appliedSha).toBeUndefined();
+    expect(first.pending).toMatchObject({ sha, attempts: 1, reason: "merge-pending", link: "https://github.com/example/generated/pull/42", stage: "published" });
+    expect(Date.parse(first.pending!.nextAttemptAt) - clock).toBe(pendingBackoffSeconds(1) * 1000);
+    expect(published.at(-1)).toMatchObject({ apiVersion: "nexus.hermes.ai/v1alpha2", phase: "pending", pending: { reason: "merge-pending", link: "https://github.com/example/generated/pull/42" } });
+    expect(first.history.at(-1)?.result).toBe("pending");
+
+    // Before nextAttemptAt a timer tick does nothing.
+    clock += 30_000;
+    const held = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resume(75) });
+    expect(attempts).toHaveLength(1);
+    expect(held.state).toBe("pending");
+    // An operator `sync` re-attempts immediately.
+    const forced = await reconcileOnce({ manual: true, retry: false }, { exec, now, teamResume: resume(75) });
+    expect(attempts).toHaveLength(2);
+    expect(forced.pending?.attempts).toBe(2);
+    expect(Date.parse(forced.pending!.nextAttemptAt) - clock).toBe(pendingBackoffSeconds(2) * 1000);
+    // After the backoff the timer re-attempts; the merge landed, so the commit completes.
+    clock += pendingBackoffSeconds(2) * 1000 + 1;
+    const done = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resume(0), argocdConverged: async () => true });
+    expect(done.state).toBe("synced");
+    expect(done.pending).toBeUndefined();
+    expect(done.appliedSha).toBe(sha);
+    // A new commit while pending clears the wait without human action.
+    pushPlan();
+    const again = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resume(75) });
+    expect(again.state).toBe("pending");
+    const next = pushPlan();
+    const cleared = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resume(0), argocdConverged: async () => true });
+    expect(cleared.appliedSha).toBe(next);
+    expect(cleared.pending).toBeUndefined();
+  });
+
+  test("backoff is capped and RECON009-style bounds hold", () => {
+    expect(pendingBackoffSeconds(1)).toBe(120);
+    expect(pendingBackoffSeconds(2)).toBe(240);
+    expect(pendingBackoffSeconds(4)).toBe(960);
+    expect(pendingBackoffSeconds(5)).toBe(1800);
+    expect(pendingBackoffSeconds(50)).toBe(1800);
+    const ledger = ledgerWith({ state: "pending", pending: { sha: SHA_A, attempts: 1, lastAt: "2026-09-10T10:00:00Z", nextAttemptAt: "2026-09-10T10:02:00Z", reason: "approval-required" } });
+    expect(shouldApply(ledger, SHA_A, { manual: false, retry: false }, Date.parse("2026-09-10T10:01:00Z")).act).toBe(false);
+    expect(shouldApply(ledger, SHA_A, { manual: false, retry: false }, Date.parse("2026-09-10T10:02:01Z")).act).toBe(true);
+    expect(shouldApply(ledger, SHA_B, { manual: false, retry: false }, Date.parse("2026-09-10T10:01:00Z")).act).toBe(true);
+  });
+
+  test("a retry that turns pending drops the block, and a pending applied commit still re-attempts after its backoff", async () => {
+    const sha = pushPlan();
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    let clock = Date.parse("2026-09-10T12:00:00Z");
+    const now = () => clock;
+    const report = { installation: "factory-teams", stage: "published", pending: { reason: "merge-pending" }, sources: [], agents: [] };
+    const failed = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resumeWith(1, report) });
+    expect(failed.blocked?.sha).toBe(sha);
+    const retried = await reconcileOnce({ manual: true, retry: true }, { exec, now, teamResume: resumeWith(75, report) });
+    expect(retried.state).toBe("pending");
+    expect(retried.blocked).toBeUndefined();
+    clock += pendingBackoffSeconds(1) * 1000 + 1;
+    const attempts: number[] = [];
+    const again = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: (c, p, e) => { attempts.push(75); return resumeWith(75, report)(c, p, e); } });
+    expect(attempts).toHaveLength(1); // the timer re-attempted on its own: no blocked gate in the way
+    expect(again.pending?.attempts).toBe(2);
+    // An operator sync of an already applied commit that turns pending is still re-attempted later.
+    clock += pendingBackoffSeconds(2) * 1000 + 1;
+    const done = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resumeWith(0, {}), argocdConverged: async () => true });
+    expect(done.appliedSha).toBe(sha);
+    const synced = await reconcileOnce({ manual: true, retry: false }, { exec, now, teamResume: resumeWith(75, report) });
+    expect(synced.state).toBe("pending");
+    clock += pendingBackoffSeconds(1) * 1000 + 1;
+    const due = await reconcileOnce({ manual: false, retry: false }, { exec, now, teamResume: resumeWith(0, {}), argocdConverged: async () => true });
+    expect(due.state).toBe("synced");
+    expect(due.pending).toBeUndefined();
+  });
+
+  test("the host log and the stored report never carry an environment-file value; a stale report is dropped", async () => {
+    pushPlan();
+    const file = join(HOME, "log-scrub.env");
+    writeFileSync(file, "HG_FACTORY_GIT=private-fixture-token\n", { mode: 0o600 });
+    writeConfig(teamConfig({ environmentFile: file }));
+    const exec = noInstall((await realExecFor())!);
+    const chatty = (c: string, p: string, env: Record<string, string>): ExecResult => ({ exitCode: 0,
+      stdout: `token ${env["HG_FACTORY_GIT"]}\n${JSON.stringify({ complete: true, report: { installation: "factory-teams", stage: "complete", sources: [{ id: "social", ref: `x-${env["HG_FACTORY_GIT"]}` }], agents: [] } })}\n`, stderr: `used ${env["HG_FACTORY_GIT"]}` });
+    const ledger = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: chatty, argocdConverged: async () => true });
+    expect(ledger.state).toBe("synced");
+    const logs = readdirSync(logsDir()).map((f) => readFileSync(join(logsDir(), f), "utf8")).join("\n");
+    expect(logs).not.toContain("private-fixture-token");
+    expect(logs).toContain("«redacted»");
+    expect(JSON.stringify(ledger.report)).not.toContain("private-fixture-token");
+    // A later run that writes no report leaves none behind.
+    pushPlan();
+    const quiet = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, undefined as any), argocdConverged: async () => true });
+    expect(quiet.report).toBeUndefined();
+  });
+
+  test("a plan whose credential names are not all present fails before any resume, naming only the names", async () => {
+    pushPlan("infra", ["POSTIZ_TOKEN"]);
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const calls: string[][] = [];
+    const saved = process.env["POSTIZ_TOKEN"]; delete process.env["POSTIZ_TOKEN"];
+    try {
+      const published: Record<string, unknown>[] = [];
+      const ledger = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}, calls), publish: (r) => published.push(r) });
+      expect(ledger.state).toBe("failed");
+      expect(calls).toHaveLength(0);
+      // Refused before anything runs, but never anonymously: the status names the installation.
+      expect(ledger.installation).toBe("factory-teams");
+      expect(published.at(-1)!["installation"]).toBe("factory-teams");
+      expect(ledger.blocked!.summary).toContain("POSTIZ_TOKEN");
+      expect(ledger.blocked!.summary).not.toContain("HG_FACTORY_GIT"); // resolved from bootstrap config inputs at run time
+      // Provided through the environment file, the tick proceeds to the resume.
+      const file = join(HOME, "creds.env");
+      writeFileSync(file, "POSTIZ_TOKEN=private-fixture-token\n", { mode: 0o600 });
+      writeConfig(teamConfig({ environmentFile: file }));
+      const ok = await reconcileOnce({ manual: true, retry: true }, { exec, teamResume: resumeWith(0, {}, calls), argocdConverged: async () => true });
+      expect(ok.state).toBe("synced");
+      expect(calls).toHaveLength(1);
+      expect(calls[0]![2]).toContain("POSTIZ_TOKEN");
+    } finally { if (saved !== undefined) process.env["POSTIZ_TOKEN"] = saved; }
+  });
+
+  // ADR 0196: Pulumi rejects a whole stack config holding the generator's unset placeholder
+  // ("validating stack config: bad value") without naming it, so the watcher names it first.
+  test("a bootstrap config still carrying an unset placeholder fails before any resume, naming the path and its fix", async () => {
+    const { UNSET_SECRET_MARKER } = await import("../src/env/stack-config.ts");
+    mkdirSync(join(WORK, "infra"), { recursive: true });
+    const configFile = join(WORK, "infra", "Pulumi.factory.yaml");
+    writeFileSync(configFile, stringify({ config: {
+      "hermes-gitops-bootstrap:gitopsGitToken": { secure: "v1:fixture:CIPHERTEXT-FIXTURE" },
+      "hermes-gitops-bootstrap:agentGitAuth": { "workshop-coordinator": { password: { secure: UNSET_SECRET_MARKER } } },
+    } }));
+    pushPlan("infra");
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const calls: string[][] = [];
+    try {
+      const ledger = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}, calls) });
+      expect(ledger.state).toBe("failed");
+      expect(calls).toHaveLength(0);
+      expect(ledger.installation).toBe("factory-teams");
+      expect(ledger.blocked!.summary).toContain("hermes-gitops-bootstrap:agentGitAuth.workshop-coordinator.password");
+      expect(ledger.blocked!.summary).toContain("pulumi config set --secret --path");
+      expect(JSON.stringify(ledger)).not.toContain("CIPHERTEXT-FIXTURE");
+    } finally { rmSync(configFile, { force: true }); }
+  });
+
+  // ADR 0193: the compiler that publishes must be the same revision as the charts Argo CD syncs,
+  // so the watcher runs `hg` from the revision the lock records - not whatever it has installed.
+  test("the locked platform revision is materialized as a worktree and IS the hg that resumes", async () => {
+    const platform = platformRepository();
+    pushPlanWithPlatform(platform.url, platform.first);
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const mains: (string | undefined)[] = [];
+    const record = (c: string, p: string, e: Record<string, string>, main?: string): ExecResult => { mains.push(main); return resumeWith(0, {})(c, p, e); };
+    const first = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: record, argocdConverged: async () => true });
+    expect(first.state).toBe("synced");
+    expect(mains[0]).toBe(join(platformDir(), platform.first, "cli", "src", "main.ts"));
+    expect(readFileSync(mains[0]!, "utf8")).toContain("revision one");
+    // A second tick at the same revision reuses the worktree rather than cloning again.
+    pushPlanWithPlatform(platform.url, platform.first);
+    await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: record, argocdConverged: async () => true });
+    expect(mains[1]).toBe(mains[0]);
+    // Moving the lock forward runs the new revision and keeps the one a rollback returns to.
+    pushPlanWithPlatform(platform.url, platform.second, platform.first);
+    const moved = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: record, argocdConverged: async () => true });
+    expect(moved.state).toBe("synced");
+    expect(readFileSync(mains[2]!, "utf8")).toContain("revision two");
+    expect(readdirSync(platformDir()).sort()).toEqual([platform.first, platform.second].sort());
+    // Once the lock stops naming the old revision, its checkout goes.
+    pushPlanWithPlatform(platform.url, platform.second);
+    await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: record, argocdConverged: async () => true });
+    expect(readdirSync(platformDir())).toEqual([platform.second]);
+  });
+
+  test("a half-built worktree is rebuilt, and every tick prunes what the lock stopped naming", async () => {
+    const platform = platformRepository();
+    pushPlanWithPlatform(platform.url, platform.first);
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}), argocdConverged: async () => true });
+    const worktree = join(platformDir(), platform.first);
+    // A run killed between checkout and install leaves the entry point but no stamp: the next
+    // tick must rebuild rather than execute a half-installed checkout.
+    rmSync(join(worktree, ".hg-platform-ready"));
+    writeFileSync(join(worktree, "cli", "src", "main.ts"), "// tampered\n");
+    pushPlanWithPlatform(platform.url, platform.first);
+    const rebuilt = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}), argocdConverged: async () => true });
+    expect(rebuilt.state).toBe("synced");
+    expect(readFileSync(join(worktree, "cli", "src", "main.ts"), "utf8")).toContain("revision one");
+    expect(readFileSync(join(worktree, ".hg-platform-ready"), "utf8").trim()).toBe(platform.first);
+    // A tick whose resume FAILS still prunes: retention follows the lock, not the outcome.
+    pushPlanWithPlatform(platform.url, platform.second);
+    const failed = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: () => ({ exitCode: 3, stdout: "", stderr: "boom" }) });
+    expect(failed.state).toBe("failed");
+    expect(readdirSync(platformDir())).toEqual([platform.second]);
+    // Dropping the platform from the plan leaves no checkout behind at all.
+    pushPlan();
+    const plain = await reconcileOnce({ manual: true, retry: true }, { exec, teamResume: resumeWith(0, {}), argocdConverged: async () => true });
+    expect(plain.state).toBe("synced");
+    expect(readdirSync(platformDir())).toEqual([]);
+  });
+
+  test("a platform revision the repository does not carry fails before any resume", async () => {
+    const platform = platformRepository();
+    pushPlanWithPlatform(platform.url, "d".repeat(40));
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const calls: string[][] = [];
+    const ledger = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}, calls) });
+    expect(ledger.state).toBe("failed");
+    expect(calls).toHaveLength(0);
+    expect(ledger.blocked!.summary).toContain("platform revision");
+    // A lock that records a revision the plan cannot attribute to a repository is also refused.
+    pushPlanWithPlatform(undefined, platform.first);
+    const orphan = await reconcileOnce({ manual: true, retry: true }, { exec, teamResume: resumeWith(0, {}, calls) });
+    expect(orphan.state).toBe("failed");
+    expect(orphan.blocked!.summary).toContain("declares no platform.repository");
+    expect(calls).toHaveLength(0);
+  });
+
+  // Found by e2e step 13 against a real cluster: a plan written as a flow mapping is the same
+  // document, and a reader that only recognizes block style refuses a perfectly valid plan.
+  test("the bootstrap directory is read from the document, whatever style it is written in", () => {
+    const dir = mkdtempSync(join(HOME, "bootstrap-"));
+    const plan = join(dir, "installation.yaml");
+    writeFileSync(plan, "version: 2\nbootstrap:\n  directory: infra\n  stack: s\n");
+    expect(planBootstrapDirectory(plan)).toBe("infra");
+    writeFileSync(plan, `version: 2\nbootstrap: {directory: infra, stack: s}\n`);
+    expect(planBootstrapDirectory(plan)).toBe("infra");
+    writeFileSync(plan, JSON.stringify({ version: 2, bootstrap: { directory: "infra", stack: "s" } }, null, 2));
+    expect(planBootstrapDirectory(plan)).toBe("infra");
+    for (const bad of [{ directory: "/etc", stack: "s" }, { directory: "../escape", stack: "s" }, { stack: "s" }]) {
+      writeFileSync(plan, JSON.stringify({ version: 2, bootstrap: bad }));
+      expect(() => planBootstrapDirectory(plan)).toThrow(/relative path inside the checkout/);
+    }
+  });
+
+  test("the plan and lock readers agree with the real parser, and refuse what escapes the checkout", () => {
+    const dir = mkdtempSync(join(HOME, "readers-"));
+    const plan = join(dir, "installation.yaml"), lock = join(dir, "installation.lock.yaml");
+    writeFileSync(plan, "version: 2\nlock: teams/installation.lock.yaml\nplatform:\n  repository: https://github.com/example/platform\n  ref: refs/tags/v1.0.0\n");
+    expect(planLockFile(plan)).toBe("teams/installation.lock.yaml");
+    expect(planPlatform(plan)).toEqual({ repository: "https://github.com/example/platform" });
+    // A flow mapping is the same document: the launcher must not read it as "no platform".
+    writeFileSync(plan, `version: 2\nlock: teams/l.yaml\nplatform: {repository: "https://github.com/example/platform", ref: refs/tags/v1, credentialEnv: PLATFORM_TOKEN}\n`);
+    expect(planPlatform(plan)).toEqual({ repository: "https://github.com/example/platform", credentialEnv: "PLATFORM_TOKEN" });
+    writeFileSync(plan, "version: 2\nplatform:\n  repository: https://token@github.com/example/platform\n  ref: refs/tags/v1\n");
+    expect(() => planPlatform(plan)).toThrow(/credential-free/);
+    writeFileSync(plan, "version: 2\n");
+    expect(planLockFile(plan)).toBeUndefined();
+    expect(planPlatform(plan)).toBeUndefined();
+    writeFileSync(lock, `version: 2\nplatform: {ref: refs/tags/v1.0.0, revision: ${"e".repeat(40)}, previousRevision: ${"f".repeat(40)}}\n`);
+    expect(lockPlatformRevisions(lock)).toEqual({ revision: "e".repeat(40), previousRevision: "f".repeat(40) });
+    writeFileSync(lock, "version: 2\nsources: {}\n");
+    expect(lockPlatformRevisions(lock)).toBeUndefined();
+    writeFileSync(lock, "version: 2\nplatform:\n  ref: main\n  revision: main\n");
+    expect(() => lockPlatformRevisions(lock)).toThrow(/full 40-character commit/);
+  });
+
+  test("a lock the checkout does not really contain never decides which code runs", () => {
+    const checkout = mkdtempSync(join(HOME, "boundary-")), outside = mkdtempSync(join(HOME, "outside-"));
+    writeFileSync(join(outside, "planted.yaml"), "version: 2\n");
+    expect(() => checkoutFile(checkout, "../outside/planted.yaml")).toThrow(/inside the checkout/);
+    expect(() => checkoutFile(checkout, "/etc/passwd")).toThrow(/inside the checkout/);
+    symlinkSync(join(outside, "planted.yaml"), join(checkout, "link.yaml"));
+    expect(() => checkoutFile(checkout, "link.yaml")).toThrow(/symbolic link/);
+    mkdirSync(join(checkout, "real"), { recursive: true });
+    symlinkSync(outside, join(checkout, "escape"));
+    expect(() => checkoutFile(checkout, "escape/planted.yaml")).toThrow(/outside the checkout/);
+    writeFileSync(join(checkout, "real", "installation.yaml"), "version: 2\n");
+    expect(checkoutFile(checkout, "real/installation.yaml")).toBe(join(realpathSync(checkout), "real", "installation.yaml"));
+  });
+
+  // Found by e2e step 13 on a real cluster: a resume that fails before writing a report left
+  // the published status with no installation, so a failed watcher was unattributable.
+  test("a failed team tick still publishes a status naming its installation", async () => {
+    pushPlan();
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const published: Record<string, unknown>[] = [];
+    const ledger = await reconcileOnce({ manual: false, retry: false }, {
+      exec, teamResume: () => ({ exitCode: 4, stdout: "", stderr: "resume exploded" }),
+      publish: (record) => published.push(record),
+    });
+    expect(ledger.state).toBe("failed");
+    expect(ledger.installation).toBe("factory-teams");
+    expect(published.at(-1)!["installation"]).toBe("factory-teams");
+    expect(published.at(-1)!["phase"]).toBe("failed");
+  });
+
+  test("a failing resume blocks like any failed apply; a missing plan fails before any resume", async () => {
+    const sha = pushPlan();
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const failed = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(1, { installation: "factory-teams", stage: "runtime-verified" }) });
+    expect(failed.state).toBe("failed");
+    expect(failed.blocked?.sha).toBe(sha);
+    expect(failed.pending).toBeUndefined();
+    writeConfig(teamConfig({ team: { plan: "teams/missing.yaml" } }));
+    const calls: string[][] = [];
+    const missing = await reconcileOnce({ manual: false, retry: true }, { exec, teamResume: resumeWith(0, {}, calls) });
+    expect(missing.state).toBe("failed");
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a re-pointed watcher starts a fresh ledger", async () => {
+    const sha = pushPlan();
+    writeConfig(teamConfig());
+    const exec = noInstall((await realExecFor())!);
+    const first = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}), argocdConverged: async () => true });
+    expect(first.appliedSha).toBe(sha);
+    writeConfig(teamConfig({ branch: "release" }));
+    const other = readLedger(teamConfig({ branch: "release" }));
+    expect(other.appliedSha).toBe(sha); // on disk it is still the old ledger...
+    const ledger = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: resumeWith(0, {}) });
+    expect(ledger.branch).toBe("release");
+    expect(ledger.appliedSha).toBeUndefined(); // ...but the tick discards it: no release branch exists yet
+    expect(["degraded", "failed", "authentication-required"]).toContain(ledger.state);
+  });
+
+  test("the unit loads a 0600 environment file and the tick refuses a world-readable one", () => {
+    const file = join(HOME, "watcher.env");
+    writeFileSync(file, "HG_FACTORY_GIT=private-fixture-token\n", { mode: 0o600 });
+    const cfg = teamConfig({ environmentFile: file });
+    const units = unitFiles(cfg, { bun: "/bin/bun", main: "/app/main.ts" });
+    expect(units.service).toContain(`EnvironmentFile=-${file}`);
+    expect(units.service).not.toContain("private-fixture-token");
+    expect(readEnvironmentFile(file)).toEqual({ HG_FACTORY_GIT: "private-fixture-token" });
+    expect(readEnvironmentFile(undefined)).toEqual({});
+    expect(readEnvironmentFile(join(HOME, "absent.env"))).toEqual({});
+    chmodSync(file, 0o644);
+    expect(() => readEnvironmentFile(file)).toThrow(/mode 644/);
+  });
+
+  test("environment-file values are scrubbed from what leaves the host", async () => {
+    pushPlan();
+    const file = join(HOME, "scrub.env");
+    writeFileSync(file, "HG_FACTORY_GIT=private-fixture-token\n", { mode: 0o600 });
+    writeConfig(teamConfig({ environmentFile: file }));
+    const exec = noInstall((await realExecFor())!);
+    const leaky = (c: string, p: string, env: Record<string, string>): ExecResult => ({ exitCode: 1, stdout: "", stderr: `auth failed for ${env["HG_FACTORY_GIT"]}` });
+    const ledger = await reconcileOnce({ manual: false, retry: false }, { exec, teamResume: leaky });
+    expect(ledger.state).toBe("failed");
+    expect(JSON.stringify(ledger)).not.toContain("private-fixture-token");
+    expect(ledger.blocked!.summary).toContain("«redacted»");
+  });
+
+  test("pure helpers: the plan's bootstrap directory and the report's JSON document", () => {
+    const plan = join(HOME, "plan.yaml");
+    writeFileSync(plan, "version: 2\nid: x\nbootstrap:\n  directory: infra   # the Pulumi program\n  stack: factory\n");
+    expect(planBootstrapDirectory(plan)).toBe("infra");
+    writeFileSync(plan, "version: 2\nbootstrap:\n  directory: ../escape\n");
+    expect(() => planBootstrapDirectory(plan)).toThrow(/relative path/);
+    writeFileSync(plan, "version: 2\nbootstrap:\n  stack: factory\n");
+    expect(() => planBootstrapDirectory(plan)).toThrow(/relative path/);
+    expect(lastJsonDocument('team x: validated\n{"complete":false,"report":{"stage":"published"}}\n')).toEqual({ complete: false, report: { stage: "published" } });
+    expect(lastJsonDocument('{"a":1}')).toEqual({ a: 1 });
+    expect(lastJsonDocument("nothing here")).toBeUndefined();
+    expect(lastJsonDocument("[1,2]")).toBeUndefined();
+  });
+
+  test("the v1alpha2 record allowlists report fields and validates against the contract", async () => {
+    const { validateDocument } = await import("../src/skills/contract.ts");
+    const schema = JSON.parse(readFileSync(join(import.meta.dir, "../../agent-bundle-contracts/runtime-overlay/v1alpha2/reconciliation-status.schema.json"), "utf8"));
+    const Ajv = (await import("ajv/dist/2020")).default;
+    const validate = new Ajv({ allErrors: true, strict: false }).compile(schema);
+    const ledger = ledgerWith({ state: "pending", desiredSha: SHA_A,
+      pending: { sha: SHA_A, attempts: 2, lastAt: "2026-09-10T10:00:00.000Z", nextAttemptAt: "2026-09-10T10:04:00.000Z", reason: "approval-required", link: "javascript:alert(1)", stage: "validated" },
+      report: { installation: "Factory Teams", stage: "validated; rm -rf", sources: [{ id: "social", ref: "refs/tags/v1", desiredSha: "short" }], agents: [{ name: "manager", source: "social", runtimeDigest: "has space here", eveVersion: "0.42.0", ready: "yes", secret: "x" }] } });
+    const record = teamRecord(ledger, "team");
+    expect(validate(record), JSON.stringify(validate.errors)).toBe(true);
+    expect(record["installation"]).toBeUndefined();
+    expect(record["stage"]).toBeUndefined();
+    expect((record["pending"] as any).link).toBeUndefined();
+    expect(record["sources"]).toEqual([{ id: "social", ref: "refs/tags/v1" }]);
+    expect(record["agents"]).toEqual([{ name: "manager", source: "social", eveVersion: "0.42.0" }]);
+    expect(validateDocument).toBeDefined();
+    // A command-kind watcher keeps the v1alpha1 shape untouched.
+    expect(teamRecord(ledgerWith({ state: "synced" }))["apiVersion"]).toBe("nexus.hermes.ai/v1alpha1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Content-only commits (ADR 0198): an apply that rolled nothing out still applies the commit,
+// and the host ledger records the reason `hg team` gave.
+
+describe("an apply that rolls nothing out", () => {
+  const reason = `source social ${"3".repeat(12)}: no agent input changed since ${"9".repeat(12)}`;
+
+  test("a command-kind apply that reports skipped.reason applies the commit with that note", async () => {
+    const sha = push(`content-only ${Date.now()}`);
+    writeConfig(baseConfig({ apply: `printf '%s\\n' '${JSON.stringify({ complete: true, skipped: { reason, at: "t" } })}'` }));
+    const ledger = await reconcileOnce({ manual: false, retry: false }, { argocdConverged: async () => true });
+    expect(ledger.state).toBe("synced");
+    expect(ledger.appliedSha).toBe(sha);
+    expect(ledger.history.at(-1)!.note).toBe(reason);
+  });
+
+  test("a team-kind resume that reports skipped.reason applies the commit with that note", async () => {
+    const sha = pushPlan();
+    writeConfig(teamConfig());
+    const ledger = await reconcileOnce({ manual: false, retry: false }, {
+      exec: noInstall((await realExecFor())!), argocdConverged: async () => true,
+      teamResume: () => ({ exitCode: 0, stdout: `${JSON.stringify({ complete: true, skipped: { reason, at: "t" }, report: { installation: "factory-teams", stage: "complete", skipped: reason } })}\n`, stderr: "" }),
+    });
+    expect(ledger.appliedSha).toBe(sha);
+    expect(ledger.history.at(-1)!.note).toBe(reason);
+  });
+
+  test("an apply that says nothing records no note", async () => {
+    push(`plain ${Date.now()}`);
+    writeConfig(baseConfig());
+    const ledger = await reconcileOnce({ manual: false, retry: false }, { argocdConverged: async () => true });
+    expect(ledger.history.at(-1)!.note).toBeUndefined();
   });
 });

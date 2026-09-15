@@ -1627,3 +1627,25 @@ describe("K7 for the agent-team layout (ADR 0178)", () => {
     expect(() => validateHermesExtensionFile(wrong, "agents[0]", "agents/eve/echo/src")).toThrow(/apiVersion/);
   });
 });
+
+describe("parseReconcile: team-kind watchers (ADR 0191)", () => {
+  test("kind team needs a bootstrap-relative plan and takes no checks or apply", () => {
+    const cfg = parseReconcile({ enabled: true, repoUrl: "bootstrap", kind: "team", team: { plan: "teams/installation.yaml" }, environmentFile: "/srv/hg/watcher.env" });
+    expect(cfg.kind).toBe("team");
+    expect(cfg.team).toEqual({ plan: "teams/installation.yaml" });
+    expect(cfg.environmentFile).toBe("/srv/hg/watcher.env");
+    expect(cfg.checks).toEqual([]);
+    expect(cfg.apply).toBe("");
+    expect(() => parseReconcile({ kind: "team" })).toThrow(/needs team.plan/);
+    expect(() => parseReconcile({ kind: "watcher" })).toThrow(/command or team/);
+    expect(() => parseReconcile({ kind: "team", team: { plan: "/abs/plan.yaml" } })).toThrow(/bootstrap-relative/);
+    expect(() => parseReconcile({ kind: "team", team: { plan: "../plan.yaml" } })).toThrow(/bootstrap-relative/);
+    expect(() => parseReconcile({ kind: "team", team: { plan: "p.yaml", extra: 1 } })).toThrow(/only plan/);
+    expect(() => parseReconcile({ kind: "team", team: { plan: "p.yaml" }, apply: "pulumi up" })).toThrow(/do not apply/);
+    expect(() => parseReconcile({ environmentFile: "relative.env" })).toThrow(/absolute path/);
+    const command = parseReconcile({ enabled: true, repoUrl: "x", kind: "command", apply: "pulumi up" });
+    expect(command.kind).toBeUndefined();
+    const instance = parseReconcile({ enabled: true, repoUrl: "x", instances: { teams: { enabled: true, repoUrl: "bootstrap", kind: "team", team: { plan: "teams/installation.yaml" } } } });
+    expect(instance.instances?.teams?.kind).toBe("team");
+  });
+});

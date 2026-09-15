@@ -89,6 +89,8 @@ import { cmdEnvfile } from "./env/envfile.ts";
 import { cmdEnvironment } from "./env/command.ts";
 import { cmdEnvNew } from "./env/new.ts";
 import { cmdBundle } from "./agent-bundle/command.ts";
+import { cmdTeam } from "./team/command.ts";
+import { cmdSkills } from "./skills/command.ts";
 import { cmdLogs, cmdPrompt } from "./local/interact.ts";
 import { cmdOnboard } from "./local/onboard.ts";
 import { cmdDown, cmdExpose, cmdOpen, cmdReset, cmdStatus } from "./local/session.ts";
@@ -405,6 +407,14 @@ import type { NexusOpts } from "./nexus/command.ts";
 
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
+  if (cmd === "--version") {
+    // The platform version is derived from the commit history, never
+    // hand-maintained (ADR-63 spirit: one source). Same script the docs
+    // badge and the release cut use.
+    const derived = Bun.spawnSync(["python3", path.join(PLATFORM_ROOT, "infra", "scripts", "derive-version.py"), "--print"]);
+    console.log(derived.exitCode === 0 ? derived.stdout.toString().trim() : "unknown (not a platform checkout)");
+    return;
+  }
   // Value-carrying flags consume their next token; boolean flags stand
   // alone; everything else is a positional arg. Derived from the command
   // manifest, so a flag missing from commands.ts fails to PARSE instead of
@@ -871,6 +881,17 @@ async function main(): Promise<void> {
       if (!proof.ok) throw new CliError(`auth prove: ${proof.summary.fail} finding(s) failed`);
       break;
     }
+    case "skills":
+      await cmdSkills(args, { dir: flagValue("--dir"), agent: flagValue("--agent"), subject: flagValue("--subject"),
+        stage: flagValue("--stage"), review: flagValue("--review"), approvals: flagValue("--approval-file"),
+        approver: flagValue("--approver"), fingerprint: flagValue("--fingerprint"), update: flagValue("--update"),
+        credentialEnv: flagValue("--credential-env"), requirements: flagValue("--requirements") });
+      break;
+    case "team":
+      await cmdTeam(json, args, { plan: flagValue("--plan"), root: flagValue("--dir"), stage: flagValue("--stage"),
+        review: flagValue("--review"), approvals: flagValue("--approval-file"), approver: flagValue("--approver"), fingerprint: flagValue("--fingerprint"),
+        unattended: flags.has("--unattended") });
+      break;
     case "bundle":
       cmdBundle(json, args, {
         agent: flagValue("--agent"),
@@ -924,15 +945,23 @@ async function main(): Promise<void> {
           process.exit(2);
         }
         const checksFlag = flagValue("--checks");
+        const kindFlag = flagValue("--kind") ?? existing?.kind ?? "command";
+        if (kindFlag !== "command" && kindFlag !== "team") throw new CliError("--kind must be command or team");
+        const teamPlan = flagValue("--team-plan") ?? existing?.team?.plan;
         const cfg = {
           version: flagValue("--version") ?? existing?.version ?? "unpinned",
           repoUrl: repoUrl ?? existing!.repoUrl,
           branch: flagValue("--branch") ?? existing?.branch ?? "main",
           intervalSeconds: Number(flagValue("--interval") ?? existing?.intervalSeconds ?? 60),
-          checks: checksFlag !== undefined
+          // A team-kind watcher runs `hg team resume --unattended`; it has no checks or apply.
+          checks: kindFlag === "team" ? [] : checksFlag !== undefined
             ? checksFlag.split(",").map((c) => c.trim()).filter(Boolean)
             : existing?.checks ?? ["hg topology doctor --dir .", "pulumi preview --non-interactive --cwd infra"],
-          apply: flagValue("--apply") ?? existing?.apply ?? "pulumi up --yes --non-interactive --cwd infra",
+          apply: kindFlag === "team" ? "" : flagValue("--apply") ?? existing?.apply ?? "pulumi up --yes --non-interactive --cwd infra",
+          ...(kindFlag === "team" ? { kind: "team" as const, team: { plan: teamPlan ?? "" } } : {}),
+          ...(flagValue("--environment-file") ?? existing?.environmentFile
+            ? { environmentFile: flagValue("--environment-file") ?? existing?.environmentFile }
+            : {}),
           hermesHome: flagValue("--harness-home") ?? existing?.hermesHome ?? path.join(os.homedir(), ".hermes"),
           argocdTimeoutSec: Number(flagValue("--timeout") ?? existing?.argocdTimeoutSec ?? 900),
           ...(flagValue("--kube-context") ?? existing?.kubeContext
@@ -989,6 +1018,7 @@ async function main(): Promise<void> {
           });
         }
         if (json) console.log(JSON.stringify(ledger, null, 2));
+        // Pending exits 0: the timer's next tick re-attempts on its own schedule.
         if (ledger.state === "failed" || ledger.state === "authentication-required") process.exit(1);
       } else if (sub === "status") {
         // Read-only: no lock, no mutation, safe while a run is in flight.
@@ -997,6 +1027,7 @@ async function main(): Promise<void> {
           console.log(JSON.stringify(ledger, null, 2));
         } else {
           console.log(`state:     ${ledger.state}`);
+          if (ledger.pending) console.log(`pending:   ${ledger.pending.reason}${ledger.pending.stage ? ` at ${ledger.pending.stage}` : ""}${ledger.pending.link ? ` (${ledger.pending.link})` : ""}; next attempt ${ledger.pending.nextAttemptAt}`);
           console.log(`desired:   ${ledger.desiredSha ?? "-"}`);
           console.log(`attempted: ${ledger.attemptedSha ?? "-"}`);
           console.log(`applied:   ${ledger.appliedSha ?? "-"}${ledger.appliedAt ? ` at ${ledger.appliedAt}` : ""}`);
@@ -1005,6 +1036,7 @@ async function main(): Promise<void> {
           }
           const last = ledger.history[ledger.history.length - 1];
           if (last) console.log(`last run:  ${last.result} (${last.trigger}) at ${last.finishedAt}`);
+          if (last?.note) console.log(`note:      ${last.note}`);
         }
       } else {
         console.error("usage: hermes-gitops reconcile install|run|status|sync|retry|prove|uninstall [--json]");
@@ -1245,5 +1277,6 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   console.error(`hermes-gitops: ${err instanceof CliError ? err.message : err}`);
-  process.exit(1);
+  // 75 is "pending, try again later" (ADR 0191); everything else is a failure.
+  process.exit(err instanceof CliError && err.exitCode ? err.exitCode : 1);
 });

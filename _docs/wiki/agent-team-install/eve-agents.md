@@ -61,8 +61,8 @@ deployment:
 | `gitAuthSecretRef` (`agent.yaml`) | The credential for a private source |
 
 A team **bundle** (`bundles.yaml`) puts several Eve agents in one pod. A **workspace binding**
-(`workspaces.yaml`) gives an agent a checkout at a pinned commit, reachable through
-`EVE_WORKSPACE_<NAME>`.
+(`workspaces.yaml`) gives an agent a checkout at a pinned commit, or following a branch that a
+standalone agent's pod refreshes in place, reachable through `EVE_WORKSPACE_<NAME>`.
 
 ## Route auth
 

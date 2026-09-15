@@ -17,9 +17,12 @@ export function opsModel(data: NexusData | null, health: HealthOverlay | null, s
   const alerts = data?.alerts;
   const firing: FiringAlert[] = (alerts?.firing ?? []).filter((a) => a.severity !== "none");
   const staleSources = Object.entries(health?.sources ?? {})
-    .filter(([, s]) => s.status !== "ok")
+    .filter(([, s]) => s.status === "stale")
     .map(([k]) => k);
-  const sourcesEmpty = health !== null && Object.keys(health.sources ?? {}).length === 0;
+  const unavailableSources = Object.entries(health?.sources ?? {})
+    .filter(([, s]) => !["ok", "configured", "stale"].includes(s.status))
+    .map(([k]) => k);
+  const sourcesEmpty = health === null || Object.keys(health.sources ?? {}).length === 0;
   const pipelineDown = alerts ? alerts.configured && alerts.reachable === false : false;
 
   if (firing.length > 0) {
@@ -31,7 +34,7 @@ export function opsModel(data: NexusData | null, health: HealthOverlay | null, s
       staleSources,
     };
   }
-  if (stale || staleSources.length > 0 || sourcesEmpty || pipelineDown || !alerts?.configured) {
+  if (stale || staleSources.length > 0 || unavailableSources.length > 0 || sourcesEmpty || pipelineDown || !alerts?.configured) {
     return {
       level: "unknown",
       count: 0,
@@ -42,9 +45,16 @@ export function opsModel(data: NexusData | null, health: HealthOverlay | null, s
           ? "no telemetry sources answered"
           : !alerts?.configured
             ? "alerting not configured"
-            : `telemetry stale: ${staleSources.join(", ") || "health poll failing"}`,
+            : unavailableSources.length > 0 && !stale && staleSources.length === 0
+              ? `telemetry unavailable: ${unavailableSources.join(", ")}`
+              : `telemetry stale: ${staleSources.join(", ") || "health poll failing"}`,
       staleSources,
     };
   }
   return { level: "quiet", count: 0, hasControlPlane: false, reason: "nothing needs attention", staleSources };
+}
+
+export function telemetryDescription(health: HealthOverlay | null, pollFailed: boolean, staleSources: string[]): string {
+  if (pollFailed) return health ? "Showing the last successfully fetched readings." : "No health readings have been fetched yet.";
+  return `${staleSources.join(", ") || "A telemetry source"} — the latest report is out of date.`;
 }

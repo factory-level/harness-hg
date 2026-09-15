@@ -14,7 +14,7 @@ auto-merge), so the GitOps repository cannot tell the two runtimes apart.
     python -m gitops_emitter.emit_cli --runtime eve \\
         --agent-dir <checkout>/agents/echo --name echo \\
         --source https://github.com/org/agents.git --ref main --sha <40hex> \\
-        [--subdir agents/echo] [--event install|update] [--render-only]
+        [--subdir agents/echo] [--overlays-file <json>] [--event install|update] [--render-only]
 
 Configuration comes from ``emitter.load_plugin_config`` - on an Eve-only
 host that means ``HERMES_GITOPS_CONFIG_SOURCE=env`` plus the
@@ -70,6 +70,7 @@ def render_eve_record(
     expect_eve_version: Optional[str] = None,
     app_values: Optional[dict] = None,
     contract_dir: Optional[str] = None,
+    overlays: Optional[dict] = None,
 ) -> tuple[str, str, dict]:
     """The pure half: (name, yaml_text, record). Shared by ``--render-only``
     and the publish path so the two can never diverge."""
@@ -97,6 +98,7 @@ def render_eve_record(
         subdir=subdir,
         extension=extension,
         app_values=app_values,
+        overlays=overlays,
     )
     validate_eve_record(record)
     return name, render_yaml(record), record
@@ -123,6 +125,36 @@ def parse_app_values(raw: Optional[str]) -> Optional[dict]:
     return doc
 
 
+def parse_overlays_file(path: Optional[str]) -> Optional[dict]:
+    """``--overlays-file`` names the operator-overlay document the team
+    compiler writes for one agent (ADR 0194): ``{"overlays": [...],
+    "overlayTreeHash": "<sha256>"}``, already fetched, hashed and approved.
+    It travels as a file because stdin belongs to ``--app-values``. Anything
+    but a readable JSON object is refused before the record is built; neither
+    the path (a scratch directory) nor the content (a private repository URL)
+    is echoed."""
+    if not path:
+        return None
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise GitopsEmitterError(
+            f"gitops-emitter: --overlays-file could not be read ({type(exc).__name__})"
+        ) from exc
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise GitopsEmitterError(
+            f"gitops-emitter: --overlays-file is not valid JSON ({exc.msg} at line {exc.lineno})"
+        ) from exc
+    if not isinstance(doc, dict):
+        raise GitopsEmitterError(
+            "gitops-emitter: --overlays-file must be a JSON object "
+            "{\"overlays\": [...], \"overlayTreeHash\": \"<sha256>\"}"
+        )
+    return doc
+
+
 def emit_eve(args: argparse.Namespace) -> Optional[str]:
     agent_dir = Path(args.agent_dir)
     name, yaml_text, record = render_eve_record(
@@ -133,8 +165,9 @@ def emit_eve(args: argparse.Namespace) -> Optional[str]:
         ref=args.ref,
         subdir=args.subdir,
         expect_eve_version=args.expect_eve_version,
-        app_values=parse_app_values(args.app_values),
+        app_values=parse_app_values(sys.stdin.read() if args.app_values == "-" else args.app_values),
         contract_dir=args.contract_dir,
+        overlays=parse_overlays_file(args.overlays_file),
     )
     if args.render_only:
         sys.stdout.write(yaml_text)
@@ -213,9 +246,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--event", default="install", choices=["install", "update"])
     p.add_argument(
         "--app-values",
-        help="JSON object {<appName>: {<values fragment>}} deep-merged onto each declared "
+        help="JSON object {<appName>: {<values fragment>}} (or - for stdin) deep-merged onto each declared "
         "app's author values (the per-instance override; every valuesRequired path must "
         "resolve after the merge)",
+    )
+    p.add_argument(
+        "--overlays-file",
+        help="JSON file {overlays: [...], overlayTreeHash} - the approved operator overlays the team "
+        "compiler resolved for this agent (ADR 0194), carried into spec.overlays in application "
+        "order; omit when the agent has none",
     )
     p.add_argument(
         "--expect-eve-version",

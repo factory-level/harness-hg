@@ -18,10 +18,67 @@ day-0 from stack-init onward; only the root of trust stays manual
 
 ## Surface discipline
 
+`hg skills prepare|approve|install|check` implements source-owned locked skill packages
+and bootstrap-owned human review (ADR 0186). Preparation never executes upstream code;
+installation requires approval of exact content and capabilities; checks are offline.
+
+Team installation recovery must retain existing agent data. Adding the first workspace claim
+may orphan only the exact existing StatefulSet after comparing desired and live immutable
+fields, verifying a healthy pod and bound data claim, and recording a preconditioned operation.
+Argo owns recreation. Other immutable changes require a separately designed migration.
+If an older-source sync blocks that verified migration, termination must be preconditioned on
+the exact Application and running operation before the current-source sync can be recovered.
+After controller recreation, the recorded adopted pod may be gracefully replaced only after
+verifying the accepted migration receipt, desired manifest, retained data UID and PVC ownership.
+
+Team installation has two user-facing phases: configure team source with
+`hg-team-onboard`, then configure bootstrap and apply with `hg-team-bootstrap`.
+`hg team plan|apply|status|resume` owns the persisted installation and stage evidence
+(ADR 0185). The skills never invent customer-specific deployment helpers or manually
+commit generated GitOps repairs. Existing loops are supporting operations within these
+phases, not additional onboarding steps.
+
+Team installation names a credential problem before it reads, provisions or publishes anything
+(ADR 0196). `hg team plan|apply|resume|compile` first proves access: the stack's state backend,
+derived from its environment spec rather than the operator's last login; the stack itself;
+Google credentials; and the kube context with its permission to read the Secrets the plan names.
+Only then does it list every missing value at once: unfilled input paths, unset placeholders
+and credentials with no source. After rendering, every required `envRequires` entry must reach
+the agent's pod Secret. Each refusal names the installation, agent, variable, path and fix, and
+never a value. `hg env apply` writes nothing while any secret is unset.
+
 `hg reconcile` supports optional `--instance <name>` selection for independent repository
 watchers on one host (ADR 0182). Each watcher owns its checkout, state, timer, and status;
 all watchers in one Harness Hg home serialize applies through the existing lock. Omitting
 the flag retains the existing single-repository behavior.
+
+Upgrades are bootstrap commits (ADR 0190, ADR 0191, ADR 0193). A version 2 installation plan
+names source and platform tags or commits, per-agent runtime pins and operator overlays;
+`hg team compile` resolves them into the installation lock, committed beside the plan. A
+reconciler instance of kind `team` watches the bootstrap repository and runs
+`hg team resume --unattended`, which exits `0` when complete, `75` when a human decision or
+merge is pending and `1` on failure. Unattended runs never approve content, never merge a
+publication whose destination disables auto-merge and never change activation inputs.
+`hg gitops doctor` reports a destination whose platform-sourced Applications disagree on
+revision.
+
+A team source commit that changes nothing its agents are built from rolls nothing out
+(ADR 0198). Per source, `hg team` digests the files the pod build and Argo CD fetch by commit:
+each agent subdirectory, the repository files its code reaches, and the declarations and
+charts. The digest also covers the plan and the platform identity. When the digest matches the
+one recorded for the deployed commit, that commit stays the one the workload declares.
+`hg team resume` then records the new commit as applied, with its reason. It does not
+provision, publish, roll pods or run acceptance. Any input change, and any change the compiler
+would render differently, runs in full. So does an input that cannot be digested.
+
+`hg team overlays prepare|approve` stages an installation's operator overlays and records human
+approval of their entries, content hashes and skill capabilities (ADR 0194). Team planning
+refuses unapproved or changed overlay content and preflights the merged agent tree.
+
+`hg team status` observes the live cluster. Per agent it shows Argo CD state, readiness, desired
+against built source commit, overlay digest, Eve version and image, the last smoke check and the
+last watcher run. It never recovers and never takes the installation lock. `--prove` adds the
+live runtime version and configuration drift proofs; unknown is never a pass (ADR 0195).
 
 - One meaning per verb, everywhere it appears — `prove`, `emit`, `doctor`, `restore` each
   mean exactly one thing, enforced by lint from the command manifest

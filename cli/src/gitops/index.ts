@@ -193,15 +193,24 @@ import { renderTree, writeTree } from "../topology/emit.ts";
 import { PLATFORM_ROOT } from "../lib.ts";
 
 /** cluster-values' appProject.sourceRepos with every oci:// entry doubled by
- * its scheme-less twin (#187) - sorted, deduplicated, empty when absent. */
+ * its scheme-less twin (#187), plus platformRepo.url used by preserved local
+ * apps. Sorted, deduplicated, empty when both declarations are absent. */
 export function operatorSourceRepos(repo: string): string[] {
   const file = path.join(repo, "bootstrap", "values", "cluster-values.yaml");
   if (!fs.existsSync(file)) return [];
-  const doc = parseYaml(fs.readFileSync(file, "utf8")) as { appProject?: { sourceRepos?: unknown } } | null;
-  const repos = doc?.appProject?.sourceRepos;
-  if (!Array.isArray(repos)) return [];
+  const doc = parseYaml(fs.readFileSync(file, "utf8")) as { appProject?: { sourceRepos?: unknown }; platformRepo?: { url?: unknown } } | null;
+  const repos = doc?.appProject?.sourceRepos ?? [];
+  if (!Array.isArray(repos)) throw new Error("cluster-values appProject.sourceRepos must be a list of repository URLs");
+  const declared = [...repos];
+  if (doc?.platformRepo != null) {
+    const url = doc.platformRepo.url;
+    if (typeof url !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._~:/@%+-]*$/.test(url)) {
+      throw new Error("cluster-values platformRepo.url must be a repository URL");
+    }
+    declared.push(url);
+  }
   const out = new Set<string>();
-  for (const r of repos) {
+  for (const r of declared) {
     // URL-shaped only, so a rendered item can never change the YAML node it
     // lands in (mirrors scaffold.py's _REPO_URL_RE).
     if (typeof r !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._~:/@%+-]*$/.test(r)) {
@@ -395,6 +404,7 @@ export function gitopsUpgrade(repo: string): UpgradeResult {
     // The environment's half of the AppProject allowlist, from cluster-values
     // (mirrors scaffold.py's operator_source_repos: oci:// entries twinned).
     "__OPERATOR_SOURCE_REPOS__\n": operatorSourceRepos(repo)
+      .filter((r) => r !== subs.gitopsRepoUrl && r !== subs.hermesGitopsRepoUrl)
       .map((r) => `    - ${r}\n`)
       .join(""),
   };

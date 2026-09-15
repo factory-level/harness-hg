@@ -44,9 +44,11 @@ hg test
   operator, Prometheus and Grafana.
 - `hg test` proves each agent registered and actually runs.
 
-Nothing on the internet is touched beyond public container images and the control plane's
-own Helm charts. Git remotes are local `file://` repositories. The demo's one API key is a
-placeholder from its test config.
+The first `hg up` takes 20 to 30 minutes: it builds the Eve runtime image, pulls the
+control plane's public images and charts, and each agent's boot runs `npm ci` for its own
+source. Git remotes are local `file://` repositories, so nothing you write leaves the machine.
+The demo's one API key is a placeholder from its test config: `hg test` runs every tier
+that does not need a model and reports the ones that do as *skipped*, never as passed.
 
 `hg validate` is the cluster-free contract gate. Run it any time you want every failure at
 once, with the file and field to fix.
@@ -91,9 +93,16 @@ Nexus UI runs in the local loop; `hg open` prints its URL. The hosted [demo](htt
 ## Author your own
 
 To start a repo of your own instead of the demo, scaffold one with
-[Agent Team Repo](agent-team-repo.md), then point this same loop at it: `hg onboard
-<your-repo>`, `hg up`, `hg test`, `hg dev`.. The demo is the scaffold's own
-layout, so what you learn here is what you will write.
+[Agent Team Repo](agent-team-repo.md), then point this same loop at it:
+
+```bash
+hg onboard <your-repo>
+hg up
+hg test
+hg dev
+```
+
+The demo is the scaffold's own layout, so what you learn here is what you will write.
 
 To run a second loop beside this one, set `HG_CLUSTER_NAME=<name>` and a fresh
 `HERMES_GITOPS_HOME`; every `hg` verb, and `hg reset --nuclear`, then acts on that cluster only.

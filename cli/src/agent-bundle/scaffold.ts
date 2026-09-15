@@ -112,7 +112,7 @@ spec:
           "One npm project = one Eve agent; the package name is the agent's identity and must equal the agents/eve/<name> directory (a DNS-1123 label, at most 40 characters).",
         engines: { node: ">=24" },
         scripts: { dev: "eve dev", build: "eve build", start: "eve start --host 0.0.0.0" },
-        dependencies: { "@ai-sdk/anthropic": "^4.0.40", eve: eveVersion },
+        dependencies: { "@ai-sdk/anthropic": "^4.0.40", eve: eveVersion, "just-bash": versions.runtimes.eve.sandboxDependency },
       },
       null,
       2,

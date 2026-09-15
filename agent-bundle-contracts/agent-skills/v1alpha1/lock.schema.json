@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/agent-skills/v1alpha1/lock.schema.json",
+  "title": "AgentSkillsLock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "manifest",
+    "skills"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "hermes-gitops.factorylevel.dev/agent-skills/v1alpha1"
+    },
+    "kind": {
+      "const": "AgentSkillsLock"
+    },
+    "manifest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "source",
+          "commit",
+          "hash"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,62}$"
+          },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "repository",
+              "root",
+              "entrypoint",
+              "ref"
+            ],
+            "properties": {
+              "repository": {
+                "type": "string",
+                "pattern": "^(https://[^/@\\s]+/[^\\s?#]+|git@[^:\\s]+:[^\\s]+)$"
+              },
+              "root": {
+                "type": "string",
+                "minLength": 1
+              },
+              "entrypoint": {
+                "type": "string",
+                "minLength": 1
+              },
+              "ref": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "tag"
+                    ],
+                    "properties": {
+                      "tag": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "commit"
+                    ],
+                    "properties": {
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{40}$"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "commit": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{40}$"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  }
+}

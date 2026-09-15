@@ -28,6 +28,7 @@ environment. A tunnel with no access policy is a public URL.
 
 | Runbook | For |
 |---|---|
+| [Upgrade or roll back](upgrade.md) | moving a platform, a team or one agent's runtime, and moving it back |
 | [Recovery](recovery.md) | rebuilding an environment on a clean server from a backup |
 | [The destructive test](destructive-test.md) | proving recovery works by destroying something |
 | [Workspace bindings](workspace-bindings.md) | attaching, migrating and rotating repository mounts |

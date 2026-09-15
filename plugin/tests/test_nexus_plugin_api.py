@@ -592,6 +592,18 @@ class TestAdapters:
         assert per == {}  # installation-scoped, never narrowed
         return src
 
+    def test_named_reconciliation_cannot_hide_a_failed_or_stale_source(self, api):
+        def watcher(name, phase, at="2026-07-31T11:59:00Z"):
+            return {"metadata": {"name": "hermes-reconciliation-status" + ("-" + name if name else "")},
+                    "data": {"status.json": json.dumps({"phase": phase, "observedAt": at, "retryable": True})}}
+        src, per = api.reconciliation_sources([watcher("", "synced"), watcher("inferops", "failed")], "2026-07-31T12:00:00Z")
+        assert per == {}
+        assert src["level"] == "unhealthy"
+        assert "inferops" in src["summary"]
+        assert any("--instance inferops" in reason["message"] for reason in src["reasons"])
+        src, _ = api.reconciliation_sources([watcher("", "synced"), watcher("inferops", "synced", "2026-07-30T12:00:00Z")], "2026-07-31T12:00:00Z")
+        assert src["level"] == "unknown"
+
     def test_reconciliation_absent_is_not_configured(self, api):
         src = self._recon(api, None)
         assert src["status"] == "not configured"
@@ -609,6 +621,30 @@ class TestAdapters:
             src = self._recon(api, {"phase": phase, "observedAt": "2026-07-31T11:59:00Z"})
             assert src["level"] == expected, phase
             assert src["status"] == "configured"
+
+    def test_a_pending_team_watcher_is_degraded_and_says_what_it_waits_for(self, api):
+        # A v1alpha2 record from a team-kind watcher (ADR 0191): stopped on a human decision.
+        src = self._recon(api, {
+            "apiVersion": "nexus.hermes.ai/v1alpha2", "phase": "pending", "observedAt": "2026-07-31T11:59:00Z",
+            "installation": "factory-teams", "stage": "published",
+            "pending": {"reason": "merge-pending", "link": "https://github.com/example/generated/pull/42",
+                        "since": "2026-07-31T11:58:00Z", "nextAttemptAt": "2026-07-31T12:02:00Z"},
+            "appliedSha": "4f2c1ab9d7e3c5b1a0f8e6d4c2b0a9f8e7d6c5b4",
+        })
+        assert src["level"] == "degraded"
+        assert src["status"] == "configured"
+        assert src["summary"] == "factory-teams: pending (merge-pending) at published; running 4f2c1ab9d7e3"
+        messages = [r["message"] for r in src["reasons"]]
+        assert any("awaits review" in m for m in messages)
+        assert "decision: https://github.com/example/generated/pull/42" in messages
+        assert "next attempt at 2026-07-31T12:02:00Z" in messages
+        # A hand-edited link with userinfo or a plain http scheme is dropped, never rendered.
+        src = self._recon(api, {"phase": "pending", "observedAt": "2026-07-31T11:59:00Z",
+                                "pending": {"reason": "merge-pending", "link": "http://user:token@example.invalid/pr/1"}})
+        assert not any("example.invalid" in r["message"] for r in src["reasons"])
+        # An unknown pending reason reads as plain pending, without inventing a cause.
+        src = self._recon(api, {"phase": "pending", "observedAt": "2026-07-31T11:59:00Z", "pending": {"reason": "made-up"}})
+        assert src["summary"] == "pending"
 
     def test_a_dead_timer_reads_unknown_not_its_last_success(self, api):
         # The reconciler last reported synced two hours ago and has been

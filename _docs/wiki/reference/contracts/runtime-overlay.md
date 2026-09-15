@@ -2,7 +2,7 @@
      Sources:
        agent-bundle-contracts/runtime-overlay/v1alpha2/overlay.schema.json
        agent-bundle-contracts/runtime-overlay/v1alpha3/platform-backup-status.schema.json
-       agent-bundle-contracts/runtime-overlay/v1alpha1/reconciliation-status.schema.json
+       agent-bundle-contracts/runtime-overlay/v1alpha2/reconciliation-status.schema.json
      Regenerate with `make docs` (infra/scripts/generate-schema-docs.py);
      `make docs-drift` (part of `make test`) fails on stale. -->
 
@@ -113,22 +113,22 @@ _Unknown fields are rejected (`additionalProperties: false`)._
 | `namespace` | string | no | maxLength: 120 | — |
 | `reason` | string | **yes** | maxLength: 400 | — |
 
-## `reconciliation-status` (v1alpha1)
+## `reconciliation-status` (v1alpha2)
 
-Schema: `agent-bundle-contracts/runtime-overlay/v1alpha1/reconciliation-status.schema.json` — **Destination-server reconciliation status (ConfigMap hermes-reconciliation-status)**
+Schema: `agent-bundle-contracts/runtime-overlay/v1alpha2/reconciliation-status.schema.json` — **Destination-server reconciliation status v1alpha2 (ConfigMap hermes-reconciliation-status[-<instance>])**
 
 ### (root)
 
-The handshake between the host reconciler and the in-cluster control plane. `hg reconcile` runs on the destination Linux server; Nexus runs in a pod on a PVC - they share no filesystem, so the reconciler publishes this document as `status.json` in a ConfigMap in the control-plane namespace and Nexus reads it with the same Kubernetes transport the Argo adapter uses. It deliberately does NOT travel through Git: the deployment repository is the reconciler's own input, so committing status there would change the desired SHA and re-trigger reconciliation forever. Every string is written already-scrubbed by the reconciler and re-bounded by the reader, because a ConfigMap is hand-editable.
+The handshake between the host reconciler and the in-cluster control plane. `hg reconcile` runs on the destination Linux server; Nexus runs in a pod on a PVC - they share no filesystem, so the reconciler publishes this document as `status.json` in a ConfigMap in the control-plane namespace and Nexus reads it with the same Kubernetes transport the Argo adapter uses. It deliberately does NOT travel through Git: the deployment repository is the reconciler's own input, so committing status there would change the desired SHA and re-trigger reconciliation forever. Every string is written already-scrubbed by the reconciler and re-bounded by the reader, because a ConfigMap is hand-editable. v1alpha2 adds the team-kind watcher's facts (a watcher that runs `hg team resume --unattended` against a bootstrap repository): the installation it resumes, the stage it reached, a `pending` block when it stopped on a decision only a human, a merge or time can supply, and per-source / per-agent desired and applied revisions. Command-kind watchers keep publishing v1alpha1; readers accept both.
 
 _Unknown fields are rejected (`additionalProperties: false`)._
 
 | Field | Type | Required | Constraints | Description |
 |---|---|---|---|---|
-| `apiVersion` | const `nexus.hermes.ai/v1alpha1` | **yes** | — | — |
+| `apiVersion` | const `nexus.hermes.ai/v1alpha2` | **yes** | — | — |
 | `kind` | const `ReconciliationStatus` | **yes** | — | — |
 | `observedAt` | any | **yes** | — | When the reconciler last completed a tick. A record older than the reader's staleAfterSeconds reads `unknown` - a dead timer must not present as synced. |
-| `phase` | any | **yes** | enum: `synced`, `change-detected`, `validating`, `applying`, `waiting-for-argocd`, `degraded`, `failed`, `authentication-required` | The reconciler's state machine. `degraded` means the apply succeeded but Argo CD has not converged; `failed` means the commit was rejected by validation or the apply and is blocked until the desired SHA changes or an operator retries. |
+| `phase` | any | **yes** | enum: `synced`, `change-detected`, `validating`, `applying`, `waiting-for-argocd`, `degraded`, `failed`, `pending`, `authentication-required` | The reconciler's state machine. `degraded` means the apply succeeded but Argo CD has not converged; `failed` means the commit was rejected by validation or the apply and is blocked until the desired SHA changes or an operator retries. `pending` means the last unattended resume stopped on a human decision, an unmerged publication or in-flight convergence; it retries on a capped backoff and never blocks the commit. |
 | `desiredSha` | any | no | — | The commit the deployment repository currently points at. |
 | `attemptedSha` | any | no | — | — |
 | `appliedSha` | any | no | — | The last commit applied SUCCESSFULLY. A failed apply never advances it. |
@@ -139,6 +139,61 @@ _Unknown fields are rejected (`additionalProperties: false`)._
 | `retryable` | boolean | no | — | Whether `hg reconcile retry` would do anything. |
 | `summary` | string | no | maxLength: 200 | A scrubbed one-liner. Never carries command output verbatim, a URL, or anything credential-shaped. |
 | `version` | string | no | maxLength: 80 | The pinned reconciler version, so an upgrade is visible in the overlay. |
+| `installation` | string | no | pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`; maxLength: 40 | The installation plan id the watcher resumes. |
+| `stage` | string | no | pattern: `^[a-z-]+$`; maxLength: 40 | The stage the last resume reached: a team stage name, or `complete`. |
+| `pending` | object | no | — | Why the watcher is waiting, when phase is `pending`. |
+| `sources` | array of object | no | — | One entry per registered source: the commit the lock names and the commit the workloads declare. |
+| `agents` | array of object | no | — | One entry per registered agent: desired against declared source revision, the runtime image and Eve version the plan pins, and readiness as last observed. |
+| `platform` | object | no | — | The platform revision the lock names and the one the watcher ran from. |
+
+#### `pending`
+
+Why the watcher is waiting, when phase is `pending`.
+
+_Unknown fields are rejected (`additionalProperties: false`)._
+
+| Field | Type | Required | Constraints | Description |
+|---|---|---|---|---|
+| `reason` | any | **yes** | enum: `approval-required`, `merge-pending`, `authorization`, `activation-change`, `acceptance-opt-in`, `in-flight` | — |
+| `link` | string | no | pattern: `^https://[^\s@]+$`; maxLength: 300 | Where the decision lives (a pull request), https only. |
+| `since` | any | **yes** | — | — |
+| `nextAttemptAt` | any | **yes** | — | — |
+
+#### `sources[]`
+
+_Unknown fields are rejected (`additionalProperties: false`)._
+
+| Field | Type | Required | Constraints | Description |
+|---|---|---|---|---|
+| `id` | string | **yes** | pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`; maxLength: 40 | — |
+| `ref` | string | no | maxLength: 200 | — |
+| `desiredSha` | any | no | — | — |
+| `appliedSha` | any | no | — | — |
+
+#### `agents[]`
+
+_Unknown fields are rejected (`additionalProperties: false`)._
+
+| Field | Type | Required | Constraints | Description |
+|---|---|---|---|---|
+| `name` | string | **yes** | pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`; maxLength: 40 | — |
+| `source` | string | no | pattern: `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`; maxLength: 40 | — |
+| `desiredSha` | any | no | — | — |
+| `appliedSha` | any | no | — | — |
+| `runtimeDigest` | string | no | pattern: `^\S+$`; maxLength: 300 | — |
+| `eveVersion` | string | no | pattern: `^[A-Za-z0-9.+-]+$`; maxLength: 40 | — |
+| `ready` | boolean | no | — | — |
+
+#### `platform`
+
+The platform revision the lock names and the one the watcher ran from.
+
+_Unknown fields are rejected (`additionalProperties: false`)._
+
+| Field | Type | Required | Constraints | Description |
+|---|---|---|---|---|
+| `desiredRevision` | any | no | — | — |
+| `appliedRevision` | any | no | — | — |
 
 ## Example
 

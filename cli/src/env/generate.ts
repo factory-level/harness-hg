@@ -19,6 +19,7 @@
 import * as fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { EnvironmentSpec, isSecretRef, rootKmsResourceId, rootSecretsProviderUri } from "./spec.ts";
+import { UNSET_SECRET_MARKER } from "./stack-config.ts";
 
 export interface SecretFinding {
   /** dot-path inside the stack config, `--path` ready. */
@@ -68,7 +69,7 @@ function collectSecure(node: unknown, at: string, into: SecureMap): void {
   const rec = node as Record<string, unknown>;
   if (typeof rec["secure"] === "string" && Object.keys(rec).length === 1) {
     // Generated missing-value markers are not encrypted credentials.
-    if (rec["secure"] !== "<UNSET - see findings>") into.set(at, rec["secure"] as string);
+    if (rec["secure"] !== UNSET_SECRET_MARKER) into.set(at, rec["secure"] as string);
     return;
   }
   if (Array.isArray(node)) {
@@ -155,7 +156,7 @@ function emit(node: unknown, at: string, indent: string, ctx: EmitCtx, lines: st
   if (isSecretRef(node)) {
     const blob = resolveSecret(ctx, at);
     lines.push(label);
-    lines.push(`${indent}  secure: ${blob ?? "<UNSET - see findings>"}`);
+    lines.push(`${indent}  secure: ${blob ?? UNSET_SECRET_MARKER}`);
     return;
   }
   if (node === null || node === undefined) return;
@@ -189,7 +190,7 @@ function emit(node: unknown, at: string, indent: string, ctx: EmitCtx, lines: st
         }
       } else if (isSecretRef(item)) {
         const blob = resolveSecret(ctx, itemAt);
-        lines.push(`${indent}  - secure: ${blob ?? "<UNSET - see findings>"}`);
+        lines.push(`${indent}  - secure: ${blob ?? UNSET_SECRET_MARKER}`);
       } else {
         const force = ctx.forceQuoteUnder.some((re) => re.test(itemAt)) && typeof item === "string";
         lines.push(`${indent}  - ${scalar(item, force)}`);

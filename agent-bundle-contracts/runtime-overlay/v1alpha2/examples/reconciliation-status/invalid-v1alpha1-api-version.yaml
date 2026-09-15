@@ -1,0 +1,4 @@
+apiVersion: nexus.hermes.ai/v1alpha1
+kind: ReconciliationStatus
+observedAt: "2026-09-10T09:20:00Z"
+phase: pending

@@ -45,6 +45,6 @@ bun run typecheck   # tsc --noEmit
 bun test            # offline unit tests (config parsing, script builders)
 ```
 
-The live loops live in `scripts/`: `verify-bootstrap-git-side.sh` (stages
-1–2 against a local bare git repo, no cluster) and `smoke-local.sh` /
-`test-drift-and-decommission.sh` (full loop on a local k3d cluster).
+The git-side check lives in `scripts/`: `verify-bootstrap-git-side.sh` (stages
+1–2 against a local bare git repo, no cluster; needs a hermes-agent-gitops
+checkout). The full loop on a local k3d cluster is `make e2e` (`cli/e2e-local.sh`).

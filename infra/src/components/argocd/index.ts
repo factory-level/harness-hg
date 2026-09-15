@@ -15,9 +15,13 @@ import * as k8s from "@pulumi/kubernetes";
 import { Namespaces, ARGOCD_NS } from "../namespaces/index.ts";
 import type {
   ArgoRepoCreds,
+  ApplicationGitAuth,
+  AgentSpec,
   HelmOciRegistrySpec,
   TargetClusterSpec,
 } from "../../control-flow/config.ts";
+
+import { RUNTIME_PREFIX, runtimeOfInstance } from "../../control-flow/config.ts";
 
 export const ARGOCD_CHART_REPO = "https://argoproj.github.io/argo-helm";
 
@@ -49,7 +53,7 @@ return hs
 `.trim();
 
 // Works around a real, live-verified Argo CD + StatefulSet interaction
-// defect (see infra/scripts/smoke-local.sh): the Kubernetes API server injects
+// defect (first found by the since-removed smoke-local.sh): the Kubernetes API server injects
 // `apiVersion`, `kind`, and `status: {phase: Pending}` into every
 // `spec.volumeClaimTemplates[]` entry when a StatefulSet is read back after
 // creation — none of which are present in the Helm-rendered desired-state
@@ -88,6 +92,8 @@ export interface ArgoCdArgs {
   namespaces: Namespaces;
   chartVersion: string;
   repoCreds: ArgoRepoCreds;
+  applicationGitAuth?: Record<string, ApplicationGitAuth>;
+  agents?: AgentSpec[];
   gitopsRepoUrl: string;
   hermesGitopsRepoUrl: string;
   // Remote workload clusters to register (issue #5 [C1]); empty = today's
@@ -166,6 +172,11 @@ export class ArgoCd extends pulumi.ComponentResource {
               // curl, port-forward). Revisit once providers.ingress wires a
               // real ingress controller in front of it.
               "server.insecure": "true",
+              // A PostSync hook Job that never finishes would hold a sync open
+              // forever (ADR 0195). Ten minutes is well past a cold agent build
+              // and well short of "nobody noticed". Applies to every
+              // Application, Hermes profiles included.
+              "controller.sync.timeout.seconds": "600",
             },
             cm: {
               "resource.customizations.health.pulumi.com_Stack": PULUMI_STACK_HEALTH_LUA,
@@ -203,6 +214,27 @@ export class ArgoCd extends pulumi.ComponentResource {
         args.repoCreds.hermesGitopsUsername,
         args.repoCreds.hermesGitopsToken,
       );
+    }
+
+    for (const [owner, credentials] of Object.entries(args.applicationGitAuth ?? {})) {
+      const projectName = `hg-appcharts-${owner}`;
+      const namespace = `${RUNTIME_PREFIX[runtimeOfInstance(args.agents ?? [], owner)]}${owner}`;
+      new k8s.apiextensions.CustomResource(`application-chart-project:${owner}`, {
+        apiVersion: "argoproj.io/v1alpha1", kind: "AppProject",
+        metadata: { name: projectName, namespace: ARGOCD_NS },
+        spec: {
+          sourceRepos: [credentials.repository],
+          destinations: [{ server: "https://kubernetes.default.svc", namespace }],
+          clusterResourceWhitelist: [],
+          namespaceResourceWhitelist: [
+            ...["Service", "Secret", "ConfigMap", "PersistentVolumeClaim", "ServiceAccount"].map(kind => ({ group: "", kind })),
+            ...["Deployment", "StatefulSet"].map(kind => ({ group: "apps", kind })),
+            { group: "networking.k8s.io", kind: "NetworkPolicy" },
+            { group: "batch", kind: "Job" },
+          ],
+        },
+      }, { parent: this, provider: args.provider, dependsOn: [this.release], protect: true });
+      this.repoCredSecret(args, `application-chart-repository:${owner}`, `hg-appcharts-${owner}-repository`, credentials.repository, credentials.username, credentials.password);
     }
 
     // Helm-OCI registry registration (#187): one secret-type=repository

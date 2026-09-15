@@ -1,0 +1,7 @@
+name: hg-application-credentials
+description: Stable application credentials exported only as encrypted provider outputs.
+runtime:
+  name: nodejs
+  options:
+    packagemanager: bun
+main: index.ts

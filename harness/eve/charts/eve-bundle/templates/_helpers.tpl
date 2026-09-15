@@ -106,6 +106,7 @@ eve-bundle.guard - the whole-record checks, run from every template:
 {{- $env := include "eve-bundle.workspaceEnvName" .name -}}
 {{- if hasKey $envs $env -}}{{- fail (printf "eve-bundle: repositories %q and %q both map to %s" .name (get $envs $env) $env) -}}{{- end -}}
 {{- $_ := set $envs $env .name -}}
+{{- if .tracking -}}{{- fail (printf "eve-bundle: repository %q tracks a branch, but bundled agents mount each workspace through a subPath that pins the directory when the member starts, so an in-pod refresh could never reach them (ADR 0197 cost) - deploy the bound agents standalone, or pin the repository" .name) -}}{{- end -}}
 {{- if not (regexMatch "^[0-9a-f]{40}$" (.sha | toString)) -}}{{- fail (printf "eve-bundle: repository %q sha must be a full 40-hex commit" .name) -}}{{- end -}}
 {{- end -}}
 {{- range $i, $p := .Values.spec.profiles -}}
@@ -113,6 +114,7 @@ eve-bundle.guard - the whole-record checks, run from every template:
 {{- if hasKey $names $p.name -}}{{- fail (printf "eve-bundle: member %q declared twice" $p.name) -}}{{- end -}}
 {{- $_ := set $names $p.name true -}}
 {{- if not (regexMatch "^[0-9a-f]{40}$" ($p.sha | toString)) -}}{{- fail (printf "eve-bundle: member %q sha must be a full 40-hex commit" $p.name) -}}{{- end -}}
+{{- if or $p.overlays $p.overlayTreeHash -}}{{- fail (printf "eve-bundle: member %q carries operator overlays, which bundled agents do not support (ADR 0194 cost) - deploy it as a standalone agent" $p.name) -}}{{- end -}}
 {{- if ne ($p.gatewayEnabled | default true | toString) "false" -}}
 {{- $enabled = add $enabled 1 -}}
 {{- $port := include "eve-bundle.memberPort" (dict "index" $i "profile" $p) -}}
@@ -147,6 +149,20 @@ deployments/apps, not from this chart - EVE020).
 
 Takes (dict "root" $ "member" <the spec.profiles[] entry>).
 */}}
+{{/*
+Desired versions for a bundle (ADR 0195). One workload carries many members, so
+there is no single source-sha to label it with: each member's desired values ride
+as annotations keyed by member name. The Eve release IS bundle-wide - one image.
+*/}}
+{{- define "eve-bundle.versionAnnotations" -}}
+harness-hg.factorylevel.dev/eve-version: {{ .Values.runtimeImage.eveVersion | default .Values.spec.deployment.runtimeImageTag | default .Values.runtimeImage.tag | toString | quote }}
+{{- $root := . }}
+{{- range .Values.spec.profiles }}
+harness-hg.factorylevel.dev/source-sha.{{ .name }}: {{ .sha | toString | quote }}
+harness-hg.factorylevel.dev/runtime-digest.{{ .name }}: {{ include "eve-bundle.runtimeManifest" (dict "root" $root "member" .) | sha256sum | quote }}
+{{- end }}
+{{- end -}}
+
 {{- define "eve-bundle.runtimeManifest" -}}
 {{- $root := .root -}}
 {{- $m := .member -}}

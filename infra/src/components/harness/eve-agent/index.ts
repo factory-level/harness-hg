@@ -33,6 +33,10 @@ import { EVE_RUNTIME_VERSION, type AgentSpec, type BootstrapConfig } from "../..
  * ref that moved between preview and apply still converges on the next
  * tick because HERMES_GITOPS_DESIRED_SOURCE_SHA is a Command input. */
 export const EVE_EMIT_SCRIPT = `set -eu
+if [ "\${HERMES_GITOPS_TEAM_MANAGED:-}" = "1" ]; then
+  echo "Team installation coordinator owns the complete GitOps publication"
+  exit 0
+fi
 SRC="$HERMES_GITOPS_DESIRED_SOURCE"
 case "$SRC" in
   http://*|https://*|git@*|ssh://*|/*|.*|~*) ;;
@@ -65,8 +69,13 @@ uv run --directory "$HERMES_GITOPS_PLUGIN_PATH" "$@"
  * because a monorepo ships several agents under one source and the
  * subdir is what tells them apart. The plugin checkout may already be
  * gone on a full destroy; that is reported, not fatal, the same as the
- * Hermes path. */
+ * Hermes path - Pulumi runs delete with the environment recorded in state,
+ * so a pre-coordinator agent must still destroy from any machine. */
 export const EVE_DECOMMISSION_SCRIPT = `set -eu
+if [ "\${HERMES_GITOPS_TEAM_MANAGED:-}" = "1" ]; then
+  echo "Team installation coordinator owns generated resource retirement"
+  exit 0
+fi
 if [ ! -d "$HERMES_GITOPS_PLUGIN_PATH/plugin/gitops_emitter" ]; then
   echo "eve-agent decommission: plugin checkout $HERMES_GITOPS_PLUGIN_PATH not found - skipping GitOps prune for \${HERMES_GITOPS_DESIRED_NAME:-\$HERMES_GITOPS_DESIRED_SOURCE} (remove profiles/<name>/ from the GitOps repo manually if it still exists)" >&2
   exit 0
@@ -118,6 +127,9 @@ export function eveAgentEnv(
     HERMES_GITOPS_EVE_VERSION: EVE_RUNTIME_VERSION,
     HERMES_GITOPS_EVE_EVENT: event,
     HERMES_GITOPS_REQUIRE_EMITTER: "1",
+    // The team coordinator publishes all projections after provisioning. Keep existing
+    // Command URNs during adoption; never emit a partial per-agent PR in that workflow.
+    ...(process.env.HG_TEAM_COORDINATED === "1" ? { HERMES_GITOPS_TEAM_MANAGED: "1" } : {}),
     // Names only, never values (the fail-loud secret check).
     HERMES_GITOPS_AVAILABLE_SECRETS_JSON: JSON.stringify(availableSecretNames(cfg)),
     ...agentDesiredStateEnv(agent, null, resolver),

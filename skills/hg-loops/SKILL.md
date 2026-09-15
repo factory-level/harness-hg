@@ -1,6 +1,6 @@
 ---
 name: hg-loops
-description: Drive the Harness Hg operator CLI (`hg`) through its three loops - build an agent team locally (dev), author an Agent Team Repo against the contract (agent-bundle), and host a real environment (ops). Use when asked to onboard, validate, deploy, test, prove, or scaffold anything with hg.
+description: Operate Harness Hg's local development, contract validation and environment maintenance loops. Route agent-team onboarding and launch requests through hg-team-onboard and hg-team-bootstrap.
 ---
 
 # hg loops
@@ -23,7 +23,8 @@ has one front door and ends in a proof.
 3. Gate before you deploy. `hg validate --dir <repo>` needs no cluster and reports every
    failure at once, with the file and field to fix.
 4. Never call a proof green with an `unknown` leg. `unknown` means the check could not run.
-5. Do not hand-edit generated records. Change the declaration under `harness-hg/` and rerun.
+5. Never manually edit or commit GitOps repositories, including generated compiler output.
+   Change source or bootstrap declarations; the supported publisher owns GitOps commits.
 
 ## The dev loop
 
@@ -41,7 +42,8 @@ hg status           # what runs, and every local URL
 
 For repo-specific team creation or extension (choosing roles, authoring their instructions,
 and installing runtime skills), use `hg-team-onboard` when installed. It handles arbitrary
-team composition and ends at source validation. If unavailable, install it with
+team composition as phase one; `hg-team-bootstrap` owns phase two through apply and live
+acceptance. A launch request continues through both phases. If unavailable, install it with
 `npx skills add factory-level/harness-hg --skill hg-team-onboard`, or use the authoring guide:
 https://factory-level.github.io/harness-hg/docs/get-started/agent-team-repo/
 
@@ -49,11 +51,16 @@ https://factory-level.github.io/harness-hg/docs/get-started/agent-team-repo/
 hg bundle init <dir> --agent <name> --gitops <url>
 hg validate --dir <dir>
 hg topology plan --dir <dir>
-hg topology emit --dir <dir> --output <destination-clone>
-hg gitops doctor <destination-clone>
+hg team plan --plan teams/installation.yaml --dir <bootstrap-root>
+hg team apply --plan teams/installation.yaml --dir <bootstrap-root>
 ```
 
 ## The ops loop
+
+For external runtime skills, use `hg skills prepare`, review the complete package and resolved
+version, record the explicit human decision with `hg skills approve`, then `hg skills install`
+and `hg skills check`. Never self-approve or download unpinned skills during runtime startup.
+Follow user-required approval gates before updating coding-assistant skills too.
 
 ```bash
 hg env new <name> --dry-run   # print every step; apply nothing

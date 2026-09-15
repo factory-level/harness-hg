@@ -1,4 +1,4 @@
-.PHONY: schema-validate gitops-template-validate lint chart-test pytest wheel-smoke test drift-test verify-git-side docs docs-drift wiki-serve wiki-build
+.PHONY: schema-validate gitops-template-validate lint chart-test pytest wheel-smoke test verify-git-side docs docs-drift wiki-serve wiki-build
 
 # Validates every agent-bundle-contracts/**/examples/* fixture against its schema; invalid-* fixtures
 # must fail, everything else must pass. See infra/scripts/validate-schemas.sh for details.
@@ -104,6 +104,13 @@ cli-docs-drift:
 version:
 	@python3 infra/scripts/derive-version.py --print
 
+# Release notes from the same conventional-commit parse the version uses,
+# since the newest v* tag (or all history). `make release-notes > notes.md`
+# then `gh release create` with it; see CONTRIBUTING.md "Cutting a release".
+.PHONY: release-notes
+release-notes:
+	@python3 infra/scripts/release-notes.py
+
 # control-plane/{monitoring,fleet-dashboard}/chart/charts/hermes-alerting/ are COMMITTED
 # copies of the control-plane/alert-router/lib library chart (#619). Committed rather
 # than fetched because `helm dependency update` runs nowhere here - Argo syncs
@@ -153,7 +160,7 @@ wiki-serve:
 	uv run --group docs mkdocs serve -f _docs/mkdocs.yml
 
 wiki-build:
-	uv run --group docs mkdocs build --strict -f _docs/mkdocs.yml
+	HG_VERSION="$$(python3 infra/scripts/derive-version.py --print)" uv run --group docs mkdocs build --strict -f _docs/mkdocs.yml
 	@test -s _docs/site/llms.txt && test -s _docs/site/index.md \
 	  || { echo 'wiki: the markdown endpoints are missing - mkdocs_llms_hook did not run'; exit 1; }
 
@@ -237,11 +244,12 @@ e2e-offline:
 	bash infra/scripts/e2e-offline.sh
 
 # The cluster-bearing half (#669) and the dev loop's executable
-# walkthrough (#670): cli/e2e-local.sh's 12-step onboard -> up -> test ->
-# dev -> reset -> eval -> reconcile chain against a throwaway k3d
-# cluster. NOT part of `make test`: needs docker + the
-# hermes-agent:hermes-gitops-dev image and takes 10-20 minutes. Runs
-# nightly via .github/workflows/live-loop.yaml.
+# walkthrough (#670): cli/e2e-local.sh's 14-step chain against a throwaway
+# k3d cluster, on a real Eve agent - onboard -> up -> test -> dev -> reset ->
+# reconcile -> team watcher -> `hg team status` proving the agent, catching
+# its drift and following a rollback. NOT part of `make test`: needs docker,
+# network for the agent's npm ci, and 20-30 minutes. Run it from the main
+# checkout or a clone, never a git worktree.
 .PHONY: e2e
 e2e:
 	bash cli/e2e-local.sh
@@ -267,17 +275,6 @@ loop-ops:
 record-cmp:
 	bash infra/scripts/record-cmp.sh $(REF_A) $(REF_B)
 
-# Day-2 hardening (Task 10): drift + decommission acceptance test against a
-# real (throwaway) k3d cluster — see infra/scripts/test-drift-and-decommission.sh
-# for the full scenario list (Service/Pod/StatefulSet drift, an
-# ExternalSecret-backed Secret deletion, an out-of-band HermesProfile CR
-# patch, decommission + PVC lifecycle, and re-install). NOT part of `make
-# test`: requires a local docker daemon (k3d runs k3s-in-docker) and
-# takes on the order of 10-20 minutes end to end. Runs nightly in CI via
-# .github/workflows/live-loop.yaml (issue #15 [I1]), not as a PR gate.
-drift-test:
-	bash infra/scripts/test-drift-and-decommission.sh
-
 # The eve-agent chart's process-start contract, proven in Docker without a
 # cluster (ADR-149): the eve-runtime image builds from versions.json's pin,
 # the chart's rendered boot.sh converges the example Eve project from a git
@@ -289,10 +286,12 @@ drift-test:
 eve-boot-test:
 	bash infra/scripts/eve-boot-test.sh
 
-# Git-side bootstrap verify (stages 1-2, no cluster/docker) - the PR gate
-# wired into CI (.github/workflows/ci.yaml bootstrap-git-side-verify,
-# issue #15 [I1]). Needs a hermes-agent-gitops checkout; point
-# HERMES_FORK_PATH at it if it isn't ../hermes-agent-gitops.
+# Git-side bootstrap verify (stages 1-2, no cluster/docker) - the only gate
+# that EXECUTES the Pulumi program under node rather than importing it, over
+# the Hermes install stages the factory environment still runs (.github/
+# workflows/ci.yaml bootstrap-git-side-verify, issue #15 [I1]). Needs a
+# hermes-agent-gitops checkout; point HERMES_FORK_PATH at it if it isn't
+# ../hermes-agent-gitops. Without one it stops at its first check.
 verify-git-side:
 	bash infra/scripts/verify-bootstrap-git-side.sh
 

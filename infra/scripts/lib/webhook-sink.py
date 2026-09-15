@@ -5,11 +5,11 @@ Stands in for the operator's real receiver (a GitHub dispatch proxy,
 Discord, ...) so the e2e can ASSERT delivery instead of eyeballing a
 third-party UI: every HTTP request it receives is appended to a JSONL log
 file as {"ts", "method", "path", "body"} (body parsed as JSON when
-possible, raw text otherwise). smoke-local.sh greps that file for the
-firing alert.
+possible, raw text otherwise). `hg up` starts it as the local alert sink
+(cli/src/platform/index.ts), and `hg debug` reads that file.
 
 Usage: webhook-sink.py <port> <logfile>   (binds 0.0.0.0, so the docker
-bridge gateway IP trick — see smoke-local.sh's header — makes it
+bridge gateway IP trick — see cli/src/platform/index.ts's header — makes it
 reachable from inside k3d pods.)
 """
 

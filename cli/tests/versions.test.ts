@@ -28,7 +28,22 @@ describe("versions.json is the single source", () => {
     versions.host.helm,
     versions.host.bun,
     versions.runtimes.eve.version,
+    ...versions.runtimes.eve.allowed.map(a => a.version),
   ];
+
+  // ADR 0192: an installation may pin ONE agent to a runtime from this list.
+  // Every entry must be something the platform can actually keep publishing:
+  // a digest-pinned image and the eve release it ships.
+  test("every allowed runtime is a digest-pinned image with the eve release it ships", () => {
+    const allowed = versions.runtimes.eve.allowed as { version: string; image: string }[];
+    expect(Array.isArray(allowed)).toBe(true);
+    for (const entry of allowed) {
+      expect(Object.keys(entry).sort()).toEqual(["image", "version"]);
+      expect(entry.image).toMatch(/^\S+@sha256:[a-f0-9]{64}$/);
+      expect(entry.version).toMatch(/^[0-9]+\.[0-9]+\.[0-9]+(?:-[\w.]+)?$/);
+    }
+    expect(new Set(allowed.map(a => a.image)).size).toBe(allowed.length);
+  });
 
   test("no source file carries a literal copy of a pin", () => {
     const offenders: string[] = [];

@@ -1,0 +1,27 @@
+# A standalone Eve agent with one TRACKED workspace (ADR 0197) beside a pinned
+# one, layered the way deployments/workspaces/profiles/<name>.yaml lands
+# (spec.workspace). Both bindings are read-only, so the agent's workspaces
+# mount is read-only too; the tracked one is private, so its credential
+# reaches the build and sync containers and never the agent container.
+spec:
+  persona: echo
+  runtime: eve
+  source: https://github.com/factorylevel/eve-agents.git
+  sourceSubdir: agents/echo
+  sha: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  workspace:
+    terminalCwd: /workspaces/vision-manager
+    repositories:
+      - name: vision
+        source: https://github.com/factory-level/vision-manager.git
+        tracking:
+          branch: main
+          refreshInterval: 30m
+        mountPath: /workspaces/vision-manager
+        access: read-only
+        gitAuthSecretRef: vision-git-auth
+      - name: platform
+        source: github.com/factory-level/harness-hg
+        sha: b5113eb5c0ffee00000000000000000000000000
+        mountPath: /workspaces/platform
+        access: read-only

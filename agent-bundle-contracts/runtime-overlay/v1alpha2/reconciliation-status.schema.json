@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/runtime-overlay/v1alpha2/reconciliation-status.schema.json",
+  "title": "Destination-server reconciliation status v1alpha2 (ConfigMap hermes-reconciliation-status[-<instance>])",
+  "description": "The handshake between the host reconciler and the in-cluster control plane. `hg reconcile` runs on the destination Linux server; Nexus runs in a pod on a PVC - they share no filesystem, so the reconciler publishes this document as `status.json` in a ConfigMap in the control-plane namespace and Nexus reads it with the same Kubernetes transport the Argo adapter uses. It deliberately does NOT travel through Git: the deployment repository is the reconciler's own input, so committing status there would change the desired SHA and re-trigger reconciliation forever. Every string is written already-scrubbed by the reconciler and re-bounded by the reader, because a ConfigMap is hand-editable. v1alpha2 adds the team-kind watcher's facts (a watcher that runs `hg team resume --unattended` against a bootstrap repository): the installation it resumes, the stage it reached, a `pending` block when it stopped on a decision only a human, a merge or time can supply, and per-source / per-agent desired and applied revisions. Command-kind watchers keep publishing v1alpha1; readers accept both.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "observedAt",
+    "phase"
+  ],
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "nexus.hermes.ai/v1alpha2"
+    },
+    "kind": {
+      "const": "ReconciliationStatus"
+    },
+    "observedAt": {
+      "description": "When the reconciler last completed a tick. A record older than the reader's staleAfterSeconds reads `unknown` - a dead timer must not present as synced.",
+      "$ref": "#/$defs/timestamp"
+    },
+    "phase": {
+      "description": "The reconciler's state machine. `degraded` means the apply succeeded but Argo CD has not converged; `failed` means the commit was rejected by validation or the apply and is blocked until the desired SHA changes or an operator retries. `pending` means the last unattended resume stopped on a human decision, an unmerged publication or in-flight convergence; it retries on a capped backoff and never blocks the commit.",
+      "enum": [
+        "synced",
+        "change-detected",
+        "validating",
+        "applying",
+        "waiting-for-argocd",
+        "degraded",
+        "failed",
+        "pending",
+        "authentication-required"
+      ]
+    },
+    "desiredSha": {
+      "description": "The commit the deployment repository currently points at.",
+      "$ref": "#/$defs/sha"
+    },
+    "attemptedSha": {
+      "$ref": "#/$defs/sha"
+    },
+    "appliedSha": {
+      "description": "The last commit applied SUCCESSFULLY. A failed apply never advances it.",
+      "$ref": "#/$defs/sha"
+    },
+    "appliedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "startedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "finishedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "attempts": {
+      "description": "How many times the blocked commit has been attempted. Present only while blocked.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "retryable": {
+      "description": "Whether `hg reconcile retry` would do anything.",
+      "type": "boolean"
+    },
+    "summary": {
+      "description": "A scrubbed one-liner. Never carries command output verbatim, a URL, or anything credential-shaped.",
+      "type": "string",
+      "maxLength": 200
+    },
+    "version": {
+      "description": "The pinned reconciler version, so an upgrade is visible in the overlay.",
+      "type": "string",
+      "maxLength": 80
+    },
+    "installation": {
+      "description": "The installation plan id the watcher resumes.",
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "stage": {
+      "description": "The stage the last resume reached: a team stage name, or `complete`.",
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[a-z-]+$"
+    },
+    "pending": {
+      "description": "Why the watcher is waiting, when phase is `pending`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "since",
+        "nextAttemptAt"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "approval-required",
+            "merge-pending",
+            "authorization",
+            "activation-change",
+            "acceptance-opt-in",
+            "in-flight"
+          ]
+        },
+        "link": {
+          "description": "Where the decision lives (a pull request), https only.",
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^https://[^\\s@]+$"
+        },
+        "since": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "nextAttemptAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "sources": {
+      "description": "One entry per registered source: the commit the lock names and the commit the workloads declare.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          },
+          "ref": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "desiredSha": {
+            "$ref": "#/$defs/sha"
+          },
+          "appliedSha": {
+            "$ref": "#/$defs/sha"
+          }
+        }
+      }
+    },
+    "agents": {
+      "description": "One entry per registered agent: desired against declared source revision, the runtime image and Eve version the plan pins, and readiness as last observed.",
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+          },
+          "desiredSha": {
+            "$ref": "#/$defs/sha"
+          },
+          "appliedSha": {
+            "$ref": "#/$defs/sha"
+          },
+          "runtimeDigest": {
+            "type": "string",
+            "maxLength": 300,
+            "pattern": "^\\S+$"
+          },
+          "eveVersion": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^[A-Za-z0-9.+-]+$"
+          },
+          "ready": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "platform": {
+      "description": "The platform revision the lock names and the one the watcher ran from.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "desiredRevision": {
+          "$ref": "#/$defs/sha"
+        },
+        "appliedRevision": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    }
+  }
+}

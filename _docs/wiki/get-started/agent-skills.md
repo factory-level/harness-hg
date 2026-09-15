@@ -56,7 +56,25 @@ adapted to your own domain and roles. The outcome is validated team source; depl
 live service activation use the
 [operator loops](index.md).
 
-## What the skill knows
+## Version-lock deployed skills
+
+Declare external skills per agent in `harness-hg/skills.yaml` beside its `agent.yaml`, using
+the [agent skills contract](../reference/contracts/agent-skills.md). Each package names its
+source repository, exact tag or commit, package root, entrypoint, resources and capabilities.
+
+Use `hg skills prepare --dir <repo> --agent <name> --subject <repository-url>#<name>` to stage
+the complete package and review fingerprint. Review the content before recording a human
+decision with `hg skills approve`. `hg skills install` requires that matching decision in a
+bootstrap-owned approval file outside the source repository. Commit the installed content and
+generated lock; `hg skills check` verifies it offline. Use `hg help skills` for all flags.
+
+Set the bootstrap source's `skillPolicy.approvals` to require matching approval during team
+planning and deployment. Content, version and capability changes invalidate approval.
+External requirements derive from the manifest; bootstrap `agents[].skills` lists local skills.
+An empty external manifest supports review of local requirements supplied with `--requirements`.
+Skills provide instructions; registered tools and permissions still determine what an agent can do.
+
+## Operator guidance
 
 Everything on [Get Started](index.md), compressed: `hg --help` lists commands by loop,
 `--json` gives one document, `hg validate` before anything touches a cluster, and an

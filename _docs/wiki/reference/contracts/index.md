@@ -45,7 +45,7 @@ A **contract** is a file whose shape is pinned by a JSON Schema under
 | [Capabilities](environment-capabilities.md) | `environment/capabilities.yaml` | capability → implementation |
 | [Communication](environment-communication.md) | `environment/communication.yaml` | credential references only |
 | [Bundles](environment-bundles.md) | `environment/bundles.yaml` | who shares a pod |
-| [Workspaces](environment-workspaces.md) | `environment/workspaces.yaml` | immutable checkouts as an agent capability |
+| [Workspaces](environment-workspaces.md) | `environment/workspaces.yaml` | pinned or branch-following checkouts as an agent capability |
 | [Connections](environment-connections.md) | `environment/connections.yaml` | third-party apps, declared once |
 
 The environment spec itself, `infra/environments/<name>.yaml`, lives at `cli/schemas/environment/`

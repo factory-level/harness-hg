@@ -1,0 +1,20 @@
+# A tracked release branch with a slash in its name, refreshed hourly.
+apiVersion: hermes.gitops/v1alpha2
+kind: WorkspaceBindings
+
+repositories:
+  - name: handbook
+    source:
+      url: https://github.com/organization/handbook
+      revision:
+        mode: tracked
+        branch: release/2026.09
+        refreshInterval: 1h
+    mount:
+      path: /workspaces/handbook
+      access: read-only
+
+bindings:
+  - repository: handbook
+    profiles: [marketing-engagement]
+    purpose: handbook

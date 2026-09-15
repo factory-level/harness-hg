@@ -173,6 +173,38 @@ export function parseAgentSecrets(raw: unknown): Record<string, Record<string, s
   return result;
 }
 
+/** Application credentials belong to a distinct Secret, never an agent env Secret.
+ * This is an encrypted Pulumi config channel; no plaintext environment declaration. */
+export function parseApplicationSecrets(raw: unknown): Record<string, Record<string, Record<string, string>>> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new ConfigError("applicationSecrets must map owner names to application credentials");
+  const result: Record<string, Record<string, Record<string, string>>> = {};
+  for (const [owner, apps] of Object.entries(raw)) {
+    if (!NAME_PATTERN.test(owner) || owner.length > NAME_MAX_LENGTH || ["__proto__", "constructor", "prototype"].includes(owner)) throw new ConfigError("applicationSecrets has an invalid owner name");
+    if (!apps || typeof apps !== "object" || Array.isArray(apps)) throw new ConfigError("applicationSecrets owner must map application names to credentials");
+    result[owner] = {};
+    for (const [app, values] of Object.entries(apps)) {
+      if (!NAME_PATTERN.test(app) || app.length > NAME_MAX_LENGTH || ["__proto__", "constructor", "prototype"].includes(app)) throw new ConfigError("applicationSecrets has an invalid application name");
+      if (!values || typeof values !== "object" || Array.isArray(values) || !Object.keys(values).length) throw new ConfigError("applicationSecrets credentials must be a nonempty mapping");
+      result[owner][app] = {};
+      for (const [key, value] of Object.entries(values)) {
+        if (!ENV_VAR_PATTERN.test(key) || typeof value !== "string" || !value.length) throw new ConfigError("applicationSecrets entries require valid credential keys and nonempty strings");
+        result[owner][app][key] = value;
+      }
+    }
+  }
+  return result;
+}
+
+export function applicationSecretResourceName(namespace: string, app: string): string {
+  return `application-secret:${namespace}:${app}`;
+}
+
+export function applicationSecretName(namespace: string, app: string): string {
+  // Kubernetes Secret names permit DNS subdomains up to 253 characters.
+  return `${namespace}-app-${app}-env`;
+}
+
 /** Validate + normalize the `agentGitAuth` stack config object (issue
  * #18 [G1]): {instanceName: {username, password} | {sshPrivateKey}} —
  * materialized as Secret "hermes-<name>-git-auth" in the instance
@@ -281,6 +313,22 @@ export class AgentSecrets extends pulumi.ComponentResource {
       }
       return ns;
     };
+
+    for (const [owner, apps] of Object.entries(args.config.applicationSecrets ?? {})) {
+      const namespace = ensureNamespace(owner);
+      const namespaceName = nsNameOf(owner);
+      for (const [app, vars] of Object.entries(apps)) {
+        const secretName = applicationSecretName(namespaceName, app);
+        const stringData = Object.fromEntries(Object.entries(vars).map(([key, value]) => [key, pulumi.secret(value)]));
+        const secret = new k8s.core.v1.Secret(applicationSecretResourceName(namespaceName, app), {
+          metadata: { name: secretName, namespace: namespaceName,
+            labels: { "hermes-gitops.factorylevel.dev/managed": "true", "hermes-gitops.factorylevel.dev/app": app } },
+          stringData,
+        }, { parent: this, provider: args.provider, dependsOn: [namespace], protect: true,
+          additionalSecretOutputs: ["stringData", "data"] });
+        resources.push(namespace, secret);
+      }
+    }
 
     // Private-source credentials (issue #18 [G1]): Secret
     // hermes-<name>-git-auth, the target of the record's

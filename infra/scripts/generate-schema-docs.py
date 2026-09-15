@@ -133,8 +133,8 @@ CONTRACTS: list[dict] = [
         "title": "Environment workspaces",
         "dir": "agent-bundle-contracts/environment-workspaces",
         "files": ["workspaces.schema.json"],
-        "intro": "Written by the **team** as `harness-hg/workspaces.yaml` (`kind: WorkspaceBindings`): pinned Git checkouts assigned to agents. A repository reaches an agent only when a binding names both. The default is nothing.",
-        "example": "examples/workspaces/valid-pinned.yaml",
+        "intro": "Written by the **team** as `harness-hg/workspaces.yaml` (`kind: WorkspaceBindings`): Git checkouts assigned to agents, each pinned to a commit, resolved from a deployed application, or (v1alpha2) tracked on a branch and refreshed in the running pod. A repository reaches an agent only when a binding names both. The default is nothing. v1alpha1 documents stay valid.",
+        "example": "examples/workspaces/valid-tracked.yaml",
         "see": ["../cli/workspace.md"],
     },
     {
@@ -145,6 +145,15 @@ CONTRACTS: list[dict] = [
         "intro": "Written by the **team** as `harness-hg/connections.yaml` (`kind: Connections`): one third-party app registration per connection, declared once and bound to agents. No secret is in the file. The keys live in one platform Secret, `hermes-secrets/connection-<name>`, projected into every bound agent and mounted by the event router, whose gateway verifies the provider's signature on `/v1/connect/<provider>/<name>`.",
         "example": "examples/connections/valid-full.yaml",
         "see": ["../cli/connection.md"],
+    },
+    {
+        "id": "agent-skills",
+        "title": "Agent skills",
+        "dir": "agent-bundle-contracts/agent-skills",
+        "files": ["manifest.schema.json", "lock.schema.json", "approvals.schema.json"],
+        "intro": "Per-agent external skill installation manifests and immutable content locks. The team owns skills.yaml and skills.lock.yaml; the bootstrap owns human approval records. The CLI stages reviews, installs approved source packages, and verifies them offline.",
+        "example": "examples/manifest/valid-shared-resources.yaml",
+        "see": ["../cli/skills.md", "../../get-started/agent-skills.md"],
     },
     {
         "id": "agent-team",
@@ -168,7 +177,7 @@ CONTRACTS: list[dict] = [
         "title": "EveAgent record",
         "dir": "agent-bundle-contracts/eveagent",
         "files": ["eveagent.schema.json"],
-        "intro": "**Generated** by the emitter for an Eve agent: `profiles/<name>/profile.yaml`, plain Helm values for the `eve-agent` chart, never a custom resource. `spec.runtime: eve` is what the agents ApplicationSet routes on. v1alpha2 adds `spec.apps` and `spec.backup`; v1alpha1 records stay valid.",
+        "intro": "**Generated** by the emitter for an Eve agent: `profiles/<name>/profile.yaml`, plain Helm values for the `eve-agent` chart, never a custom resource. `spec.runtime: eve` is what the agents ApplicationSet routes on. v1alpha2 adds `spec.apps` and `spec.backup`; v1alpha3 adds `spec.overlays` and `spec.overlayTreeHash`, the approved operator overlays, present only when an installation declares them. Older records stay valid.",
         "example": "examples/valid-full.yaml",
     },
     {
@@ -412,7 +421,7 @@ def generate_profile() -> str:
         "frozen contract described in `agent-bundle-contracts/README.md`. It documents the "
         "shape of one `HermesProfile` instance record "
         "(`profiles/<name>/profile.yaml` in the GitOps repo, produced by "
-        "`gitops_emitter/render.py` on `hermes profile install`/`update` — see "
+        "`gitops_emitter/render.py` when `hg` or the bootstrap program emits a record — see "
         "`gitops_emitter/README.md`). If a field described here looks wrong, "
         "the schema file is the source of truth, not this page — file the fix "
         "there and re-run `make docs`."

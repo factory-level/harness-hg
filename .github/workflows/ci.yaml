@@ -1,8 +1,12 @@
 name: ci
 
-# pull_request only: on push AND pull_request the same commit billed
-# twice, and 12 sub-minute jobs round up to 12+ minutes per event.
+# push to main + pull_request. Standard runners are free and unmetered on
+# the public repository, where main only ever receives snapshot pushes; the
+# private ops fork keeps its workflows disabled (see DISABLED.md) because
+# there every sub-minute job bills as a full minute.
 on:
+  push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -158,6 +162,20 @@ jobs:
       - name: Unit tests
         run: cd infra && bun test
 
+  # state/ is the per-environment KMS/identity Pulumi program; its config
+  # parsing has an offline suite that nothing else gates (CLAUDE.md).
+  state-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: cd state && bun install --frozen-lockfile
+      - name: Typecheck
+        run: cd state && bun run typecheck
+      - name: Unit tests
+        run: cd state && bun test
+
   # PR gate for bootstrap stages 1-2 (issue #15 [I1]): the git-side verify
   # script drives a real `pulumi up` against a LOCAL file backend + bare git
   # repo - real fork hermes install, plugin config (I2 direct assertions),
@@ -167,6 +185,9 @@ jobs:
   # nightly in .github/workflows/live-loop.yaml (which replaced the old
   # commented-out bootstrap-live-verify placeholder).
   bootstrap-git-side-verify:
+    # PR-only: this is the one job that installs Pulumi and runs a real
+    # `pulumi up`; a snapshot push to main has no PR to gate.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

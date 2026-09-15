@@ -71,6 +71,10 @@ rules:
       - hermes-reconciliation-status
       - hermes-platform-backup-status
     verbs: ["get"]
+  # Named watcher records share a label; list is namespace-scoped.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["list"]
 ---
 # Source: nexus/templates/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1

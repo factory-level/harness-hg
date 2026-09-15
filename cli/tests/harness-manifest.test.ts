@@ -103,6 +103,26 @@ describe("manifestFromRecord (standalone)", () => {
     const m = manifestFromRecord({ persona: "manager", source: "s", sha: "r" }, { ...CTX, instance: "hermes-manager" });
     expect(m.spec.engine).toBe("hermes");
   });
+
+  test("a tracked workspace names its channel, never a commit, so refreshes leave the manifest alone", () => {
+    // ADR 0197: the runtime digest the startup gate compares hashes this
+    // manifest - a commit here would make every in-pod refresh a mismatch.
+    const m = manifestFromRecord(
+      {
+        ...record,
+        workspace: {
+          repositories: [
+            { name: "vision", source: "https://example.com/vision.git", access: "read-only", tracking: { branch: "main", refreshInterval: "30m" } },
+          ],
+        },
+      },
+      CTX,
+    );
+    expect(m.spec.workspaces).toEqual([
+      { name: "vision", path: "/app/workspaces/vision", access: "read-only", repository: "https://example.com/vision.git", revision: "tracked:main" },
+    ]);
+    expect(validateRuntimeManifest(m)).toEqual([]);
+  });
 });
 
 describe("manifestFromBundle (a member)", () => {

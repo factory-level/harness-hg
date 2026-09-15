@@ -12,18 +12,17 @@
 // Runs `python -m gitops_emitter.scaffold_cli` inside the plugin repo's
 // own uv project (`uv run --project <pluginPath>`), so it works whether or
 // not stage 1 has installed the hermes tool venv yet — uv materializes the
-// plugin's environment (PyYAML etc.) on demand. Idempotent: an
-// already-scaffolded repo is left untouched (no commit, no push — the
-// early return in gitops_emitter/scaffold.py), so a second `pulumi up` is
-// a no-op. The plugin's own install-time scaffold remains as a defensive
-// fallback and no-ops for the same reason.
+// plugin's environment (PyYAML etc.) on demand. The source revision triggers
+// reconciliation of hash-owned scaffold files after emitter/template updates.
+// Repeated inputs produce no commit or push when rendered content is unchanged.
+// The plugin's own install-time scaffold remains a defensive fallback.
 //
 // The control-flow layer skips constructing this component entirely when
 // gitopsRepoUrl is a placeholder (same gate as the root Application).
 
 import * as pulumi from "@pulumi/pulumi";
 import { local } from "@pulumi/command";
-import { resolvePluginPath, shellQuote } from "../harness/hermes-install/index.ts";
+import { pluginRevision, resolvePluginPath, shellQuote } from "../harness/hermes-install/index.ts";
 import type { BootstrapConfig } from "../../control-flow/config.ts";
 
 export interface GitopsScaffoldArgs {
@@ -85,6 +84,9 @@ uv run --project ${shellQuote(pluginPath)} python -m gitops_emitter.scaffold_cli
           cfg.hermesGitopsRepoUrl,
           cfg.chartRevision,
           pluginPath,
+          // Source updates can repair managed scaffold rendering without a
+          // configuration change. Reuse stage 1's revision trigger.
+          pluginRevision(pluginPath),
           // The scaffold's cluster-values carries the agent image tokens -
           // an image change that never re-runs the scaffold strands every
           // profile on the old image (found live: fleet stuck pulling a

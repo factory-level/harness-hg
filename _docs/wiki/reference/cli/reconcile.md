@@ -48,6 +48,9 @@ A re-install (a version bump through pulumi) may omit flags and keep the stored 
 | `--kube-context` | `<name>` | — | Kube context for post-apply health checks. |
 | `--status-namespace` | `<ns>` | — | Namespace status records are published into. |
 | `--timeout` | `<seconds>` | `900` | Argo CD health timeout after an apply. |
+| `--kind` | `command|team` | `command` | `team` watches a bootstrap repository and runs `hg team resume --unattended` against `--team-plan`; `--checks`/`--apply` do not apply. Pending decisions (approval, merge, activation) retry on a capped backoff, never block. |
+| `--team-plan` | `<path>` | — | Bootstrap-relative installation plan a `--kind team` watcher resumes (a version 2 plan with its lock). |
+| `--environment-file` | `<file>` | — | A 0600 dotenv file the unit loads (`EnvironmentFile=`) carrying the plan's credential names. |
 | `--now` | — | — | Enable and start immediately (`--enable` is a value flag elsewhere; mirrors `systemctl enable --now`). |
 
 **Examples**

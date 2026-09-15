@@ -18,7 +18,7 @@ cloudflare:
   apiToken:
     remoteSecretKey: hermes-gitops-cloudflare-api-token
   tunnel:
-    projectRepo: https://github.com/factory-level/hermes-gitops-plugin.git
+    projectRepo: https://github.com/factory-level/harness-hg.git
     branch: main
     commit: ""
     workspaceServiceAccountName: ""

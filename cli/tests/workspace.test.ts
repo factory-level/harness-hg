@@ -7,8 +7,10 @@ import type { NormalizedWorkspaceBinding } from "../src/workspace/bindings.ts";
 import {
   findAlertScenario,
   groupBindings,
+  judgeBound,
   parseProbeOutput,
   scenarioFromRows,
+  trackedFreshness,
   workspaceList,
   type DesiredWorkspaces,
   type VerifyRow,
@@ -259,5 +261,100 @@ describe("workspaceList", () => {
       { profile: "sre", shape: "independent", terminalCwd: null }, // two repos - no default cwd
     ]);
     expect(rows[1]!.profiles[0]).toEqual({ profile: "sre", shape: "independent", terminalCwd: null });
+  });
+});
+
+describe("tracked workspaces in verify (ADR 0197)", () => {
+  const SHA = "c".repeat(40);
+  const NOW = Date.parse("2026-09-13T12:00:00Z") / 1000;
+  const tracked = binding({
+    resolvedRevision: "",
+    targetProfiles: ["manager"],
+    tracking: { branch: "main", refreshInterval: "30m" },
+  });
+  const REPO = [{ name: "vision-manager", mountPath: "/workspaces/vision-manager" }];
+
+  function stampLine(over: Record<string, unknown> = {}): string {
+    return JSON.stringify({
+      name: "vision-manager",
+      mode: "tracked",
+      branch: "main",
+      sha: SHA,
+      refreshIntervalSeconds: 1800,
+      fetchedAt: "2026-09-13T11:40:00Z",
+      lastSuccessAt: "2026-09-13T11:50:00Z",
+      lastAttemptAt: "2026-09-13T11:50:00Z",
+      consecutiveFailures: 0,
+      error: null,
+      ...over,
+    });
+  }
+
+  function probe(stamp: string | null = stampLine(), head = SHA) {
+    const out = [
+      "vision-manager mount=present",
+      `vision-manager head=${head}`,
+      "vision-manager read=ok",
+      "vision-manager write=denied",
+      "vision-manager marker=sha",
+      ...(stamp === null ? [] : [`vision-manager stamp=${stamp}`]),
+      `vision-manager now=${NOW}`,
+    ].join("\n");
+    return parseProbeOutput(out, REPO)[0]!;
+  }
+
+  test("the probe carries the stamp and the pod's own clock", () => {
+    const p = probe();
+    expect(p.stamp?.sha).toBe(SHA);
+    expect(p.stamp?.branch).toBe("main");
+    expect(p.stamp?.lastSuccessAt).toBe("2026-09-13T11:50:00Z");
+    expect(p.observedAt).toBe(NOW);
+    expect(probe("{not json").stamp).toBeNull();
+    expect("stamp" in probe(null)).toBe(false);
+  });
+
+  test("a fresh tracked workspace passes - there is no compiled revision to drift from", () => {
+    expect(judgeBound(tracked, probe(), null)).toEqual([]);
+    expect(trackedFreshness(tracked.tracking!, probe()).stale).toBe(false);
+  });
+
+  test("a last success older than twice the interval is stale and fails; just inside it is not", () => {
+    const old = probe(stampLine({ lastSuccessAt: "2026-09-13T10:59:00Z" }));
+    expect(trackedFreshness(tracked.tracking!, old).stale).toBe(true);
+    expect(judgeBound(tracked, old, null).join("; ")).toMatch(/stale: last successful refresh 2026-09-13T10:59:00Z is older than 2 x 30m/);
+    const inside = probe(stampLine({ lastSuccessAt: "2026-09-13T11:01:00Z" }));
+    expect(judgeBound(tracked, inside, null)).toEqual([]);
+  });
+
+  test("a failed refresh fails verify before it is stale - serving the last good tree is never quiet", () => {
+    const failing = probe(stampLine({ consecutiveFailures: 2, error: "branch main was rewritten" }));
+    expect(trackedFreshness(tracked.tracking!, failing).stale).toBe(false);
+    expect(judgeBound(tracked, failing, null)).toEqual(["last refresh failed (2 in a row): branch main was rewritten"]);
+  });
+
+  test("a live tree that disagrees with its stamp, a moved branch, or no stamp at all, fails", () => {
+    expect(judgeBound(tracked, probe(stampLine(), "d".repeat(40)), null).join("; ")).toMatch(/live tree at dddddddddddd but the stamp records cccccccccccc/);
+    expect(judgeBound(tracked, probe(stampLine({ branch: "release" })), null).join("; ")).toMatch(/stamp tracks branch release, the binding tracks main/);
+    const never = judgeBound(tracked, probe(null), null).join("; ");
+    expect(never).toMatch(/never synced/);
+    expect(never).toMatch(/stale: last successful refresh never/);
+    expect(judgeBound(tracked, probe("{not json"), null).join("; ")).toMatch(/does not parse/);
+  });
+
+  test("a tracked row's revision match is its stamp, not the empty compiled revision", () => {
+    const d = desired({ bindings: [tracked] });
+    const group = groupBindings(d.bindings)[0]!;
+    const p = probe();
+    const good = row({ resolvedRevision: "", probe: p, tracking: trackedFreshness(tracked.tracking!, p) });
+    expect(scenarioFromRows(d, group, [good]).revisionMatched).toBe(true);
+    const moved = probe(stampLine(), "d".repeat(40));
+    const bad = row({ resolvedRevision: "", probe: moved, tracking: trackedFreshness(tracked.tracking!, moved), ok: false, problems: ["live tree"] });
+    expect(scenarioFromRows(d, group, [bad]).revisionMatched).toBe(false);
+  });
+
+  test("workspaceList carries the channel for a tracked repository", () => {
+    const rows = workspaceList({} as never, desired({ bindings: [tracked] }));
+    expect(rows[0]!.tracking).toEqual({ branch: "main", refreshInterval: "30m" });
+    expect(rows[0]!.resolvedRevision).toBe("");
   });
 });

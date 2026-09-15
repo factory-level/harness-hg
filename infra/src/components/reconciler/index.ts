@@ -47,6 +47,9 @@ export class Reconciler extends pulumi.ComponentResource {
       rc.apply ? `--apply ${shellQuote(rc.apply)}` : "",
       rc.statusNamespace ? `--status-namespace ${shellQuote(rc.statusNamespace)}` : "",
       rc.kubeContext ? `--kube-context ${shellQuote(rc.kubeContext)}` : "",
+      rc.kind === "team" ? "--kind team" : "",
+      rc.kind === "team" && rc.team ? `--team-plan ${shellQuote(rc.team.plan)}` : "",
+      rc.environmentFile ? `--environment-file ${shellQuote(rc.environmentFile)}` : "",
       "--now",
     ]
       .filter(Boolean)
@@ -64,7 +67,9 @@ export class Reconciler extends pulumi.ComponentResource {
         // the JSON is the trigger, so no field can change silently.
         triggers: [JSON.stringify(rc)],
       },
-      { parent: this, dependsOn: args.dependsOn },
+      // Both generations own the same unit paths. Uninstall the old generation
+      // first; create-before-delete would erase the newly installed timer.
+      { parent: this, dependsOn: args.dependsOn, deleteBeforeReplace: true },
     );
     this.resources.push(install);
     this.registerOutputs({ resources: this.resources });

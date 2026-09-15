@@ -6,7 +6,7 @@ import { React } from "../../sdk";
 import { Drawer, Face, HealthDot, Icon, StatusPill, Tab, TabList } from "../../primitives";
 import type { HealthLevel } from "../../primitives";
 import { flagOn, type DataStore } from "../../stores/data";
-import { agentLevel, applyFilters, bundleOf, groupLevel, groups } from "./model";
+import { agentInstances, agentLevel, applyFilters, bundleOf, groupLevel, groups } from "./model";
 import { PanelGrid } from "../panels/Panels";
 import "./agents.css";
 
@@ -145,6 +145,7 @@ function AgentDetail({ ds, id }: { ds: DataStore; id: string }) {
   const comp = ds.health?.components?.[id];
   const level = (comp?.level ?? "unknown") as HealthLevel;
   const b = bundleOf(data, id);
+  const instances = agentInstances(data, ds.health, id);
   const [tab, setTab] = React.useState("instances");
   const TABS = ["instances", "metrics", "repositories", "communication", "docs"] as const;
   return (
@@ -164,13 +165,20 @@ function AgentDetail({ ds, id }: { ds: DataStore; id: string }) {
       </div>
       {tab === "instances" ? (
         <div>
-          {Object.keys(ds.health?.instances ?? {}).filter((k) => k.startsWith(`${id}`)).length === 0 ? (
-            <p className="nx-state">
-              No instance rows in the overlay — unknown is not the same as healthy.
-            </p>
-          ) : (
-            <p>Instance rows render verbatim from the served overlay.</p>
-          )}
+          {instances.length === 0 ? (
+            <p className="nx-state">No deployment instances are declared for this agent.</p>
+          ) : instances.map((instance) => (
+            <section key={instance.id} aria-label={`Instance ${instance.id}`}>
+              <dl className="nx-facts">
+                <dt>Instance</dt><dd>{instance.id}</dd>
+                <dt>Health</dt><dd><StatusPill level={instance.level as HealthLevel} /></dd>
+                <dt>Application</dt><dd>{instance.application ?? "Unknown"}</dd>
+                <dt>Namespace</dt><dd>{instance.namespace ?? "Unknown"}</dd>
+                <dt>Target</dt><dd>{instance.target ?? "Unknown"}</dd>
+              </dl>
+              {instance.reasons.map((reason, index) => <p key={index}>{reason}</p>)}
+            </section>
+          ))}
         </div>
       ) : null}
       {tab === "metrics" ? (

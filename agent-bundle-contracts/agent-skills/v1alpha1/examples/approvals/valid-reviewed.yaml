@@ -1,0 +1,12 @@
+{
+  "apiVersion": "hermes-gitops.factorylevel.dev/agent-skills/v1alpha1",
+  "kind": "SkillApprovals",
+  "approvals": [
+    {
+      "subject": "https://github.com/example/team#research",
+      "fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "approvedBy": "operator",
+      "approvedAt": "2026-09-09T00:00:00.000Z"
+    }
+  ]
+}

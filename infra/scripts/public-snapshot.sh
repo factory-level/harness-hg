@@ -27,6 +27,7 @@ OVERLAY=(
   infra/environments/factory-proactive-volumes.py
   infra/environments/factory-proactive-topology.ts
   infra/environments/factory-communication
+  infra/environments/factory-workshops
   infra/Pulumi.factory.yaml
   state/Pulumi.factory.yaml
   _old-docs
@@ -77,8 +78,19 @@ rm -f "$OUT/.snapshot-make-test.log"
 # make test writes build output (site/, _docs/site/); the commit predates it
 # and .gitignore covers it, so the tree is still one clean commit.
 (cd "$OUT" && git status --short | head -5)
-echo "== snapshot ready at $OUT ($(cd "$OUT" && git rev-parse --short HEAD)); push it with:"
-echo "   git -C $OUT push $PUBLIC_REMOTE HEAD:main && git -C $OUT tag -a vX.Y.Z -m ... && git -C $OUT push $PUBLIC_REMOTE vX.Y.Z"
+# The tag is the version the ops history derives (the export is one orphan
+# commit and cannot derive it itself). Release notes come from the same parse.
+TAG="$(python3 "$ROOT/infra/scripts/derive-version.py" --print | sed 's/-dev+.*//')"
+if git -C "$ROOT" ls-remote --tags "$PUBLIC_REMOTE" "refs/tags/$TAG" 2>/dev/null | grep -q .; then
+  echo "public-snapshot: $TAG is already released - nothing version-moving (feat/fix/perf) landed since; a docs-only cut needs one first"; exit 1
+fi
+NOTES="$OUT/../$TAG-notes.md"
+python3 "$ROOT/infra/scripts/release-notes.py" > "$NOTES"
+# The notes are private commit subjects, published verbatim: same gate.
+bash "$ROOT/infra/scripts/check-public-clean.sh" --file "$NOTES"
+echo "== snapshot ready at $OUT ($(cd "$OUT" && git rev-parse --short HEAD)) as $TAG; notes at $NOTES. Push and release with:"
+echo "   git -C $OUT push $PUBLIC_REMOTE HEAD:main && git -C $OUT tag -a $TAG -m 'release $TAG' && git -C $OUT push $PUBLIC_REMOTE $TAG"
+echo "   gh release create $TAG -R factory-level/harness-hg --title $TAG --notes-file $NOTES"
 # A force-pushed orphan commit has no base to diff, so the wiki workflow's
 # path filter never matches and no run starts: dispatch it by hand.
 echo "   then: gh workflow run wiki -R factory-level/harness-hg --ref main   (the push trigger's path filter cannot see an orphan commit)"

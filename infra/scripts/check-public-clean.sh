@@ -5,13 +5,31 @@
 # exclusions. Everything else must already be clean here, so a leak is
 # caught at the PR that introduces it, not at release time.
 #
-# The patterns are the operator's own: server addresses, cloud project ids,
-# Zero Trust team, Slack workspace/channel/user ids, personal addresses, the
-# OAuth client id. Add one when a new identifier enters the ops overlay.
+# Two pattern sources. The built-in one matches identifiers by SHAPE (LAN
+# addresses, Slack workspace/channel/user/app ids, personal mail) so this
+# script can ship in the snapshot without listing anyone. Operator-specific
+# strings (cloud project ids, handles, a Zero Trust team) live in the
+# untracked infra/scripts/public-clean.local, one extended-regex per line;
+# add one there when a new identifier enters the ops overlay.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 
-PATTERN='192\.168\.[0-9]+\.[0-9]+|inferlab-dev|neonware-cloud|T0BSL59DCJK|C0BSV8XLXM1|U0BSZHWPRK8|A0BSW9XNWSX|calvinl|@gmail\.com|982197905155|factory-level@'
+# Slack ids: a type letter (team, channel, user, app, DM, group, enterprise
+# user) then the `0B` allocation era every id in this workspace shares, then
+# 8+ upper-alphanumerics, as a whole word. Documentation placeholders such
+# as T0123456789 and T0000000000 are deliberately outside the shape; an id
+# from another era goes in public-clean.local.
+PATTERN='192\.168\.[0-9]+\.[0-9]+|\b[TCUADGW]0B[A-Z0-9]{8,}\b|@[g]mail\.com|[f]actory-level@'
+LOCAL="$(dirname "$0")/public-clean.local"
+if [ -f "$LOCAL" ]; then
+  EXTRA="$(grep -vE '^\s*(#|$)' "$LOCAL" | paste -sd'|' -)"
+  [ -n "$EXTRA" ] && PATTERN="$PATTERN|$EXTRA"
+fi
+# --file <path>: gate one file outside the tree (the release notes).
+if [ "${1:-}" = "--file" ]; then
+  if grep -nE "$PATTERN" "$2"; then echo "public-clean: operator identifiers in $2"; exit 1; fi
+  echo "OK   no operator identifiers in $2"; exit 0
+fi
 
 # The operator overlay: files the public snapshot does not carry.
 OVERLAY=(
@@ -23,6 +41,7 @@ OVERLAY=(
   ':(exclude)infra/environments/factory-proactive-volumes.py'
   ':(exclude)infra/environments/factory-proactive-topology.ts'
   ':(exclude)infra/environments/factory-communication'
+  ':(exclude)infra/environments/factory-workshops'
   ':(exclude)infra/Pulumi.factory.yaml'
   ':(exclude)state/Pulumi.factory.yaml'
   ':(exclude)_old-docs'
@@ -40,7 +59,6 @@ ALLOW=(
   ':(exclude)control-plane/event-router/image/build.sh'
   ':(exclude)plugin/tests/chart/golden'
   ':(exclude)control-plane/nexus/dist'
-  ':(exclude)infra/scripts/check-public-clean.sh'
 )
 if [ "${1:-}" = "--strict" ]; then OVERLAY=(); fi
 

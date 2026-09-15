@@ -1,0 +1,32 @@
+# A team-kind watcher stopped because a named human has not approved an
+# operator overlay. Nothing failed: the commit is not blocked, the watcher
+# re-attempts on a capped backoff, and the reason and the next attempt are
+# both visible so an operator knows what to do and when it will be re-read.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: ReconciliationStatus
+observedAt: "2026-09-10T09:20:00Z"
+phase: pending
+installation: factory-teams
+stage: validated
+pending:
+  reason: approval-required
+  since: "2026-09-10T09:19:44Z"
+  nextAttemptAt: "2026-09-10T09:21:44Z"
+desiredSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+attemptedSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+appliedSha: 4f2c1ab9d7e3c5b1a0f8e6d4c2b0a9f8e7d6c5b4
+retryable: false
+version: factory-team-watcher-1
+sources:
+  - id: social
+    ref: refs/tags/v1.4.0
+    desiredSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+    appliedSha: 0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e
+agents:
+  - name: manager
+    source: social
+    desiredSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+    appliedSha: 0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e
+    runtimeDigest: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    eveVersion: 0.42.0
+    ready: true

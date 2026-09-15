@@ -1,0 +1,21 @@
+# A commit is not a release channel: a 40-hex "branch" is refused, because
+# mode: pinned is how a checkout is held at one commit.
+apiVersion: hermes.gitops/v1alpha2
+kind: WorkspaceBindings
+
+repositories:
+  - name: vision
+    source:
+      url: https://github.com/organization/vision-manager.git
+      revision:
+        mode: tracked
+        branch: 0123456789abcdef0123456789abcdef01234567
+        refreshInterval: 30m
+    mount:
+      path: /workspaces/vision-manager
+      access: read-only
+
+bindings:
+  - repository: vision
+    profiles: [marketing-manager]
+    purpose: brand-context

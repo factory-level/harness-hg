@@ -62,7 +62,7 @@ def _api_stub(tmp_path: Path) -> str:
         f"""
 case "$1" in
   api)
-    printf '{{"ok":true,"team_id":"{TEAM}","user_id":"U0TESTBOT01","bot_id":"B0TESTBOT01","user":"test-app"}}\\n'
+    printf '{{"ok":true,"team_id":"{TEAM}","user_id":"UTESTBOT001","bot_id":"B0TESTBOT01","user":"test-app"}}\\n'
     ;;
   app)
     echo "deleted" >&2
@@ -342,7 +342,7 @@ def test_bot_identity_parses_and_pins_the_team(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     provision_app(_creds(tmp_path), TEAM, MANIFEST, project, http_post=_provision_post())
     out = bot_identity(_api_stub(tmp_path), project, TEAM, "A0NEWAPP001")
-    assert out == {"user_id": "U0TESTBOT01", "bot_id": "B0TESTBOT01", "team_id": TEAM}
+    assert out == {"user_id": "UTESTBOT001", "bot_id": "B0TESTBOT01", "team_id": TEAM}
 
 
 def test_bot_identity_refuses_a_foreign_team(tmp_path: Path) -> None:
@@ -525,4 +525,4 @@ def test_cli_bot_identity_falls_back_to_project_record(tmp_path: Path) -> None:
         tmp_path,
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["user_id"] == "U0TESTBOT01"
+    assert json.loads(result.stdout)["user_id"] == "UTESTBOT001"

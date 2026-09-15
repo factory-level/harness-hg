@@ -1,0 +1,2031 @@
+---
+# Source: eve-agent/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ag-eve-echo
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+---
+# Source: eve-agent/templates/smoke-job.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ag-eve-echo-smoke
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+---
+# Source: eve-agent/templates/configmap-boot.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ag-eve-echo-boot
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+data:
+  channel-eve.ts: |
+    // The platform's route policy for a self-hosted Eve agent (ADR-149).
+    //
+    // Eve fails closed in production: without an authenticator that accepts the
+    // caller, every session route answers 401. The eve-agent chart mints a
+    // per-instance credential (Secret ag-eve-<name>-route-auth), mounts its
+    // password at ROUTE_AUTH_BASIC_PASSWORD_FILE and names the user in
+    // ROUTE_AUTH_BASIC_USERNAME; `hg test` and `hg agent prove` authenticate with
+    // the same pair.
+    //
+    // ONE credential, TWO header schemes. Basic is what hg and browsers send;
+    // Bearer <password> is what `eve eval --url` sends when EVE_EVAL_AUTH_TOKEN is
+    // set (eve's own evals authenticate with a bearer, never Basic), so the
+    // agent's evals can run against its deployment with the same minted secret.
+    //
+    // The password is read from the file ON EVERY REQUEST, not captured at
+    // module load: a re-minted Secret (ESO re-running its generator after a
+    // chart-label bump) propagates through the mounted volume and takes effect
+    // without a pod restart. A plain httpBasic({username, password}) would keep
+    // verifying the old value until the process restarted.
+    //
+    // This file is the authored form. When an agent ships NO agent/channels/eve.ts
+    // the chart's boot script writes exactly this one, so a persona only authors
+    // the file to add a stricter or different policy (OIDC, a custom AuthFn).
+    // localDev() stays in the walk: it authenticates only under `eve dev`.
+    import { readFileSync } from "node:fs";
+    import { timingSafeEqual } from "node:crypto";
+    import {
+      type AuthFn,
+      extractBearerToken,
+      localDev,
+      verifyHttpBasic,
+      withAuthChallenges,
+    } from "eve/channels/auth";
+    import { eveChannel } from "eve/channels/eve";
+    
+    const username = process.env.ROUTE_AUTH_BASIC_USERNAME ?? "";
+    const passwordFile = process.env.ROUTE_AUTH_BASIC_PASSWORD_FILE ?? "";
+    
+    function currentPassword(): string {
+      if (passwordFile) {
+        try {
+          return readFileSync(passwordFile, "utf8").trim();
+        } catch {
+          return "";
+        }
+      }
+      return process.env.ROUTE_AUTH_BASIC_PASSWORD ?? "";
+    }
+    
+    function sameSecret(a: string, b: string): boolean {
+      const x = Buffer.from(a, "utf8");
+      const y = Buffer.from(b, "utf8");
+      return x.length === y.length && timingSafeEqual(x, y);
+    }
+    
+    const platformCredential: AuthFn<Request> = withAuthChallenges(
+      (request) => {
+        const password = currentPassword();
+        if (!username || !password) return null;
+        const header = request.headers.get("authorization");
+        const basic = verifyHttpBasic(header, { username, password });
+        if (basic.ok) return basic.sessionAuth;
+        // Bearer <password>: the same secret, re-verified through the Basic
+        // verifier so both schemes yield the identical principal.
+        const bearer = extractBearerToken(header);
+        if (bearer && sameSecret(bearer, password)) {
+          const asBasic = "Basic " + Buffer.from(`${username}:${password}`, "utf8").toString("base64");
+          const viaBasic = verifyHttpBasic(asBasic, { username, password });
+          return viaBasic.ok ? viaBasic.sessionAuth : null;
+        }
+        return null;
+      },
+      [
+        { scheme: "Basic", parameters: { realm: "agent", charset: "UTF-8" } },
+        { scheme: "Bearer", parameters: { realm: "agent" } },
+      ],
+    );
+    
+    export default eveChannel({
+      auth: [platformCredential, localDev()],
+    });
+    
+  boot.sh: |
+    #!/bin/sh
+    # harness/eve/charts/eve-agent/files/boot.sh - the build-agent initContainer's
+    # script (ADR-149/150). harness/eve/charts/eve-bundle/files/boot.sh is a byte-
+    # identical copy (render-test cmp-gates it); edit this one and copy.
+    set -eu
+    
+    # Roots. The eve-agent chart mounts its data claim at /app; the eve-bundle
+    # chart shares one claim between members and gives each its own root
+    # (/app/members/<name>) plus a bundle-wide workspaces claim.
+    DATA_ROOT="${EVE_DATA_ROOT:-/app}"
+    STAMP_DIR="$DATA_ROOT/.hermes-gitops"
+    STAMP_FILE="$STAMP_DIR/installed_sha"
+    RECEIPT_FILE="$STAMP_DIR/build-receipt.json"
+    SRC_DIR="$DATA_ROOT/src"
+    PROJECT_DIR="$SRC_DIR${EVE_DIST_SUBDIR:+/$EVE_DIST_SUBDIR}"
+    STATE_DIR="$DATA_ROOT/state"
+    WORKSPACES_DIR="${EVE_WORKSPACES_DIR:-$DATA_ROOT/workspaces}"
+    # EVE_BOOT_MODE: "agent" (default) builds the project and syncs bindings;
+    # "workspaces" only syncs bindings (the bundle's shared-claim init).
+    BOOT_MODE="${EVE_BOOT_MODE:-agent}"
+    SCRIPTS_DIR="${EVE_SCRIPTS_DIR:-/scripts}"
+    export HOME="$DATA_ROOT/home"
+    export npm_config_cache="$DATA_ROOT/.npm"
+    mkdir -p "$HOME" "$npm_config_cache"
+    
+    # ---- the runtime this record was rendered for (ADR 0192) -----------------
+    # A per-agent runtime pin names an image AND the eve release it ships. If the
+    # image running this script ships a different one, the record and the image
+    # disagree: fail here, before any clone or install, rather than build against
+    # the wrong runtime. Unset (no pin) keeps the image's own version.
+    if [ -n "${EXPECTED_EVE_VERSION:-}" ] && [ "$EXPECTED_EVE_VERSION" != "${EVE_VERSION:-}" ]; then
+      echo "[build-agent] this record pins eve@$EXPECTED_EVE_VERSION but the image ships eve@${EVE_VERSION:-unknown} - the pinned image and version in versions.json runtimes.eve.allowed disagree" >&2
+      exit 1
+    fi
+    
+    # ---- operator overlay fetch (ADR 0194) -----------------------------------
+    # One overlay's repository at its pinned commit into $OV_ROOT/<id>, with the
+    # workspace bindings' throwaway-HOME credential handling. Unlike a workspace,
+    # a failure EXITS: approved overlay content is part of the build, never skipped.
+    overlay_fetch() {
+      ov_id="$1"; ov_repo="$2"; ov_commit="$3"
+      ov_dir="$OV_ROOT/$ov_id"
+      # The record contract's own rules, re-checked before git sees the values: a
+      # credential-free https:// or git@ URL and a full commit. The URL is never
+      # echoed when it is refused.
+      case "$ov_repo" in
+        https://*@*|https://*\?*|https://*\#*) ov_bad="carries user info, a query or a fragment" ;;
+        https://*|git@*) ov_bad="" ;;
+        *) ov_bad="is not an https:// or git@ URL" ;;
+      esac
+      if [ -n "$ov_bad" ]; then
+        echo "[build-agent] overlay $ov_id: its repository $ov_bad - the build stops" >&2
+        exit 1
+      fi
+      if ! printf '%s' "$ov_commit" | grep -Eq '^[0-9a-f]{40}$'; then
+        echo "[build-agent] overlay $ov_id: its commit is not a full 40-hex sha - the build stops" >&2
+        exit 1
+      fi
+      OV_HOME="$(mktemp -d /tmp/ov-auth.XXXXXX)"
+      ov_cred="/run/secrets/overlays/$ov_id/git"
+      if [ -d "$ov_cred" ]; then
+        case "$ov_repo" in
+          https://*)
+            if [ -f "$ov_cred/username" ] && [ -f "$ov_cred/password" ]; then
+              ov_host="$(printf '%s' "$ov_repo" | sed -E 's#^https://([^/]+)/.*#\1#')"
+              printf 'machine %s\nlogin %s\npassword %s\n' "$ov_host" "$(cat "$ov_cred/username")" "$(cat "$ov_cred/password")" > "$OV_HOME/.netrc"
+              chmod 600 "$OV_HOME/.netrc"
+            fi
+            ;;
+          git@*|ssh://*)
+            if [ -f "$ov_cred/ssh-privatekey" ]; then
+              mkdir -p "$OV_HOME/.ssh"
+              cp "$ov_cred/ssh-privatekey" "$OV_HOME/.ssh/key"
+              chmod 600 "$OV_HOME/.ssh/key"
+              export GIT_SSH_COMMAND="ssh -i $OV_HOME/.ssh/key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$OV_HOME/.ssh/known_hosts"
+            fi
+            ;;
+        esac
+      fi
+      mkdir -p "$ov_dir"
+      if HOME="$OV_HOME" git -C "$ov_dir" init -q \
+        && HOME="$OV_HOME" git -C "$ov_dir" fetch -q --depth=1 -- "$ov_repo" "$ov_commit" \
+        && HOME="$OV_HOME" git -C "$ov_dir" -c advice.detachedHead=false checkout -q --detach FETCH_HEAD \
+        && [ "$(HOME="$OV_HOME" git -C "$ov_dir" rev-parse HEAD)" = "$ov_commit" ]; then
+        rm -rf "$ov_dir/.git"
+        unset GIT_SSH_COMMAND || true
+        rm -rf "$OV_HOME"
+        echo "[build-agent] overlay $ov_id: fetched $ov_repo @ $ov_commit"
+      else
+        unset GIT_SSH_COMMAND || true
+        rm -rf "$OV_HOME"
+        echo "[build-agent] overlay $ov_id could not be fetched from $ov_repo @ $ov_commit - the build stops (approved overlay content is never skipped); check the repository, the commit and its credential" >&2
+        exit 1
+      fi
+    }
+    
+    
+    # ---- the build receipt (ADR 0195) ---------------------------------------
+    # What this volume actually built, beside the stamp that gates rebuilds. The
+    # startup probe compares it with what the pod was rendered for, and the
+    # termination message publishes it into pod status - no new permissions.
+    write_receipt() {
+      wr_eve="$1"
+      wr_tmp="$STAMP_DIR/.build-receipt.$$"
+      printf '{"sourceSha":"%s","overlayDigest":"%s","buildKey":"%s","eveVersion":"%s","imageEveVersion":"%s","runtimeDigest":"%s","builtAt":"%s"}\n' \
+        "$EVE_DIST_SHA" "${EVE_OVERLAY_DIGEST:-}" "$BUILD_KEY" "$wr_eve" "${EVE_VERSION:-}" \
+        "${HG_RUNTIME_DIGEST:-}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$wr_tmp"
+      mv "$wr_tmp" "$RECEIPT_FILE"
+    }
+    
+    if [ "$BOOT_MODE" = "agent" ]; then
+    mkdir -p "$STAMP_DIR" "$STATE_DIR/workflow-data" "$STATE_DIR/sandbox-cache"
+    
+    CURRENT_SHA=""
+    if [ -f "$STAMP_FILE" ]; then
+      CURRENT_SHA="$(cat "$STAMP_FILE")"
+    fi
+    
+    # The build key is spec.sha, plus the overlay digest when operator overlays
+    # exist (ADR 0194): an overlay-only change rebuilds, and an agent without
+    # overlays keeps the stamp it already has.
+    BUILD_KEY="$EVE_DIST_SHA"
+    if [ -n "${EVE_OVERLAY_DIGEST:-}" ]; then
+      BUILD_KEY="$(printf '%s\n%s' "$EVE_DIST_SHA" "$EVE_OVERLAY_DIGEST" | sha256sum | cut -d' ' -f1)"
+    fi
+    
+    if [ "$CURRENT_SHA" != "$BUILD_KEY" ] || [ ! -d "$PROJECT_DIR/.output" ]; then
+      echo "[build-agent] installed_sha ('$CURRENT_SHA') != build key ('$BUILD_KEY') - (re)building the agent"
+      # The stamp goes first: a rebuild that fails before stamping (overlay
+      # verification included) must never be skipped on the next start.
+      rm -f "$STAMP_FILE" "$RECEIPT_FILE"
+      rm -rf "$SRC_DIR"
+    
+      # ---- clone, with private-source auth kept off the data claim --------
+      # spec.gitAuthSecretRef is mounted at /git-auth; username+password
+      # become a ~/.netrc, ssh-privatekey an identity - both under a
+      # throwaway HOME in the container's own /tmp, removed by the trap on
+      # ANY exit (a failed clone included).
+      GIT_HOME="$(mktemp -d /tmp/git-auth.XXXXXX)"
+      trap 'rm -rf "$GIT_HOME"' EXIT
+      if [ -d /git-auth ]; then
+        case "$EVE_DIST_SOURCE" in
+          https://*)
+            if [ -f /git-auth/username ] && [ -f /git-auth/password ]; then
+              DIST_HOST="$(printf '%s' "$EVE_DIST_SOURCE" | sed -E 's#^https://([^/]+)/.*#\1#')"
+              printf 'machine %s\nlogin %s\npassword %s\n' \
+                "$DIST_HOST" "$(cat /git-auth/username)" "$(cat /git-auth/password)" > "$GIT_HOME/.netrc"
+              chmod 600 "$GIT_HOME/.netrc"
+              echo "[build-agent] git auth: using HTTPS credentials from gitAuthSecretRef for $DIST_HOST"
+            else
+              echo "[build-agent] git auth: /git-auth mounted but username/password keys missing for an https source" >&2
+              exit 1
+            fi
+            ;;
+          git@*|ssh://*)
+            if [ -f /git-auth/ssh-privatekey ]; then
+              mkdir -p "$GIT_HOME/.ssh"
+              cp /git-auth/ssh-privatekey "$GIT_HOME/.ssh/git-auth-key"
+              chmod 600 "$GIT_HOME/.ssh/git-auth-key"
+              export GIT_SSH_COMMAND="ssh -i $GIT_HOME/.ssh/git-auth-key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$GIT_HOME/.ssh/known_hosts"
+              echo "[build-agent] git auth: using SSH deploy key from gitAuthSecretRef"
+            else
+              echo "[build-agent] git auth: /git-auth mounted but ssh-privatekey key missing for an ssh source" >&2
+              exit 1
+            fi
+            ;;
+        esac
+      fi
+      HOME="$GIT_HOME" git clone "$EVE_DIST_SOURCE" "$SRC_DIR"
+      HOME="$GIT_HOME" git -C "$SRC_DIR" checkout --detach "$EVE_DIST_SHA"
+      unset GIT_SSH_COMMAND || true
+      rm -rf "$GIT_HOME"
+      trap - EXIT
+      rm -rf "$SRC_DIR/.git"
+    
+      if [ ! -f "$PROJECT_DIR/package.json" ] || [ ! -d "$PROJECT_DIR/agent" ]; then
+        echo "[build-agent] $PROJECT_DIR is not an Eve project (package.json + agent/ required)${EVE_DIST_SUBDIR:+ - check spec.sourceSubdir}" >&2
+        exit 1
+      fi
+      if [ ! -f "$PROJECT_DIR/package-lock.json" ]; then
+        echo "[build-agent] $PROJECT_DIR has no package-lock.json - commit one (npm install --package-lock-only) so the build is reproducible from spec.sha" >&2
+        exit 1
+      fi
+    
+      # ---- operator overlays (ADR 0194) -----------------------------------
+      # Approved, commit-pinned content merged into agent/ before the build by
+      # files/overlay-apply.mjs, which verifies every content hash and the merged
+      # tree hash. Any refusal stops here with no stamp, so the next start
+      # re-clones and retries.
+      if [ -n "${EVE_OVERLAYS:-}" ]; then
+        OV_ROOT="$(mktemp -d /tmp/overlays.XXXXXX)"
+        trap 'rm -rf "$OV_ROOT"' EXIT
+        printf '%s\n' "$EVE_OVERLAYS" > "$OV_ROOT/.lines"
+        while read -r ov_id ov_kind ov_mode ov_target ov_repo ov_commit ov_path ov_hash; do
+          [ -n "$ov_id" ] || continue
+          [ "$ov_mode" = "remove" ] && continue
+          overlay_fetch "$ov_id" "$ov_repo" "$ov_commit"
+        done < "$OV_ROOT/.lines"
+        node "$SCRIPTS_DIR/overlay-apply.mjs" "$PROJECT_DIR" "$OV_ROOT"
+        rm -rf "$OV_ROOT"
+        trap - EXIT
+      fi
+      if [ "${EVE_BOOT_STOP_AFTER:-}" = "overlays" ]; then
+        echo "[build-agent] EVE_BOOT_STOP_AFTER=overlays - stopping before the build (test hook)"
+        exit 0
+      fi
+      cd "$PROJECT_DIR"
+    
+      # ---- route auth default ---------------------------------------------
+      if [ ! -f agent/channels/eve.ts ] && [ ! -f agent/channels/eve.js ] && [ ! -f agent/channels/eve.mjs ]; then
+        echo "[build-agent] no agent/channels/eve.ts authored - installing the platform default (Basic auth from the mounted route-auth credential)"
+        mkdir -p agent/channels
+        cp "$SCRIPTS_DIR/channel-eve.ts" agent/channels/eve.ts
+      fi
+    
+      # ---- dependencies + the platform's runtime pin ----------------------
+      npm ci --no-audit --no-fund
+      PROJECT_EVE="$(node -p "require('./node_modules/eve/package.json').version" 2>/dev/null || echo missing)"
+      if [ "$PROJECT_EVE" != "$EVE_VERSION" ]; then
+        echo "[build-agent] the project resolves eve@$PROJECT_EVE but the platform runtime is eve@$EVE_VERSION - pin \"eve\": \"$EVE_VERSION\" in package.json (and refresh package-lock.json), or set spec.deployment.runtimeImageTag to a platform image that ships $PROJECT_EVE" >&2
+        exit 1
+      fi
+    
+      # ---- build ----------------------------------------------------------
+      # The project's own eve (== the image's, checked above) compiles the
+      # agent and writes the Nitro server under .output/. A failed build
+      # leaves no stamp, so the next pod start retries from the clone.
+      ./node_modules/.bin/eve build --skip-sandbox-prewarm
+      test -d .output || { echo "[build-agent] eve build produced no .output/ directory" >&2; exit 1; }
+      echo "$BUILD_KEY" > "$STAMP_FILE"
+      echo "[build-agent] built $EVE_DIST_SHA${EVE_OVERLAY_DIGEST:+ with overlays $EVE_OVERLAY_DIGEST} with eve@$EVE_VERSION"
+    else
+      echo "[build-agent] installed_sha matches the build key ('$BUILD_KEY') - skipping rebuild"
+      # The build fields still describe this build: a skip only happens when the
+      # CURRENT build key already matches the stamp. Read the version actually
+      # installed rather than asserting the image's - missing evidence stays missing.
+      PROJECT_EVE="$(cd "$PROJECT_DIR" 2>/dev/null && node -p "require('./node_modules/eve/package.json').version" 2>/dev/null || echo "")"
+    fi
+    # Written on EVERY boot, not only after a rebuild: the runtime-manifest digest
+    # follows configuration, which changes without changing the build key, and a
+    # receipt left describing the previous configuration would wedge the startup
+    # gate on a config-only change. A volume built before receipts gains one here.
+    write_receipt "$PROJECT_EVE"
+    # Pod status carries the receipt even when the container exits successfully.
+    cat "$RECEIPT_FILE" > /dev/termination-log 2>/dev/null || true
+    
+    # ---- durable state outside the checkout --------------------------------
+    # Idempotent: a fresh checkout has no .eve/.workflow-data; an old-layout
+    # volume (state inside the project, pre-ADR-150) is migrated once.
+    mkdir -p "$PROJECT_DIR/.eve"
+    for pair in ".workflow-data:workflow-data" "sandbox-cache:sandbox-cache"; do
+      link="$PROJECT_DIR/.eve/${pair%%:*}"
+      target="$STATE_DIR/${pair##*:}"
+      if [ -d "$link" ] && [ ! -L "$link" ]; then
+        echo "[build-agent] migrating $link into $target"
+        cp -a "$link/." "$target/" && rm -rf "$link"
+      fi
+      if [ ! -L "$link" ]; then
+        rm -rf "$link"
+        ln -s "$target" "$link"
+      fi
+    done
+    
+    fi # BOOT_MODE=agent
+    
+    # ---- workspace bindings --------------------------------------------------
+    mkdir -p "$WORKSPACES_DIR/.stamps"
+    WS_KEEP=""
+    # A read-only checkout (chmod -R a-w) cannot be removed until its directories
+    # are writable again; a tracked workspace's symlink is removed as a link.
+    ws_remove_tree() {
+      if [ -L "$1" ]; then rm -f "$1"; return 0; fi
+      [ -e "$1" ] || return 0
+      chmod -R u+w "$1" 2>/dev/null || true
+      rm -rf "$1"
+    }
+    workspace_clone() {
+      ws_name="$1"; ws_source="$2"; ws_sha="$3"; ws_access="$4"
+      ws_dir="$WORKSPACES_DIR/$ws_name"
+      ws_stamp="$WORKSPACES_DIR/.stamps/$ws_name"
+      WS_KEEP="$WS_KEEP $ws_name"
+      # A binding that tracked a branch until now (ADR 0197) is a symlink into
+      # .revs/<name>: pinning it again starts from a real checkout.
+      if [ -L "$ws_dir" ]; then
+        echo "[build-agent] workspace $ws_name no longer tracks a branch - replacing it with a pinned checkout"
+        rm -f "$ws_dir" "$ws_stamp"
+      fi
+      rm -f "$ws_stamp.json"
+      ws_remove_tree "$WORKSPACES_DIR/.revs/$ws_name"
+      if [ -f "$ws_stamp" ] && [ "$(cat "$ws_stamp")" = "$ws_sha" ] && [ -d "$ws_dir" ]; then
+        echo "[build-agent] workspace $ws_name already at $ws_sha"
+        return 0
+      fi
+      # A read-only checkout (chmod -R a-w) cannot be removed until its
+      # directories are writable again - a re-pin of a read-only binding
+      # failed every boot before this line (found live).
+      [ -d "$ws_dir" ] && chmod -R u+w "$ws_dir" 2>/dev/null || true
+      rm -rf "$ws_dir" "$ws_stamp" "$ws_stamp.unavailable"
+      WS_HOME="$(mktemp -d /tmp/ws-auth.XXXXXX)"
+      ws_cred="/run/secrets/repositories/$ws_name/git"
+      if [ -d "$ws_cred" ]; then
+        case "$ws_source" in
+          https://*)
+            if [ -f "$ws_cred/username" ] && [ -f "$ws_cred/password" ]; then
+              ws_host="$(printf '%s' "$ws_source" | sed -E 's#^https://([^/]+)/.*#\1#')"
+              printf 'machine %s\nlogin %s\npassword %s\n' "$ws_host" "$(cat "$ws_cred/username")" "$(cat "$ws_cred/password")" > "$WS_HOME/.netrc"
+              chmod 600 "$WS_HOME/.netrc"
+            fi
+            ;;
+          git@*|ssh://*)
+            if [ -f "$ws_cred/ssh-privatekey" ]; then
+              mkdir -p "$WS_HOME/.ssh"
+              cp "$ws_cred/ssh-privatekey" "$WS_HOME/.ssh/key"
+              chmod 600 "$WS_HOME/.ssh/key"
+              export GIT_SSH_COMMAND="ssh -i $WS_HOME/.ssh/key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$WS_HOME/.ssh/known_hosts"
+            fi
+            ;;
+        esac
+      fi
+      if HOME="$WS_HOME" git clone --quiet "$ws_source" "$ws_dir" && HOME="$WS_HOME" git -C "$ws_dir" checkout --quiet --detach "$ws_sha"; then
+        [ "$ws_access" = "read-only" ] && chmod -R a-w "$ws_dir" || true
+        echo "$ws_sha" > "$ws_stamp"
+        echo "[build-agent] workspace $ws_name: $ws_source @ $ws_sha ($ws_access)"
+      else
+        rm -rf "$ws_dir"
+        : > "$ws_stamp.unavailable"
+        echo "[build-agent] WARNING workspace $ws_name could not be cloned from $ws_source @ $ws_sha - the agent starts WITHOUT it (degraded); fix the binding or the credential" >&2
+      fi
+      unset GIT_SSH_COMMAND || true
+      rm -rf "$WS_HOME"
+    }
+    # EVE_WORKSPACE_BINDINGS: one binding per line, "name source revision access
+    # [mode interval]", rendered by the chart from spec.workspace.repositories
+    # (eve-agent) or spec.repositories (eve-bundle). No mode means pinned and the
+    # revision is the sha; mode "tracked" means the revision is a branch that
+    # files/workspace-sync.sh refreshes every interval seconds (ADR 0197).
+    # Empty = no bindings.
+    if [ -n "${EVE_WORKSPACE_BINDINGS:-}" ]; then
+      printf '%s\n' "$EVE_WORKSPACE_BINDINGS" | while read -r ws_n ws_s ws_h ws_a ws_m ws_i; do
+        [ -n "$ws_n" ] || continue
+        WS_KEEP="$WS_KEEP $ws_n"
+        printf '%s\n' "$ws_n" >> "$WORKSPACES_DIR/.stamps/.keep.$$"
+        case "${ws_m:-pinned}" in
+          pinned) workspace_clone "$ws_n" "$ws_s" "$ws_h" "$ws_a" ;;
+          tracked) ;;
+          *)
+            : > "$WORKSPACES_DIR/.stamps/$ws_n.unavailable"
+            echo "[build-agent] WARNING workspace $ws_n has unknown mode '$ws_m' - the agent starts WITHOUT it (degraded)" >&2
+            ;;
+        esac
+      done
+    fi
+    # Tracked bindings (ADR 0197) are cloned at their branch tip by the SAME
+    # script the workspace-sync container runs every interval, so the first clone
+    # and every refresh share one implementation of fast-forward-only, the atomic
+    # switch and the freshness stamp. It never fails the boot: a clone that fails
+    # leaves the .unavailable marker and the agent starts without it, loudly.
+    if printf '%s\n' "${EVE_WORKSPACE_BINDINGS:-}" | grep -Eq '^[^ ]+ [^ ]+ [^ ]+ [^ ]+ tracked( |$)'; then
+      if [ -f "$SCRIPTS_DIR/workspace-sync.sh" ]; then
+        EVE_WORKSPACES_DIR="$WORKSPACES_DIR" sh "$SCRIPTS_DIR/workspace-sync.sh" once \
+          || echo "[build-agent] WARNING the tracked-workspace sync exited non-zero (degraded) - see its lines above" >&2
+      else
+        echo "[build-agent] WARNING tracked workspace bindings but no $SCRIPTS_DIR/workspace-sync.sh - they start UNAVAILABLE (degraded)" >&2
+        printf '%s\n' "$EVE_WORKSPACE_BINDINGS" | while read -r ws_n ws_s ws_h ws_a ws_m ws_i; do
+          if [ "$ws_m" = "tracked" ]; then : > "$WORKSPACES_DIR/.stamps/$ws_n.unavailable"; fi
+        done
+      fi
+    fi
+    # WS_KEEP was set in a subshell (the pipe); re-read it from the keep list.
+    WS_KEEP=" $(cat "$WORKSPACES_DIR/.stamps/.keep.$$" 2>/dev/null | tr '\n' ' ')"
+    rm -f "$WORKSPACES_DIR/.stamps/.keep.$$"
+    # Unbound workspaces are removed: a binding that disappeared from Git
+    # must not linger as a checkout the agent can still read. A tracked one is a
+    # symlink plus its revisions under .revs/<name>; both go.
+    for d in "$WORKSPACES_DIR"/*; do
+      [ -d "$d" ] || [ -L "$d" ] || continue
+      n="$(basename "$d")"
+      case " $WS_KEEP " in *" $n "*) ;; *)
+        echo "[build-agent] removing unbound workspace $n"
+        ws_remove_tree "$d"
+        rm -rf "$WORKSPACES_DIR/.stamps/$n" "$WORKSPACES_DIR/.stamps/$n.unavailable" "$WORKSPACES_DIR/.stamps/$n.json"
+        ;; esac
+    done
+    for d in "$WORKSPACES_DIR"/.revs/*; do
+      [ -d "$d" ] || continue
+      n="$(basename "$d")"
+      case " $WS_KEEP " in *" $n "*) ;; *) echo "[build-agent] removing the revisions of unbound workspace $n"; ws_remove_tree "$d" ;; esac
+    done
+    
+  overlay-apply.mjs: |
+    // Operator overlays (ADR 0194): the ONE merge implementation. The eve charts'
+    // build container runs it before `eve build` (files/boot.sh); `hg team` imports
+    // the same file to preflight the merged tree. Dependency-free Node, because it
+    // runs from the boot ConfigMap on the eve-runtime image.
+    //
+    //   node overlay-apply.mjs <project-dir> <content-root>
+    //
+    // Reads EVE_OVERLAYS - one "id kind mode target repository commit path
+    // contentHash" line per overlay, "-" for the fields a removal does not carry -
+    // plus EVE_OVERLAY_TREE_HASH and, when set, EVE_OVERLAY_DIGEST. The content of
+    // overlay <id> is <content-root>/<id>/<path>. Any refusal exits non-zero with
+    // the reason; the caller discards the partially merged tree.
+    import { createHash } from "node:crypto";
+    import fs from "node:fs";
+    import path from "node:path";
+    import { fileURLToPath } from "node:url";
+    
+    export const DISABLE_TOOL_STUB = 'import { disableTool } from "eve/tools";\n\nexport default disableTool();\n';
+    const KINDS = new Set(["skill", "tool", "connection", "instructions", "file"]);
+    const MODES = new Set(["append", "override", "remove"]);
+    const PROTECTED_PARTS = new Set(["package.json", "package-lock.json", "node_modules", ".eve", ".output", ".git"]);
+    const KIND_TARGETS = {
+      skill: /^agent\/skills\/[A-Za-z0-9_-]+(\.md)?$/,
+      tool: /^agent\/tools\/[A-Za-z0-9._-]+\.(ts|js|mjs)$/,
+      connection: /^agent\/connections\/[A-Za-z0-9._-]+\.(ts|js|mjs)$/,
+      instructions: /^agent\/instructions\.md$/,
+    };
+    
+    export class OverlayError extends Error {}
+    const fail = (message) => { throw new OverlayError(message); };
+    const exists = (target) => { try { fs.lstatSync(target); return true; } catch { return false; } };
+    
+    /** Every regular file under root as sorted relative paths; symlinks, special files and .git refuse. */
+    export function packageFiles(root) {
+      const files = [];
+      const visit = (dir) => {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) fail(`${path.relative(root, full)}: overlay content and agent trees hold regular files only, never symlinks`);
+          if (entry.name === ".git") fail("Git metadata is never overlay content");
+          if (entry.isDirectory()) visit(full);
+          else files.push(path.relative(root, full).split(path.sep).join("/"));
+        }
+      };
+      visit(root);
+      return files.sort();
+    }
+    
+    function hashFile(hash, name, bytes) {
+      const nameBytes = Buffer.from(name, "utf8");
+      hash.update(`${nameBytes.length}:`).update(nameBytes).update(`${bytes.length}:`).update(bytes);
+    }
+    
+    /** The overlay content hash: SHA-256 over every regular file in sorted relative-path order, each
+     * as the byte length and bytes of its path, then the byte length and bytes of its contents - an
+     * unambiguous encoding. A single file is a package of one file named by its basename. */
+    export function contentHash(target) {
+      const stat = fs.lstatSync(target);
+      if (stat.isSymbolicLink()) fail("overlay content must be a regular file or directory, never symlinks");
+      const hash = createHash("sha256");
+      if (stat.isFile()) {
+        hashFile(hash, path.basename(target), fs.readFileSync(target));
+        return hash.digest("hex");
+      }
+      if (!stat.isDirectory()) fail("overlay content must be a regular file or a directory");
+      for (const file of packageFiles(target)) hashFile(hash, file, fs.readFileSync(path.join(target, file)));
+      return hash.digest("hex");
+    }
+    
+    /** Where an overlay's fetched content lives inside its checkout, refusing any symlink on the way:
+     * the pinned commit must bind where the bytes came from, not only what they are. */
+    export function contentPath(checkout, o) {
+      if (o.source.path === ".") return checkout;
+      let at = checkout;
+      for (const part of o.source.path.split("/")) {
+        at = path.join(at, part);
+        if (!exists(at)) fail(`overlay ${o.id}: ${o.source.path} is absent at ${o.source.commit.slice(0, 12)}`);
+        if (fs.lstatSync(at).isSymbolicLink()) fail(`overlay ${o.id}: ${o.source.path} passes through a symlink in its repository`);
+      }
+      return at;
+    }
+    
+    export function overlayLines(overlays) {
+      return overlays.map(o => [o.id, o.kind, o.mode, o.target, o.source?.repository ?? "-", o.source?.commit ?? "-", o.source?.path ?? "-", o.contentHash ?? "-"].join(" ")).join("\n");
+    }
+    
+    /** What the chart renders as EVE_OVERLAY_DIGEST: sha256 of the lines, a newline, the tree hash. */
+    export function overlayDigest(overlays, treeHash) {
+      return createHash("sha256").update(`${overlayLines(overlays)}\n${treeHash}`).digest("hex");
+    }
+    
+    export function parseOverlayLines(text) {
+      const overlays = [];
+      for (const line of (text ?? "").split("\n")) {
+        if (!line.trim()) continue;
+        const fields = line.split(" ");
+        if (fields.length !== 8 || fields.some(field => !field)) fail("EVE_OVERLAYS lines carry exactly: id kind mode target repository commit path contentHash");
+        const [id, kind, mode, target, repository, commit, sourcePath, hash] = fields;
+        const sourceFields = [repository, commit, sourcePath, hash];
+        if (mode === "remove") {
+          if (sourceFields.some(field => field !== "-")) fail(`overlay ${id}: a removal carries no source`);
+          overlays.push({ id, kind, mode, target });
+        } else {
+          if (sourceFields.includes("-")) fail(`overlay ${id}: needs a source commit and content hash`);
+          overlays.push({ id, kind, mode, target, source: { repository, commit, path: sourcePath }, contentHash: hash });
+        }
+      }
+      return overlays;
+    }
+    
+    function validateEntry(o, seen) {
+      if (typeof o.id !== "string" || !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(o.id) || o.id.length > 40) fail(`overlay id ${JSON.stringify(o.id)} must be a DNS label`);
+      if (seen.has(o.id)) fail(`overlay ${o.id} appears twice`);
+      seen.add(o.id);
+      if (!KINDS.has(o.kind)) fail(`overlay ${o.id}: unknown kind ${JSON.stringify(o.kind)}`);
+      if (!MODES.has(o.mode)) fail(`overlay ${o.id}: unknown mode ${JSON.stringify(o.mode)}`);
+      const target = o.target;
+      const parts = typeof target === "string" ? target.split("/") : [];
+      if (parts[0] !== "agent" || parts.length < 2 || parts.some(part => !part || part === "." || part === "..") || /[\s\\\0]/.test(target)) fail(`overlay ${o.id}: target must be a normalized path under agent/`);
+      if (parts.some(part => PROTECTED_PARTS.has(part))) fail(`overlay ${o.id}: package files, node_modules, .eve, .output and .git are never overlay targets`);
+      if (/^agent\/(agent|sandbox)\.(ts|js|mjs)$/.test(target) || /^agent\/channels(\/|$)/.test(target)) fail(`overlay ${o.id}: the agent definition, sandbox and channels are never overlay targets`);
+      if (KIND_TARGETS[o.kind] && !KIND_TARGETS[o.kind].test(target)) fail(`overlay ${o.id}: a ${o.kind} overlay cannot target ${target}`);
+      if (o.kind === "file") {
+        if (/^agent\/(instructions\.md$|skills(\/|$))/.test(target)) fail(`overlay ${o.id}: file overlays never target skills or instructions`);
+        if (/^agent\/(tools|connections)(\/|$)/.test(target) && o.mode !== "remove") fail(`overlay ${o.id}: at or below tools/ and connections/ a file overlay may only remove`);
+      }
+      if (o.kind === "instructions" && o.mode === "remove") fail(`overlay ${o.id}: instructions are never removed`);
+      if (o.mode === "remove") {
+        if (o.source || o.contentHash) fail(`overlay ${o.id}: a removal carries no source`);
+        return;
+      }
+      if (!o.source || !/^[0-9a-f]{40}$/.test(o.source.commit ?? "") || !/^[a-f0-9]{64}$/.test(o.contentHash ?? "")) fail(`overlay ${o.id}: needs a source commit and content hash`);
+      const sourcePath = o.source.path;
+      if (sourcePath !== "." && (typeof sourcePath !== "string" || sourcePath.startsWith("/") || sourcePath.split("/").some(part => !part || part === "." || part === ".." || part === ".git"))) fail(`overlay ${o.id}: source path must stay inside its repository`);
+    }
+    
+    /** One writer per target; only instructions stack, as an optional override first, then appends. */
+    function validateWriters(overlays) {
+      const writers = new Map();
+      for (const o of overlays) writers.set(o.target, [...(writers.get(o.target) ?? []), o]);
+      for (const [target, group] of writers) {
+        if (group.length < 2) continue;
+        const stacked = group.every(o => o.kind === "instructions") && group.slice(1).every(o => o.mode === "append");
+        if (!stacked) fail(`target ${target} is written by overlays ${group.map(o => o.id).join(", ")} - one overlay per target; only instructions stack (an optional override first, then appends)`);
+      }
+    }
+    
+    /** Existing files that are the same Eve resource as the target, in any form it can take. */
+    function sameResource(project, o) {
+      if (o.kind === "skill") {
+        const base = o.target.replace(/\.md$/, "");
+        return [base, `${base}.md`, `${base}.ts`, `${base}.js`, `${base}.mjs`].filter(candidate => exists(path.join(project, candidate)));
+      }
+      if (o.kind === "tool" || o.kind === "connection") {
+        const base = o.target.replace(/\.(ts|js|mjs)$/, "");
+        return [`${base}.ts`, `${base}.js`, `${base}.mjs`].filter(candidate => exists(path.join(project, candidate)));
+      }
+      return exists(path.join(project, o.target)) ? [o.target] : [];
+    }
+    
+    /**
+     * Apply overlays to an Eve project in order. `contentFor(overlay)` names the fetched content for
+     * every non-removal. `protectedSkills` names skills the source's skill manifest owns, which an
+     * overlay may not override or remove. Returns the merged agent/ tree hash; when `treeHash` is
+     * given, a different merged tree refuses.
+     *
+     * No symlink is followed on a target path: it is checked before content is read and again right
+     * before every write. The checks and writes are separate pathname operations, so a process that
+     * can change the agent tree while this runs can still misdirect a write outside it; the trust
+     * boundary is whoever can write the data volume during the build.
+     */
+    export function applyOverlays({ project, overlays, contentFor, treeHash, protectedSkills = [] }) {
+      const agentRoot = path.join(project, "agent");
+      if (!exists(agentRoot) || fs.lstatSync(agentRoot).isSymbolicLink() || !fs.lstatSync(agentRoot).isDirectory()) fail("the project has no agent/ directory, or it is a symlink");
+      const agentReal = fs.realpathSync(agentRoot);
+      const guard = (o) => {
+        let at = project;
+        for (const part of o.target.split("/")) {
+          at = path.join(at, part);
+          if (!exists(at)) break;
+          if (fs.lstatSync(at).isSymbolicLink()) fail(`${o.target}: the agent tree has a symlink on the overlay path`);
+        }
+        const parent = path.dirname(path.join(project, o.target));
+        if (exists(parent)) {
+          const real = fs.realpathSync(parent);
+          if (real !== agentReal && !real.startsWith(`${agentReal}${path.sep}`)) fail(`${o.target}: resolves outside agent/`);
+        }
+      };
+      const seen = new Set();
+      for (const o of overlays) validateEntry(o, seen);
+      validateWriters(overlays);
+      for (const o of overlays) {
+        guard(o);
+        const destination = path.join(project, o.target);
+        const skillName = o.kind === "skill" ? path.basename(o.target).replace(/\.md$/, "") : undefined;
+        if (skillName && o.mode !== "append" && protectedSkills.includes(skillName)) fail(`overlay ${o.id}: skill ${skillName} is owned by the source's skill manifest; change it in source with hg skills update`);
+        let content;
+        if (o.mode !== "remove") {
+          content = contentFor(o);
+          if (!content || !exists(content)) fail(`overlay ${o.id}: ${o.source.path} is absent at ${o.source.commit.slice(0, 12)}`);
+          const actual = contentHash(content);
+          if (actual !== o.contentHash) fail(`overlay ${o.id}: ${o.source.path} at ${o.source.commit.slice(0, 12)} hashes ${actual.slice(0, 12)}, the record pins ${o.contentHash.slice(0, 12)}; the upstream was rewritten or the record is stale - plan again and re-approve`);
+        }
+        if (o.kind === "instructions") {
+          if (!exists(destination) || !fs.lstatSync(destination).isFile()) fail(`overlay ${o.id}: agent/instructions.md must exist - an instructions.ts agent takes no instruction overlays`);
+          if (!fs.lstatSync(content).isFile()) fail(`overlay ${o.id}: instructions content must be one markdown file`);
+          const text = fs.readFileSync(content, "utf8");
+          guard(o);
+          if (o.mode === "override") {
+            fs.writeFileSync(destination, text);
+          } else {
+            let base = fs.readFileSync(destination, "utf8");
+            if (base && !base.endsWith("\n")) base += "\n";
+            const body = !text || text.endsWith("\n") ? text : `${text}\n`;
+            fs.writeFileSync(destination, `${base}\n<!-- harness-hg overlay ${o.id} ${o.source.commit} sha256:${o.contentHash} -->\n${body}`);
+          }
+          continue;
+        }
+        const present = sameResource(project, o);
+        if (o.kind === "tool" && o.mode === "remove") {
+          // Deleting the file would bring the framework tool back: disable it instead, replacing any
+          // authored form of the same slug.
+          guard(o);
+          for (const existing of present) fs.rmSync(path.join(project, existing), { recursive: true, force: true });
+          fs.mkdirSync(path.dirname(destination), { recursive: true });
+          guard(o);
+          fs.writeFileSync(destination, DISABLE_TOOL_STUB);
+          continue;
+        }
+        if (o.mode === "append" && present.length) fail(`overlay ${o.id}: append needs ${o.target} to be absent, found ${present.join(", ")}`);
+        if (o.mode !== "append") {
+          if (!exists(destination)) fail(`overlay ${o.id}: ${o.mode} needs ${o.target} to exist`);
+          const others = present.filter(existing => existing !== o.target);
+          if (others.length) fail(`overlay ${o.id}: ${o.target} also exists in another form (${others.join(", ")})`);
+        }
+        let isDirectory = false;
+        if (o.mode !== "remove") {
+          isDirectory = fs.lstatSync(content).isDirectory();
+          if (o.kind === "skill" && o.target.endsWith(".md") === isDirectory) fail(`overlay ${o.id}: a skills/<name>.md target takes one file, a skills/<name> target a package directory`);
+          if (o.kind === "skill" && isDirectory && !exists(path.join(content, "SKILL.md"))) fail(`overlay ${o.id}: a skill package needs SKILL.md at its root`);
+          if ((o.kind === "tool" || o.kind === "connection") && isDirectory) fail(`overlay ${o.id}: a ${o.kind} overlay takes one file`);
+          if (isDirectory) {
+            const forbidden = packageFiles(content).find(entry => entry.split("/").some(part => PROTECTED_PARTS.has(part)));
+            if (forbidden) fail(`overlay ${o.id}: its content carries ${forbidden}; package files, node_modules, .eve, .output and .git never arrive through an overlay`);
+          }
+        }
+        guard(o);
+        if (o.mode !== "append") fs.rmSync(destination, { recursive: true, force: true });
+        if (o.mode === "remove") continue;
+        fs.mkdirSync(path.dirname(destination), { recursive: true });
+        guard(o);
+        if (isDirectory) fs.cpSync(content, destination, { recursive: true, errorOnExist: true, force: false });
+        else fs.copyFileSync(content, destination, fs.constants.COPYFILE_EXCL);
+      }
+      const merged = contentHash(agentRoot);
+      if (treeHash && merged !== treeHash) fail(`merged agent/ tree hashes ${merged.slice(0, 12)}, the record pins ${treeHash.slice(0, 12)}; the source or overlays changed after planning - plan again`);
+      return { treeHash: merged };
+    }
+    
+    function main() {
+      const [project, contentRoot] = process.argv.slice(2);
+      if (!project || !contentRoot) fail("usage: node overlay-apply.mjs <project-dir> <content-root>");
+      const overlays = parseOverlayLines(process.env.EVE_OVERLAYS);
+      const treeHash = process.env.EVE_OVERLAY_TREE_HASH ?? "";
+      if (!overlays.length) fail("EVE_OVERLAYS names no overlays");
+      if (!/^[a-f0-9]{64}$/.test(treeHash)) fail("EVE_OVERLAY_TREE_HASH must be a SHA-256");
+      if (process.env.EVE_OVERLAY_DIGEST && process.env.EVE_OVERLAY_DIGEST !== overlayDigest(overlays, treeHash)) fail("EVE_OVERLAY_DIGEST does not match the overlays it names");
+      applyOverlays({ project, overlays, treeHash, contentFor: o => contentPath(path.join(contentRoot, o.id), o) });
+      for (const o of overlays) console.log(`[build-agent] overlay ${o.id}: ${o.mode} ${o.target}`);
+    }
+    
+    if (process.argv[1] && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+      try { main(); }
+      catch (error) {
+        console.error(`[build-agent] ${error instanceof OverlayError ? error.message : `overlay apply failed (${error?.code ?? error?.constructor?.name ?? "error"})`}`);
+        process.exit(1);
+      }
+    }
+    
+  verify-build.mjs: |
+    // harness/eve/charts/eve-agent/files/verify-build.mjs - the startup gate (ADR 0195).
+    // harness/eve/charts/eve-bundle/files/verify-build.mjs is a byte-identical copy
+    // (render-test cmp-gates it); edit this one and copy.
+    //
+    // Argo CD "Healthy" only means the process answered a liveness probe. This runs
+    // as the startup probe INSTEAD of the health GET: it first compares what the
+    // build container actually built - the receipt on the data volume - with what
+    // this pod was rendered to run, and only then checks health. A pod that built
+    // something else never becomes ready, so a mismatch takes the agent out of
+    // service rather than serving the wrong version quietly.
+    //
+    // Every expected value is optional: an unset HG_EXPECTED_* is a field this
+    // deployment does not pin, and is skipped rather than failed. That keeps the
+    // probe usable on a pod whose record predates the field.
+    import { readFileSync } from "node:fs";
+    
+    const fail = (reason) => { console.error(`[verify-build] ${reason}`); process.exit(1); };
+    
+    const receiptPath = process.env.HG_BUILD_RECEIPT;
+    if (!receiptPath) fail("HG_BUILD_RECEIPT is unset; the chart must name the receipt path");
+    
+    let receipt;
+    try {
+      receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    } catch (error) {
+      // No receipt at all is a build that never completed, or a pod that predates
+      // receipts and has not rebuilt since. Either way this pod cannot prove what
+      // it is running.
+      fail(`no readable build receipt at ${receiptPath} (${error.code ?? error.message}); the build has not completed on this volume`);
+    }
+    
+    const checks = [
+      ["sourceSha", "HG_EXPECTED_SOURCE_SHA", "source commit"],
+      ["overlayDigest", "HG_EXPECTED_OVERLAY_DIGEST", "operator overlay digest"],
+      ["buildKey", "HG_EXPECTED_BUILD_KEY", "build key"],
+      ["runtimeDigest", "HG_EXPECTED_RUNTIME_DIGEST", "runtime manifest digest"],
+      ["eveVersion", "HG_EXPECTED_EVE_VERSION", "Eve release"],
+    ];
+    for (const [field, variable, label] of checks) {
+      const expected = process.env[variable];
+      if (!expected) continue;
+      const built = receipt[field];
+      if (built !== expected) {
+        fail(`${label}: this pod is rendered for ${expected} but the build receipt says ${built || "nothing"}`);
+      }
+    }
+    
+    // Only once the build is the intended one does readiness depend on the process.
+    const port = process.env.PORT || "3000";
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/eve/v1/health`);
+      if (!response.ok) fail(`build matches, but /eve/v1/health answered ${response.status}`);
+    } catch (error) {
+      fail(`build matches, but /eve/v1/health is not answering yet (${error.cause?.code ?? error.message})`);
+    }
+    
+  smoke.mjs: |
+    // harness/eve/charts/eve-agent/files/smoke.mjs - the PostSync smoke check (ADR 0195).
+    // harness/eve/charts/eve-bundle/files/smoke.mjs is a byte-identical copy
+    // (render-test cmp-gates it); edit this one and copy.
+    //
+    // The startup gate (files/verify-build.mjs) keeps a wrong build from becoming
+    // ready. This runs once per sync, from outside the pod, and answers the other
+    // question: did THIS sync land? It fails the Argo CD sync when it did not, so a
+    // bad revision is visible in the Application rather than only in a pod that
+    // quietly never went ready.
+    //
+    // It reads the cluster through the ServiceAccount this chart binds (pods and
+    // statefulsets, get/list) - no kubectl in the image, no cluster-wide rights.
+    const API = "https://kubernetes.default.svc";
+    const TOKEN_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/token";
+    const CA_FILE = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
+    
+    import { readFileSync } from "node:fs";
+    
+    const failures = [];
+    const fail = (reason) => failures.push(reason);
+    const ok = (what) => console.log(`[smoke] OK   ${what}`);
+    
+    const namespace = process.env.HG_NAMESPACE;
+    const workload = process.env.HG_WORKLOAD;
+    if (!namespace || !workload || !(process.env.HG_AGENT_URL || process.env.HG_AGENT_HOST)) {
+      console.error("[smoke] HG_NAMESPACE, HG_WORKLOAD and HG_AGENT_URL (or HG_AGENT_HOST) are required");
+      process.exit(1);
+    }
+    
+    // The API server's certificate is the cluster's own. The Job sets
+    // NODE_EXTRA_CA_CERTS to the mounted CA, which is the dependency-free way to
+    // trust exactly that one - the runtime image ships no HTTP client library.
+    if (process.env.NODE_EXTRA_CA_CERTS !== CA_FILE) {
+      console.error(`[smoke] NODE_EXTRA_CA_CERTS must be ${CA_FILE}; the chart sets it`);
+      process.exit(1);
+    }
+    const token = readFileSync(TOKEN_FILE, "utf8").trim();
+    const api = async (path) => {
+      const response = await fetch(`${API}${path}`, { headers: { authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error(`${path} -> ${response.status}`);
+      return response.json();
+    };
+    
+    // ---- 1. the rollout finished: the pod runs the revision the sync produced ----
+    let statefulSet, pod;
+    try {
+      statefulSet = await api(`/apis/apps/v1/namespaces/${namespace}/statefulsets/${workload}`);
+      const pods = await api(`/api/v1/namespaces/${namespace}/pods?labelSelector=${encodeURIComponent(`app.kubernetes.io/instance=${workload}`)}`);
+      pod = (pods.items ?? []).find((p) => p.metadata?.ownerReferences?.some((o) => o.kind === "StatefulSet" && o.name === workload));
+    } catch (error) {
+      console.error(`[smoke] cannot read the workload: ${error.message}`);
+      process.exit(1);
+    }
+    if (!pod) {
+      console.error(`[smoke] no pod owned by StatefulSet ${workload}`);
+      process.exit(1);
+    }
+    const updateRevision = statefulSet.status?.updateRevision;
+    const podRevision = pod.metadata?.labels?.["controller-revision-hash"];
+    if (updateRevision && podRevision === updateRevision) ok(`pod runs the updated revision (${podRevision})`);
+    else fail(`pod revision ${podRevision ?? "unknown"} is not the StatefulSet's update revision ${updateRevision ?? "unknown"}`);
+    
+    // ---- 2 & 3. per agent: what it built, and that it answers as itself ----
+    // One workload may host many agents (the bundle chart). HG_MEMBERS lists them as
+    // name:port:sha:runtimeDigest, and its PRESENCE - never the member count - is what
+    // selects bundle mode: a one-member bundle must still be checked as a bundle.
+    const bundled = Boolean(process.env.HG_MEMBERS);
+    const members = bundled
+      ? process.env.HG_MEMBERS.split(",").filter(Boolean).map((entry) => {
+          const [name, port, sha, runtimeDigest] = entry.split(":");
+          return { label: name, initContainer: `build-${name}`,
+            url: `http://${process.env.HG_AGENT_HOST}:${port}`,
+            manifest: `/hg/${name}/runtime-manifest.json`,
+            password: `/run/secrets/route-auth/${name}/password`,
+            // A bundle member's build key IS its source sha: members carry no overlays.
+            expected: { sourceSha: sha, buildKey: sha, runtimeDigest,
+              eveVersion: process.env.HG_EXPECTED_EVE_VERSION } };
+        })
+      : [{ label: workload, initContainer: "build-agent",
+          url: process.env.HG_AGENT_URL, manifest: "/hg/runtime-manifest.json",
+          password: "/run/secrets/route-auth/password",
+          expected: { sourceSha: process.env.HG_EXPECTED_SOURCE_SHA,
+            overlayDigest: process.env.HG_EXPECTED_OVERLAY_DIGEST,
+            buildKey: process.env.HG_EXPECTED_BUILD_KEY,
+            runtimeDigest: process.env.HG_EXPECTED_RUNTIME_DIGEST,
+            eveVersion: process.env.HG_EXPECTED_EVE_VERSION } }];
+    
+    for (const member of members) {
+      const at = bundled ? `${member.label}: ` : "";
+    
+      // The build container publishes its receipt through the termination message,
+      // so this needs no exec and no volume access.
+      const buildStatus = (pod.status?.initContainerStatuses ?? []).find((c) => c.name === member.initContainer);
+      const message = buildStatus?.state?.terminated?.message ?? buildStatus?.lastState?.terminated?.message;
+      let receipt;
+      try {
+        const parsed = JSON.parse(message);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+        receipt = parsed;
+      } catch {
+        fail(`${at}the build container published no readable build receipt; this pod cannot prove what it built`);
+      }
+      if (receipt) {
+        for (const [field, label] of [["sourceSha", "source commit"], ["overlayDigest", "operator overlay digest"],
+          ["buildKey", "build key"], ["runtimeDigest", "runtime manifest digest"], ["eveVersion", "Eve release"]]) {
+          const expected = member.expected[field];
+          if (!expected) continue;
+          if (receipt[field] === expected) ok(`${at}${label} matches (${expected})`);
+          else fail(`${at}${label}: this sync deployed ${expected} but the build receipt says ${receipt[field] || "nothing"}`);
+        }
+      }
+    
+      // It answers, and answers as the agent its runtime manifest declares.
+      let expectedName;
+      try {
+        expectedName = JSON.parse(readFileSync(member.manifest, "utf8")).spec?.name;
+      } catch (error) {
+        fail(`${at}cannot read the runtime manifest (${error.message})`);
+      }
+      try {
+        const health = await fetch(`${member.url}/eve/v1/health`);
+        if (health.ok) ok(`${at}GET /eve/v1/health -> 200`);
+        else fail(`${at}GET /eve/v1/health -> ${health.status}`);
+      } catch (error) {
+        fail(`${at}GET /eve/v1/health did not answer (${error.cause?.code ?? error.message})`);
+      }
+      try {
+        // Route auth is the contract, not a detail: an agent reachable anonymously
+        // is a failed sync even when every version matches.
+        const anonymous = await fetch(`${member.url}/eve/v1/info`);
+        if (anonymous.status === 401) ok(`${at}GET /eve/v1/info is 401 without credentials`);
+        else fail(`${at}GET /eve/v1/info answered ${anonymous.status} anonymously; route auth is not in force`);
+    
+        const password = readFileSync(member.password, "utf8");
+        const authorization = `Basic ${Buffer.from(`${process.env.HG_ROUTE_AUTH_USERNAME || "agent"}:${password}`).toString("base64")}`;
+        const info = await fetch(`${member.url}/eve/v1/info`, { headers: { authorization } });
+        if (!info.ok) {
+          fail(`${at}GET /eve/v1/info with the minted credential answered ${info.status}`);
+        } else {
+          const body = await info.json();
+          const name = body?.agent?.name ?? body?.agent?.id;
+          // Unknown is never a pass (ADR 0195): a manifest that declares no identity is
+          // missing evidence, not permission to accept whatever answered.
+          if (!expectedName) fail(`${at}the runtime manifest declares no agent name; this sync cannot prove which agent answered`);
+          else if (name === expectedName) ok(`${at}the agent identifies as ${JSON.stringify(name)}`);
+          else fail(`${at}the agent identifies as ${JSON.stringify(name ?? null)}, but its runtime manifest declares ${JSON.stringify(expectedName)}`);
+          if (body?.tools === undefined || body?.channels === undefined) fail(`${at}GET /eve/v1/info carries no tools/channels block`);
+        }
+      } catch (error) {
+        fail(`${at}GET /eve/v1/info did not answer (${error.cause?.code ?? error.message})`);
+      }
+    }
+    
+    if (failures.length) {
+      for (const reason of failures) console.error(`[smoke] FAIL ${reason}`);
+      console.error(`[smoke] ${failures.length} check(s) failed for ${workload}`);
+      process.exit(1);
+    }
+    console.log(`[smoke] ${workload}: every check passed`);
+    
+  workspace-sync.sh: |
+    #!/bin/sh
+    # harness/eve/charts/eve-agent/files/workspace-sync.sh - the tracked-workspace
+    # refresh (ADR 0197). Shipped in the boot ConfigMap and run two ways:
+    #   sh workspace-sync.sh once   boot.sh, in the build container: the first
+    #                               clone of every tracked binding at its tip
+    #   sh workspace-sync.sh loop   the workspace-sync container: each binding
+    #                               again whenever its interval elapses, plus
+    #                               files/workspace-metrics.mjs on the metrics port
+    #
+    # It reads the tracked lines of EVE_WORKSPACE_BINDINGS ("name source branch
+    # access tracked intervalSeconds") and, for each workspace under
+    # EVE_WORKSPACES_DIR (default /app/workspaces):
+    #   1. fetches the branch into a full-history mirror, .revs/<name>/.mirror.git;
+    #   2. refuses, as a FAILURE, a live checkout that is not at its recorded
+    #      commit or has local modifications, and a new tip the live commit is not
+    #      an ancestor of (rewritten history) - ADR-76's refuse-unsafe-convergence;
+    #   3. materializes a new tip as its own checkout, .revs/<name>/<sha>, and
+    #      switches the <name> symlink to it with ONE rename(2): a reader sees the
+    #      old tree or the new one, never a mixture. The link target stays under
+    #      the workspaces root, so a realpath-inside-root check keeps passing. A
+    #      retained revision is served again only if it is still exactly its
+    #      commit, unmodified;
+    #   4. reconciles the checkout's permissions with the binding's access, keeps
+    #      the newest two revisions and prunes the rest;
+    #   5. writes .stamps/<name> (the live sha) and .stamps/<name>.json:
+    #      {name, mode, branch, sha, refreshIntervalSeconds, fetchedAt,
+    #       lastSuccessAt, lastAttemptAt, consecutiveFailures, error}.
+    #      branch and sha describe the tree SERVED; fetchedAt is when that commit
+    #      was materialized; lastSuccessAt is the last refresh that confirmed it is
+    #      still the tip of the declared branch.
+    #
+    # A failure never removes a live tree - the last good revision keeps being
+    # served - and it is never quiet: the stamp records it, the log line goes to
+    # stderr, the metrics count it, WorkspaceStale fires at twice the interval and
+    # `hg workspace verify` fails. Only a workspace with no tree at all gets the
+    # .stamps/<name>.unavailable marker boot.sh uses for a failed clone.
+    #
+    # Credentials (/run/secrets/repositories/<name>/git) are copied into a
+    # throwaway HOME under /tmp for each fetch and removed after it, as boot.sh
+    # does - never onto the claim. `once` always exits 0: a workspace degrades, it
+    # never stops the agent from starting.
+    set -u
+    
+    WORKSPACES_DIR="${EVE_WORKSPACES_DIR:-/app/workspaces}"
+    STAMPS="$WORKSPACES_DIR/.stamps"
+    REVS="$WORKSPACES_DIR/.revs"
+    SCRIPTS_DIR="${EVE_SCRIPTS_DIR:-/scripts}"
+    CRED_ROOT="${HG_WORKSPACE_CREDENTIALS_DIR:-/run/secrets/repositories}"
+    KEEP_REVISIONS="${HG_WORKSPACE_KEEP_REVISIONS:-2}"
+    TICK="${HG_WORKSPACE_SYNC_TICK:-15}"
+    FETCH_TIMEOUT="${HG_WORKSPACE_FETCH_TIMEOUT:-300}"
+    MODE="${1:-loop}"
+    WS_HOME=""
+    METRICS_PID=""
+    
+    log()  { echo "[workspace-sync] $*"; }
+    loud() { echo "[workspace-sync] $*" >&2; }
+    now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+    is_sha() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
+    
+    # ---- the stamp --------------------------------------------------------------
+    json_or_null() { if [ -n "$1" ]; then printf '"%s"' "$1"; else printf 'null'; fi; }
+    # Error text comes from git: one line, no quotes or backslashes, printable, bounded.
+    sanitize() { printf '%s' "$1" | tr '\n\r\t' '   ' | tr -d '"\\' | tr -cd '[:print:]' | cut -c1-300; }
+    # Read back a string field this script wrote. Only characters a timestamp, a
+    # sha or a branch can hold are accepted: the claim is shared with the agent.
+    stamp_field() {
+      [ -f "$1" ] || return 0
+      sed -n "s|.*\"$2\":\"\([0-9A-Za-z:._/-]*\)\".*|\1|p" "$1" | head -n 1
+    }
+    stamp_failures() {
+      sf_value=""
+      if [ -f "$1" ]; then
+        sf_value="$(sed -n 's/.*"consecutiveFailures":\([0-9][0-9]*\).*/\1/p' "$1" | head -n 1)"
+      fi
+      echo "${sf_value:-0}"
+    }
+    write_stamp() { # name branch sha interval fetchedAt lastSuccessAt lastAttemptAt failures error
+      w_tmp="$STAMPS/.$1.json.$$"
+      if printf '{"name":"%s","mode":"tracked","branch":"%s","sha":%s,"refreshIntervalSeconds":%s,"fetchedAt":%s,"lastSuccessAt":%s,"lastAttemptAt":%s,"consecutiveFailures":%s,"error":%s}\n' \
+          "$1" "$2" "$(json_or_null "$3")" "$4" "$(json_or_null "$5")" "$(json_or_null "$6")" \
+          "$(json_or_null "$7")" "$8" "$(json_or_null "$9")" > "$w_tmp"; then
+        mv -f "$w_tmp" "$STAMPS/$1.json"
+      else
+        rm -f "$w_tmp"
+        loud "ERROR workspace $1: the freshness stamp could not be written"
+      fi
+    }
+    
+    # ---- credentials and files -----------------------------------------------------
+    cred_home() { # name source
+      WS_HOME="$(mktemp -d /tmp/ws-sync.XXXXXX)"
+      c_dir="$CRED_ROOT/$1/git"
+      [ -d "$c_dir" ] || return 0
+      case "$2" in
+        https://*)
+          if [ -f "$c_dir/username" ] && [ -f "$c_dir/password" ]; then
+            c_host="$(printf '%s' "$2" | sed -E 's#^https://([^/]+)/.*#\1#')"
+            printf 'machine %s\nlogin %s\npassword %s\n' "$c_host" "$(cat "$c_dir/username")" "$(cat "$c_dir/password")" > "$WS_HOME/.netrc"
+            chmod 600 "$WS_HOME/.netrc"
+          fi
+          ;;
+        git@*|ssh://*)
+          if [ -f "$c_dir/ssh-privatekey" ]; then
+            mkdir -p "$WS_HOME/.ssh"
+            cp "$c_dir/ssh-privatekey" "$WS_HOME/.ssh/key"
+            chmod 600 "$WS_HOME/.ssh/key"
+            GIT_SSH_COMMAND="ssh -i $WS_HOME/.ssh/key -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$WS_HOME/.ssh/known_hosts"
+            export GIT_SSH_COMMAND
+          fi
+          ;;
+      esac
+    }
+    cred_done() {
+      unset GIT_SSH_COMMAND 2>/dev/null || true
+      if [ -n "$WS_HOME" ]; then rm -rf "$WS_HOME"; fi
+      WS_HOME=""
+    }
+    fetch_git() {
+      if command -v timeout >/dev/null 2>&1; then
+        HOME="$WS_HOME" timeout "$FETCH_TIMEOUT" git "$@"
+      else
+        HOME="$WS_HOME" git "$@"
+      fi
+    }
+    # A read-only checkout (chmod -R a-w) cannot be removed until its directories
+    # are writable again; a symlink is removed as a link, never followed.
+    remove_tree() {
+      if [ -L "$1" ]; then rm -f "$1"; return 0; fi
+      [ -e "$1" ] || return 0
+      chmod -R u+w "$1" 2>/dev/null || true
+      rm -rf "$1"
+    }
+    # Non-empty when a checkout is not exactly the commit it claims, unmodified.
+    checkout_problem() { # dir sha
+      cp_head="$(git -C "$1/" rev-parse HEAD 2>/dev/null)"
+      if [ "$cp_head" != "$2" ]; then
+        echo "is at ${cp_head:-no commit}, not its recorded $2"
+        return 0
+      fi
+      cp_dirty="$(GIT_OPTIONAL_LOCKS=0 git -C "$1/" status --porcelain --untracked-files=normal 2>/dev/null)" \
+        || cp_dirty="git status failed"
+      if [ -n "$cp_dirty" ]; then echo "has local modifications"; fi
+    }
+    
+    # ---- one workspace ----------------------------------------------------------
+    # sync_one sets these for sync_fail: S_NAME S_BRANCH S_SERVED_BRANCH S_INTERVAL
+    # S_LIVE_SHA S_FETCHED S_SUCCESS S_ATTEMPT S_FAILURES.
+    sync_fail() {
+      f_count=$((S_FAILURES + 1))
+      f_msg="$(sanitize "$1")"
+      write_stamp "$S_NAME" "$S_SERVED_BRANCH" "$S_LIVE_SHA" "$S_INTERVAL" "$S_FETCHED" "$S_SUCCESS" "$S_ATTEMPT" "$f_count" "$f_msg"
+      if [ -z "$S_LIVE_SHA" ]; then
+        : > "$STAMPS/$S_NAME.unavailable"
+        loud "ERROR workspace $S_NAME (branch $S_BRANCH): $f_msg - there is no checkout to serve, the workspace is UNAVAILABLE ($f_count consecutive failure(s))"
+      else
+        loud "ERROR workspace $S_NAME (branch $S_BRANCH): $f_msg - still serving $S_LIVE_SHA from branch $S_SERVED_BRANCH, last refreshed ${S_SUCCESS:-never} ($f_count consecutive failure(s))"
+      fi
+    }
+    
+    prune_revisions() { # name liveSha
+      p_dir="$REVS/$1"
+      p_hist="$p_dir/.history"
+      if [ "$(tail -n 1 "$p_hist" 2>/dev/null)" != "$2" ]; then printf '%s\n' "$2" >> "$p_hist"; fi
+      # The newest KEEP_REVISIONS distinct revisions, newest first.
+      p_keep="$(awk '{ line[NR] = $0 } END { for (i = NR; i > 0; i--) if (!seen[line[i]]++) print line[i] }' "$p_hist" | head -n "$KEEP_REVISIONS")"
+      printf '%s\n' "$p_keep" | awk '{ line[NR] = $0 } END { for (i = NR; i > 0; i--) print line[i] }' > "$p_hist.tmp" \
+        && mv -f "$p_hist.tmp" "$p_hist"
+      for p_rev in "$p_dir"/*; do
+        [ -d "$p_rev" ] || continue
+        p_base="${p_rev##*/}"
+        case "$p_base" in
+          *.tmp) remove_tree "$p_rev"; continue ;;
+        esac
+        is_sha "$p_base" || continue
+        if [ "$p_base" = "$2" ]; then continue; fi
+        if printf '%s\n' "$p_keep" | grep -qx "$p_base"; then continue; fi
+        remove_tree "$p_rev"
+        log "workspace $1: pruned revision $p_base"
+      done
+    }
+    
+    sync_one() { # name source branch access intervalSeconds
+      S_NAME="$1"; s_source="$2"; S_BRANCH="$3"; s_access="$4"; S_INTERVAL="$5"
+      s_live="$WORKSPACES_DIR/$S_NAME"
+      s_revs="$REVS/$S_NAME"
+      s_mirror="$s_revs/.mirror.git"
+      s_stamp="$STAMPS/$S_NAME.json"
+      S_ATTEMPT="$(now_iso)"
+      S_SUCCESS="$(stamp_field "$s_stamp" lastSuccessAt)"
+      S_FETCHED="$(stamp_field "$s_stamp" fetchedAt)"
+      S_FAILURES="$(stamp_failures "$s_stamp")"
+      s_prev_branch="$(stamp_field "$s_stamp" branch)"
+      S_LIVE_SHA=""
+      if [ -L "$s_live" ]; then
+        s_target="$(readlink "$s_live")"
+        case "$s_target" in
+          ".revs/$S_NAME/"*) S_LIVE_SHA="${s_target##*/}" ;;
+        esac
+        is_sha "$S_LIVE_SHA" || S_LIVE_SHA=""
+      fi
+      # The stamp's branch is the branch of the commit being SERVED. A failed
+      # attempt on a newly declared branch must not claim it, or that branch's
+      # first success would be judged as a rewrite of the old one.
+      S_SERVED_BRANCH="$S_BRANCH"
+      if [ -n "$S_LIVE_SHA" ] && [ -n "$s_prev_branch" ]; then S_SERVED_BRANCH="$s_prev_branch"; fi
+      mkdir -p "$s_revs" "$STAMPS"
+    
+      # 1. fetch the branch
+      if [ ! -d "$s_mirror" ] && ! git init --quiet --bare "$s_mirror" >/dev/null 2>&1; then
+        sync_fail "cannot create the mirror under $s_revs"
+        return 0
+      fi
+      cred_home "$S_NAME" "$s_source"
+      if ! s_err="$(fetch_git --git-dir="$s_mirror" fetch --quiet --no-tags --force -- "$s_source" "+refs/heads/$S_BRANCH:refs/hg/tip" 2>&1)"; then
+        cred_done
+        sync_fail "fetching branch $S_BRANCH from $s_source failed: $s_err"
+        return 0
+      fi
+      cred_done
+      s_tip="$(git --git-dir="$s_mirror" rev-parse --verify --quiet 'refs/hg/tip^{commit}' 2>/dev/null)"
+      if ! is_sha "$s_tip"; then
+        sync_fail "branch $S_BRANCH resolved to no commit"
+        return 0
+      fi
+    
+      # 2. refuse unsafe convergence (ADR-76)
+      if [ -n "$S_LIVE_SHA" ]; then
+        s_problem="$(checkout_problem "$s_live" "$S_LIVE_SHA")"
+        if [ -n "$s_problem" ]; then
+          sync_fail "the live checkout $s_problem - refusing to converge over it (remove $s_live to re-clone)"
+          return 0
+        fi
+        # Fast-forward only - unless the binding itself moved to another branch,
+        # which is a declared change, not a rewrite.
+        if [ "$s_tip" != "$S_LIVE_SHA" ] && [ "$S_SERVED_BRANCH" = "$S_BRANCH" ]; then
+          if ! git --git-dir="$s_mirror" merge-base --is-ancestor "$S_LIVE_SHA" "$s_tip" >/dev/null 2>&1; then
+            sync_fail "branch $S_BRANCH was rewritten: the live commit $S_LIVE_SHA is not an ancestor of the new tip $s_tip - refresh is fast-forward only"
+            return 0
+          fi
+        fi
+      fi
+    
+      # 3. materialize the tip and switch to it atomically
+      s_changed=0
+      s_rev="$s_revs/$s_tip"
+      if [ "$s_tip" != "$S_LIVE_SHA" ]; then
+        # A retained revision is served again only if it is still exactly its
+        # commit, unmodified - never a checkout an earlier refresh refused.
+        if [ -d "$s_rev/.git" ] && [ -n "$(checkout_problem "$s_rev" "$s_tip")" ]; then
+          log "workspace $S_NAME: retained revision $s_tip no longer matches its commit - materializing it again"
+          remove_tree "$s_rev"
+        fi
+        if [ ! -d "$s_rev/.git" ]; then
+          remove_tree "$s_rev.tmp"
+          remove_tree "$s_rev"
+          if ! s_err="$(git clone --quiet --no-checkout "$s_mirror" "$s_rev.tmp" 2>&1 \
+              && git -C "$s_rev.tmp" -c advice.detachedHead=false checkout --quiet --detach "$s_tip" 2>&1)"; then
+            remove_tree "$s_rev.tmp"
+            sync_fail "could not check out $s_tip: $s_err"
+            return 0
+          fi
+          git -C "$s_rev.tmp" remote remove origin >/dev/null 2>&1 || true
+          if [ "$(git -C "$s_rev.tmp" rev-parse HEAD 2>/dev/null)" != "$s_tip" ] || ! mv "$s_rev.tmp" "$s_rev"; then
+            remove_tree "$s_rev.tmp"
+            sync_fail "the checkout of $s_tip did not land where it should"
+            return 0
+          fi
+        fi
+        s_next="$WORKSPACES_DIR/.$S_NAME.next"
+        rm -f "$s_next"
+        # A pinned checkout this binding used to be is replaced here - by the
+        # build container's `once`, before the agent starts.
+        if [ -e "$s_live" ] && [ ! -L "$s_live" ]; then remove_tree "$s_live"; fi
+        if ! ln -s ".revs/$S_NAME/$s_tip" "$s_next" || ! mv -T "$s_next" "$s_live"; then
+          rm -f "$s_next"
+          sync_fail "could not switch $S_NAME to $s_tip"
+          return 0
+        fi
+        s_changed=1
+        log "workspace $S_NAME: $s_source $S_BRANCH @ $s_tip ($s_access)${S_LIVE_SHA:+, was $S_LIVE_SHA}"
+      fi
+    
+      # 4. reconcile access, record the success and prune. Access is applied on
+      # every success, not only when a revision is created: a binding whose access
+      # changed at an unchanged tip still gets it.
+      if [ "$s_access" = "read-only" ]; then
+        chmod -R a-w "$s_rev" 2>/dev/null || loud "ERROR workspace $S_NAME: could not make $s_tip read-only"
+      else
+        chmod -R u+w "$s_rev" 2>/dev/null || loud "ERROR workspace $S_NAME: could not make $s_tip writable"
+      fi
+      printf '%s\n' "$s_tip" > "$STAMPS/.$S_NAME.sha.$$" && mv -f "$STAMPS/.$S_NAME.sha.$$" "$STAMPS/$S_NAME"
+      rm -f "$STAMPS/$S_NAME.unavailable"
+      if [ "$s_changed" = 1 ] || [ -z "$S_FETCHED" ]; then S_FETCHED="$S_ATTEMPT"; fi
+      write_stamp "$S_NAME" "$S_BRANCH" "$s_tip" "$S_INTERVAL" "$S_FETCHED" "$S_ATTEMPT" "$S_ATTEMPT" 0 ""
+      if [ "$S_FAILURES" -gt 0 ]; then log "workspace $S_NAME recovered after $S_FAILURES failed refresh(es)"; fi
+      prune_revisions "$S_NAME" "$s_tip"
+      return 0
+    }
+    
+    # ---- the bindings -----------------------------------------------------------
+    tracked_bindings() { # -> "name source branch access interval" per tracked line
+      printf '%s\n' "${EVE_WORKSPACE_BINDINGS:-}" | while read -r t_name t_source t_branch t_access t_mode t_interval; do
+        if [ "$t_mode" != "tracked" ]; then continue; fi
+        if ! printf '%s' "$t_name" | grep -Eq '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' \
+            || ! printf '%s' "$t_branch" | grep -Eq '^[A-Za-z0-9._/-]+$' \
+            || ! printf '%s' "$t_interval" | grep -Eq '^[1-9][0-9]*$'; then
+          loud "ERROR ignoring a malformed tracked binding line for '${t_name:-?}' - the chart renders these lines, so the record and the chart disagree"
+          continue
+        fi
+        printf '%s %s %s %s %s\n' "$t_name" "$t_source" "$t_branch" "${t_access:-read-write}" "$t_interval"
+      done
+    }
+    
+    LINES="$(mktemp /tmp/ws-lines.XXXXXX)"
+    DUE="$(mktemp -d /tmp/ws-due.XXXXXX)"
+    cleanup() {
+      if [ -n "$METRICS_PID" ]; then kill "$METRICS_PID" 2>/dev/null || true; fi
+      cred_done
+      rm -rf "$LINES" "$DUE"
+    }
+    mkdir -p "$STAMPS" "$REVS"
+    tracked_bindings > "$LINES"
+    
+    case "$MODE" in
+      once)
+        while read -r o_name o_source o_branch o_access o_interval; do
+          sync_one "$o_name" "$o_source" "$o_branch" "$o_access" "$o_interval" < /dev/null
+        done < "$LINES"
+        cleanup
+        exit 0
+        ;;
+      loop) ;;
+      *)
+        loud "usage: workspace-sync.sh once|loop"
+        cleanup
+        exit 2
+        ;;
+    esac
+    
+    start_metrics() {
+      if [ ! -f "$SCRIPTS_DIR/workspace-metrics.mjs" ]; then
+        loud "ERROR no $SCRIPTS_DIR/workspace-metrics.mjs - workspace freshness is NOT exported, so WorkspaceStale sees no data"
+        return 0
+      fi
+      node "$SCRIPTS_DIR/workspace-metrics.mjs" &
+      METRICS_PID=$!
+    }
+    trap 'cleanup; exit 0' TERM INT
+    start_metrics
+    log "tracking $(wc -l < "$LINES" | tr -d ' ') workspace(s), checked every ${TICK}s"
+    # The build container refreshed every workspace moments ago: each first
+    # attempt waits one interval from the stamp's lastAttemptAt.
+    while read -r d_name d_source d_branch d_access d_interval; do
+      d_last="$(stamp_field "$STAMPS/$d_name.json" lastAttemptAt)"
+      d_epoch=0
+      if [ -n "$d_last" ]; then d_epoch="$(date -u -d "$d_last" +%s 2>/dev/null || echo 0)"; fi
+      echo $((d_epoch + d_interval)) > "$DUE/$d_name"
+    done < "$LINES"
+    while :; do
+      l_now="$(date +%s)"
+      while read -r l_name l_source l_branch l_access l_interval; do
+        l_due="$(cat "$DUE/$l_name" 2>/dev/null)"
+        if [ "$l_now" -ge "${l_due:-0}" ]; then
+          sync_one "$l_name" "$l_source" "$l_branch" "$l_access" "$l_interval" < /dev/null
+          echo $(( $(date +%s) + l_interval )) > "$DUE/$l_name"
+        fi
+      done < "$LINES"
+      if [ -n "$METRICS_PID" ] && ! kill -0 "$METRICS_PID" 2>/dev/null; then
+        loud "ERROR the metrics endpoint exited - restarting it"
+        start_metrics
+      fi
+      sleep "$TICK" &
+      wait $! 2>/dev/null || true
+    done
+    
+  workspace-metrics.mjs: |
+    // harness/eve/charts/eve-agent/files/workspace-metrics.mjs - tracked-workspace
+    // freshness as Prometheus text (ADR 0197). Started by files/workspace-sync.sh in
+    // the workspace-sync container and scraped through the pod's prometheus.io
+    // annotations. Every scrape re-reads .stamps/<name>.json, so a sync loop that is
+    // stuck still reports a growing age, and a tracked binding with no stamp at all
+    // reports a last success of 0 - never an absent series that reads as healthy.
+    // Dependency-free: node:http and node:fs only.
+    import fs from "node:fs";
+    import http from "node:http";
+    import path from "node:path";
+    
+    const root = process.env.EVE_WORKSPACES_DIR || "/app/workspaces";
+    const port = Number(process.env.HG_WORKSPACE_METRICS_PORT || 9464);
+    
+    // "name source branch access tracked intervalSeconds" - the chart's line format.
+    function trackedBindings(lines) {
+      return lines
+        .split("\n")
+        .map((line) => line.trim().split(/\s+/))
+        .filter((fields) => fields[4] === "tracked")
+        .map((fields) => ({ name: fields[0], branch: fields[2], interval: Number(fields[5]) || 0 }));
+    }
+    
+    function readStamp(name) {
+      try {
+        const doc = JSON.parse(fs.readFileSync(path.join(root, ".stamps", `${name}.json`), "utf8"));
+        return doc && typeof doc === "object" && !Array.isArray(doc) ? doc : null;
+      } catch {
+        return null;
+      }
+    }
+    
+    const label = (value) => String(value ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+    
+    function render(bindings, stampOf, nowSeconds) {
+      const families = [
+        ["hg_workspace_last_success_timestamp_seconds", "Unix time of the last refresh that confirmed the live tree is the branch tip (0 = never)."],
+        ["hg_workspace_refresh_interval_seconds", "The tracked workspace's declared refresh interval."],
+        ["hg_workspace_consecutive_failures", "Refresh attempts that failed since the last success."],
+        ["hg_workspace_stale", "1 when there is no success within twice the refresh interval."],
+        ["hg_workspace_info", "The branch a tracked workspace follows and the commit it serves."],
+      ].map(([name, help]) => ({ name, help, samples: [] }));
+      const [lastSuccess, interval, failures, stale, info] = families;
+      for (const binding of bindings) {
+        const stamp = stampOf(binding.name);
+        const parsed = typeof stamp?.lastSuccessAt === "string" ? Date.parse(stamp.lastSuccessAt) / 1000 : Number.NaN;
+        const last = Number.isFinite(parsed) ? Math.floor(parsed) : 0;
+        const failed = Number.isFinite(stamp?.consecutiveFailures) ? stamp.consecutiveFailures : 0;
+        const workspace = `workspace="${label(binding.name)}"`;
+        lastSuccess.samples.push(`{${workspace}} ${last}`);
+        interval.samples.push(`{${workspace}} ${binding.interval}`);
+        failures.samples.push(`{${workspace}} ${failed}`);
+        stale.samples.push(`{${workspace}} ${last === 0 || nowSeconds - last > 2 * binding.interval ? 1 : 0}`);
+        info.samples.push(`{${workspace},branch="${label(binding.branch)}",sha="${label(stamp?.sha ?? "")}"} 1`);
+      }
+      const out = [];
+      for (const family of families) {
+        out.push(`# HELP ${family.name} ${family.help}`, `# TYPE ${family.name} gauge`);
+        for (const sample of family.samples) out.push(`${family.name}${sample}`);
+      }
+      return `${out.join("\n")}\n`;
+    }
+    
+    const bindings = trackedBindings(process.env.EVE_WORKSPACE_BINDINGS || "");
+    http
+      .createServer((req, res) => {
+        const url = req.url ?? "";
+        if (req.method === "GET" && (url === "/metrics" || url.startsWith("/metrics?"))) {
+          res.writeHead(200, { "content-type": "text/plain; version=0.0.4" });
+          res.end(render(bindings, readStamp, Date.now() / 1000));
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      })
+      .listen(port, "0.0.0.0", () => {
+        console.log(`[workspace-metrics] ${bindings.length} tracked workspace(s) on :${port}/metrics`);
+      });
+---
+# Source: eve-agent/templates/configmap-runtime-manifest.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ag-eve-echo-runtime-manifest
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+data:
+  runtime-manifest.json: "{\"contract\":\"agent-runtime/v1alpha1\",\"spec\":{\"apps\":[],\"connections\":[],\"engine\":\"eve\",\"instance\":\"ag-eve-echo\",\"name\":\"echo\",\"namespace\":\"ag-eve-echo\",\"requiredSecrets\":[],\"runtimeImage\":\"us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0\",\"source\":{\"repository\":\"https://github.com/factorylevel/eve-agents.git\",\"revision\":\"3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234\",\"subdir\":\"agents/echo\"},\"workspaces\":[]}}"
+---
+# Source: eve-agent/templates/smoke-job.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ag-eve-echo-smoke
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+rules:
+  # Read-only, and only in this agent's own namespace: the revision the pod
+  # runs and the receipt its build container published.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list"]
+---
+# Source: eve-agent/templates/smoke-job.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ag-eve-echo-smoke
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ag-eve-echo-smoke
+subjects:
+  - kind: ServiceAccount
+    name: ag-eve-echo-smoke
+    namespace: ag-eve-echo
+---
+# Source: eve-agent/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ag-eve-echo
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+---
+# Source: eve-agent/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ag-eve-echo
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+    harness-hg.factorylevel.dev/source-sha: "3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234"
+    harness-hg.factorylevel.dev/eve-version: "0.42.0"
+  annotations:
+    harness-hg.factorylevel.dev/build-key: "37b600cf6c774954928d2cf4b6d45855ca5f5637c288e5dfb7d9af7a45043d47"
+    harness-hg.factorylevel.dev/runtime-digest: "51da5d57f869fc8d69d811849d34e8956cf7522d8b7be71a30a60358bb1b49bd"
+    harness-hg.factorylevel.dev/overlay-digest: "a7aa663bbf125d8ce8a8ac8d4482f1e479ea6de5f317639e247601b5a12825dd"
+spec:
+  # One replica, one volume: the default Workflow world persists run state
+  # under <project>/.eve/.workflow-data on the data claim (eve's self-hosting
+  # guide requires it on persistent storage), and that local world is
+  # single-process. Scaling beyond 1 needs a shared Workflow world package
+  # selected in agent.ts - a later arc, not a knob here.
+  replicas: 1
+  serviceName: ag-eve-echo
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: eve-agent
+      app.kubernetes.io/instance: ag-eve-echo
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app.kubernetes.io/name: eve-agent
+          app.kubernetes.io/instance: ag-eve-echo
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eve-agent
+        app.kubernetes.io/instance: ag-eve-echo
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/version: "0.42.0"
+        helm.sh/chart: eve-agent-0.1.0
+        hermes-gitops.factorylevel.dev/persona: "echo"
+        hermes-gitops.factorylevel.dev/runtime: eve
+        hermes-gitops.factorylevel.dev/managed: "true"
+        harness-hg.factorylevel.dev/source-sha: "3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234"
+        harness-hg.factorylevel.dev/eve-version: "0.42.0"
+      annotations:
+        harness-hg.factorylevel.dev/build-key: "37b600cf6c774954928d2cf4b6d45855ca5f5637c288e5dfb7d9af7a45043d47"
+        harness-hg.factorylevel.dev/runtime-digest: "51da5d57f869fc8d69d811849d34e8956cf7522d8b7be71a30a60358bb1b49bd"
+        harness-hg.factorylevel.dev/overlay-digest: "a7aa663bbf125d8ce8a8ac8d4482f1e479ea6de5f317639e247601b5a12825dd"
+        # Rolls the pod whenever the record changes (new sha, envRequires,
+        # ...) even though none of this chart's template bytes changed.
+        checksum/record: 27596b63807d8bea54fb90f2eef8b076b58b9f9faefc9877e0acc8a7ae3b0e8e
+        # Rolls the pod when the boot script or the default channel file
+        # change (a chart upgrade that fixes the build path must re-run the
+        # initContainer on the existing instance, not wait for a new sha).
+        checksum/boot: 8f387dac581f305a91ad1a5e4ab1ad63ba9e89bf10abaa0dd2f6d53215c0ac9c
+    spec:
+      serviceAccountName: ag-eve-echo
+      # eve stops every open sandbox on SIGTERM and an in-flight step must
+      # reach its durable checkpoint; the default 30s turns a rolling
+      # restart into re-run steps (values.yaml shutdown.gracePeriodSeconds).
+      terminationGracePeriodSeconds: 120
+      # fsGroup = the image's `node` user so both containers share the data
+      # claim; each container pins its own UID below.
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        - name: build-agent
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/scripts/boot.sh"]
+          env:
+            - name: EVE_DIST_SOURCE
+              value: "https://github.com/factorylevel/eve-agents.git"
+            - name: EVE_DIST_SHA
+              value: "3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234"
+            - name: EVE_DIST_SUBDIR
+              value: "agents/echo"
+            # Recorded in the build receipt (ADR 0195), so the startup gate can
+            # tell a rebuilt agent from one whose runtime manifest moved.
+            - name: HG_RUNTIME_DIGEST
+              value: "51da5d57f869fc8d69d811849d34e8956cf7522d8b7be71a30a60358bb1b49bd"
+            # Operator overlays (ADR 0194) for boot.sh and files/overlay-apply.mjs:
+            # one "id kind mode target repository commit path contentHash" line
+            # per overlay ("-" where a removal has no source), the merged agent/
+            # tree hash, and their digest - the rebuild key's second half.
+            - name: EVE_OVERLAYS
+              value: "brand-voice skill append agent/skills/brand-voice https://github.com/example/agent-skills.git 9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c skills/brand-voice e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\ndisable-bash tool remove agent/tools/bash.ts - - - -\ncrm-connection connection override agent/connections/crm.ts git@github.com:example/bootstrap.git 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d overlays/echo/crm.ts 6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b\nhouse-rules instructions append agent/instructions.md git@github.com:example/bootstrap.git 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d overlays/echo/house-rules.md 5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+            - name: EVE_OVERLAY_TREE_HASH
+              value: "d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35"
+            - name: EVE_OVERLAY_DIGEST
+              value: "a7aa663bbf125d8ce8a8ac8d4482f1e479ea6de5f317639e247601b5a12825dd"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: data
+              mountPath: /app
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: ov-git-crm-connection
+              mountPath: /run/secrets/overlays/crm-connection/git
+              readOnly: true
+            - name: ov-git-house-rules
+              mountPath: /run/secrets/overlays/house-rules/git
+              readOnly: true
+      containers:
+        - name: eve-agent
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          workingDir: /app/src/agents/echo
+          # The project's own eve (the build step proved it equals the
+          # image's pin) serves the Nitro output under .output/. PORT is
+          # eve's own port variable; --host binds every interface so the
+          # Service can reach it.
+          command: ["./node_modules/.bin/eve"]
+          args: ["start", "--host", "0.0.0.0"]
+          env:
+            - name: HOME
+              value: /app/home
+            - name: PORT
+              value: "3000"
+            - name: NODE_ENV
+              value: production
+            - name: EVE_PROJECT_DIR
+              value: "/app/src/agents/echo"
+            # What this pod was rendered to run (ADR 0195). files/verify-build.mjs
+            # compares each of these with the build receipt; an unset one is a
+            # field this deployment does not pin, and is skipped.
+            - name: HG_BUILD_RECEIPT
+              value: /app/.hermes-gitops/build-receipt.json
+            - name: HG_EXPECTED_SOURCE_SHA
+              value: "3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234"
+            - name: HG_EXPECTED_BUILD_KEY
+              value: "37b600cf6c774954928d2cf4b6d45855ca5f5637c288e5dfb7d9af7a45043d47"
+            - name: HG_EXPECTED_RUNTIME_DIGEST
+              value: "51da5d57f869fc8d69d811849d34e8956cf7522d8b7be71a30a60358bb1b49bd"
+            - name: HG_EXPECTED_EVE_VERSION
+              value: "0.42.0"
+            - name: HG_EXPECTED_OVERLAY_DIGEST
+              value: "a7aa663bbf125d8ce8a8ac8d4482f1e479ea6de5f317639e247601b5a12825dd"
+            # Route auth: the minted Basic credential the default
+            # agent/channels/eve.ts verifies (templates/route-auth-secret.yaml).
+            # The default channel reads the PASSWORD FILE per request, so a
+            # re-minted Secret propagates through the volume without a
+            # restart. The env form is provided for authored channels that
+            # prefer httpBasic({username, password}); it is captured at
+            # process start and goes stale on a re-mint - authors choosing
+            # it accept that.
+            - name: ROUTE_AUTH_BASIC_USERNAME
+              value: "agent"
+            - name: ROUTE_AUTH_BASIC_PASSWORD_FILE
+              value: /run/secrets/route-auth/password
+            - name: ROUTE_AUTH_BASIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ag-eve-echo-route-auth
+                  key: password
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          # GET /eve/v1/health is public by design (route auth never covers
+          # it), so probes need no credentials.
+          # The startup gate (ADR 0195): the build receipt must match what this
+          # pod was rendered for BEFORE health decides readiness. Liveness and
+          # readiness stay plain HTTP - a running agent is not re-gated.
+          startupProbe:
+            exec:
+              command: ["node", "/scripts/verify-build.mjs"]
+            failureThreshold: 60
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /eve/v1/health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            # files/verify-build.mjs, the startup gate (ADR 0195).
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: data
+              mountPath: /app
+            # /hg: what the platform resolved for this agent (ADR-153).
+            # Read-only and outside /app deliberately - it describes the
+            # deployment, it is not part of it.
+            - name: runtime-manifest
+              mountPath: /hg
+              readOnly: true
+            - name: route-auth
+              mountPath: /run/secrets/route-auth
+              readOnly: true
+      volumes:
+        - name: boot-script
+          configMap:
+            name: ag-eve-echo-boot
+            defaultMode: 0755
+        - name: runtime-manifest
+          configMap:
+            name: ag-eve-echo-runtime-manifest
+        # 0440, not 0400: Secret volumes are owned by root with fsGroup as
+        # the group, and the process runs as uid 1000 - group-read is what
+        # lets it read the file.
+        - name: route-auth
+          secret:
+            secretName: ag-eve-echo-route-auth
+            defaultMode: 0440
+        - name: ov-git-crm-connection
+          secret:
+            secretName: bootstrap-git
+            defaultMode: 0440
+        - name: ov-git-house-rules
+          secret:
+            secretName: bootstrap-git
+            defaultMode: 0440
+---
+# Source: eve-agent/templates/smoke-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ag-eve-echo-smoke
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+    harness-hg.factorylevel.dev/source-sha: "3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234"
+    harness-hg.factorylevel.dev/eve-version: "0.42.0"
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    harness-hg.factorylevel.dev/build-key: "37b600cf6c774954928d2cf4b6d45855ca5f5637c288e5dfb7d9af7a45043d47"
+    harness-hg.factorylevel.dev/runtime-digest: "51da5d57f869fc8d69d811849d34e8956cf7522d8b7be71a30a60358bb1b49bd"
+    harness-hg.factorylevel.dev/overlay-digest: "a7aa663bbf125d8ce8a8ac8d4482f1e479ea6de5f317639e247601b5a12825dd"
+spec:
+  # One retry, then fail the sync: a check that keeps retrying would turn a
+  # broken deployment into a slow one.
+  backoffLimit: 1
+  activeDeadlineSeconds: 240
+  template:
+    metadata:
+      labels:
+        # Deliberately NOT the workload's labels: those are the Service's
+        # selector, and a smoke pod with no listener must never become an
+        # endpoint. Enough to identify the pod, nothing that selects it.
+        hermes-gitops.factorylevel.dev/plane: workload
+        hermes-gitops.factorylevel.dev/component: eve-agent-smoke
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      restartPolicy: Never
+      serviceAccountName: ag-eve-echo-smoke
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: smoke
+          image: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime:0.42.0
+          imagePullPolicy: IfNotPresent
+          command: ["node", "/scripts/smoke.mjs"]
+          env:
+            - name: HG_NAMESPACE
+              value: "ag-eve-echo"
+            - name: HG_WORKLOAD
+              value: "ag-eve-echo"
+            - name: HG_AGENT_URL
+              value: http://ag-eve-echo.ag-eve-echo.svc:3000
+            - name: HG_ROUTE_AUTH_USERNAME
+              value: "agent"
+            # The cluster's own CA, the dependency-free way to trust the API server.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            # The same expectations the startup gate uses, so the two cannot
+            # disagree about what this sync deployed.
+            - name: HG_EXPECTED_SOURCE_SHA
+              value: "3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234"
+            - name: HG_EXPECTED_BUILD_KEY
+              value: "37b600cf6c774954928d2cf4b6d45855ca5f5637c288e5dfb7d9af7a45043d47"
+            - name: HG_EXPECTED_RUNTIME_DIGEST
+              value: "51da5d57f869fc8d69d811849d34e8956cf7522d8b7be71a30a60358bb1b49bd"
+            - name: HG_EXPECTED_EVE_VERSION
+              value: "0.42.0"
+            - name: HG_EXPECTED_OVERLAY_DIGEST
+              value: "a7aa663bbf125d8ce8a8ac8d4482f1e479ea6de5f317639e247601b5a12825dd"
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: runtime-manifest
+              mountPath: /hg
+              readOnly: true
+            - name: route-auth
+              mountPath: /run/secrets/route-auth
+              readOnly: true
+      volumes:
+        - name: boot-script
+          configMap:
+            name: ag-eve-echo-boot
+        - name: runtime-manifest
+          configMap:
+            name: ag-eve-echo-runtime-manifest
+        - name: route-auth
+          secret:
+            secretName: ag-eve-echo-route-auth
+---
+# Source: eve-agent/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ag-eve-echo
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  rules:
+    - host: echo.hermes.local
+      http:
+        paths:
+          - path: /eve/
+            pathType: Prefix
+            backend:
+              service:
+                name: ag-eve-echo
+                port:
+                  number: 3000
+          - path: /.well-known/workflow/
+            pathType: Prefix
+            backend:
+              service:
+                name: ag-eve-echo
+                port:
+                  number: 3000
+---
+# Source: eve-agent/templates/route-auth-secret.yaml
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: ag-eve-echo-route-auth
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  refreshInterval: "0"
+  target:
+    name: ag-eve-echo-route-auth
+    creationPolicy: Owner
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: ag-eve-echo-route-auth-gen
+---
+# Source: eve-agent/templates/route-auth-secret.yaml
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: ag-eve-echo-route-auth-gen
+  namespace: ag-eve-echo
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-agent
+    app.kubernetes.io/name: eve-agent
+    app.kubernetes.io/instance: ag-eve-echo
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "0.42.0"
+    helm.sh/chart: eve-agent-0.1.0
+    hermes-gitops.factorylevel.dev/persona: "echo"
+    hermes-gitops.factorylevel.dev/runtime: eve
+    hermes-gitops.factorylevel.dev/managed: "true"
+spec:
+  length: 32
+  digits: 8
+  symbols: 0
+  noUpper: false
+  allowRepeat: true

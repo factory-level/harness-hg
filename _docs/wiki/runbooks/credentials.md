@@ -56,6 +56,53 @@ gcloud config set project <project>
 3. Before a restore: repeat step 1 on the replacement server. Destruction wipes `env/` on
    purpose.
 
+## When `hg team` refuses a credential
+
+`hg team plan`, `apply`, `resume` and `compile` check credentials before reading, provisioning or
+publishing anything, in three steps. Each step lists everything it finds, and a step runs only
+when the one before it passes. No refusal prints a value.
+
+**1. Access.** Nothing is judged missing until hg can read what the plan names.
+
+| Refusal | Fix |
+|---|---|
+| Google credentials need re-authentication | `gcloud auth application-default login`, or set `GOOGLE_APPLICATION_CREDENTIALS` to a deployer key |
+| `PULUMI_BACKEND_URL` differs from the installation's backend | unset it, or export the backend the message names |
+| no environment spec derives the stack's backend | add or repair `infra/environments/<stack>.yaml` with the stack's `name` and `project` |
+| a stack config file cannot be read, or is not valid YAML | fix its permissions, or the YAML at the line and column named |
+| stack not found on backend | create the stack on the named backend, or correct the stack name |
+| Pulumi is not logged in to a backend | export the `PULUMI_BACKEND_URL` the message names |
+| Cloud KMS refused to decrypt | grant `roles/cloudkms.cryptoKeyDecrypter` on the stack's key, or impersonate the deployer |
+| kube context does not exist | run on the destination host, or merge that cluster's kubeconfig under the context name |
+| Kubernetes API server unreachable | fix the network path to the context's server |
+| RBAC denies get on a declared Secret | grant `get` on that Secret, by name, to the context's identity |
+
+hg derives the backend from the environment spec named for the bootstrap stack:
+`infra/environments/<stack>.yaml`, or `infra/environments/<dir>/environment.yaml`. It never falls
+back to your last `pulumi login`.
+
+**2. Completeness.** Every missing value, grouped by agent, each with its config path and fix:
+
+- an input path that is absent, empty, or still `<UNSET - see findings>`;
+- that placeholder anywhere in a stack file the plan names;
+- a binding, source, runtime or app-value variable with no source.
+
+The fix stores the value encrypted in the stack config, then points the plan at it:
+
+```bash
+(cd infra && PULUMI_BACKEND_URL=<backend> pulumi config set --secret --path '<path>' \
+  --stack <stack> --config-file <file>)
+```
+
+`pulumi config set` reads the value from the prompt or stdin. Never pass it as an argument.
+
+**3. Delivery.** After rendering, every required `envRequires` variable must reach the agent's
+pod Secret: delivered, not empty plaintext, not a placeholder, and listed in the agent's
+`environment` so the startup check runs with it.
+
+`hg env apply` writes nothing while any secret is unset. It prints one `pulumi config set` per
+secret instead.
+
 ## Proof
 
 Credentials are correct when the things that consume them say so:
@@ -67,6 +114,7 @@ HG_RESTORE_READER_SA=<env>-restore-reader@<project>.iam.gserviceaccount.com \
 hg backup verify                          # every routine's newest artifact holds what it claims
 hg eval prove --control-plane <url> --component <id>   # EVALPUB001..004
 hg launch prove                           # the aggregate
+hg team plan --plan <installation.yaml> --dir <bootstrap>   # no credential refusal
 ```
 
 **Done when** every proof above passes with no `unknown` leg.

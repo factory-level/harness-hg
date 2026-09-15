@@ -63,11 +63,14 @@ check_pair() { # <loop-name> <script> <page> [exempt-keys...]
 
 # Exemptions, each with its reason:
 #   - the dev loop's e2e harness asserts hg reset/agent/eval/reconcile
-#     legs that are ACCEPTANCE machinery, not the quickstart's
-#     make-a-change story; the quickstart ends at the converge proof.
+#     legs, plus the #920 watcher legs (reconcile retry, team status and
+#     the rollback re-up), that are ACCEPTANCE machinery, not the
+#     quickstart's make-a-change story; the quickstart ends at the
+#     converge proof.
 check_pair dev cli/e2e-local.sh _docs/wiki/get-started/dev-quickstart.md \
   "hg reset" "hg reset --nuclear" "hg agent apply" "hg agent show" "hg eval --dir" \
-  "hg reconcile install" "hg reconcile prove" "hg reconcile run" "hg reconcile status"
+  "hg reconcile install" "hg reconcile prove" "hg reconcile run" "hg reconcile status" \
+  "hg reconcile retry" "hg team status"
 
 check_pair agent-bundle cli/loops/agent-bundle-loop.sh _docs/wiki/get-started/agent-team-repo.md
 

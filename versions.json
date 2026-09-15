@@ -25,10 +25,12 @@
     "pko": "2.7.0"
   },
   "runtimes": {
-    "$comment": "Agent runtimes the platform deploys (ADR-149). eve.version is the npm `eve` release baked into the eve-runtime image AND the image tag; harness/eve/image/build.sh and harness/eve/charts/eve-agent read it, and the boot script refuses a project whose resolved eve differs from it.",
+    "$comment": "Agent runtimes the platform deploys (ADR-149). eve.version is the npm `eve` release baked into the eve-runtime image AND the image tag; harness/eve/image/build.sh and harness/eve/charts/eve-agent read it, and the boot script refuses a project whose resolved eve differs from it. eve.allowed is the closed set an installation plan may pin ONE agent to instead of its own default (ADR 0192): every entry is a digest-pinned image and the eve release it ships, and the platform keeps publishing each listed image until no plan pins it. An empty list means no agent may pin a runtime.",
     "eve": {
       "version": "0.42.0",
-      "imageRepository": "us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime"
+      "sandboxDependency": "3.4.2",
+      "imageRepository": "us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime",
+      "allowed": []
     }
   },
   "loki": {

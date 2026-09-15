@@ -994,6 +994,228 @@ eve_golden() {
   fi
 }
 eve_golden "minimal" -f "$FIXTURES_DIR/eve-record-minimal.yaml"
+# The production startup gate's immutable image must reach both build and serve containers.
+EVE_MIN_RENDER_EARLY="$(helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-record-minimal.yaml" 2>&1)"
+TEAM_RUNTIME_DIGEST="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+TEAM_DIGEST_RENDER="$(helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
+  -f "$FIXTURES_DIR/eve-record-minimal.yaml" --set "runtimeImage.digest=$TEAM_RUNTIME_DIGEST" 2>&1)"
+if [[ "$(grep -c "image:.*@$TEAM_RUNTIME_DIGEST" <<<"$TEAM_DIGEST_RENDER")" == "2" ]]; then
+  log "OK   eve production digest pins both build and serve images"
+else
+  echo "FAIL eve runtime digest does not pin both containers"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
+  -f "$FIXTURES_DIR/eve-record-minimal.yaml" --set runtimeImage.digest=mutable >/dev/null 2>&1; then
+  echo "FAIL eve accepted malformed runtime digest"; FAIL_COUNT=$((FAIL_COUNT+1))
+else
+  log "OK   eve rejects malformed runtime digest"
+fi
+
+# A per-agent runtime pin (ADR 0192) tells the BUILD container which eve its
+# image must ship; the serving container is unchanged, and an unpinned record
+# carries the variable nowhere at all.
+EVE_PIN_RENDER="$(helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
+  -f "$FIXTURES_DIR/eve-record-minimal.yaml" --set runtimeImage.eveVersion=9.9.9 2>&1)"
+if [[ "$(grep -c "name: EXPECTED_EVE_VERSION" <<<"$EVE_PIN_RENDER")" == "1" ]] \
+    && grep -A1 "name: EXPECTED_EVE_VERSION" <<<"$EVE_PIN_RENDER" | grep -q '"9.9.9"' \
+    && [[ "$(awk '/- name: build-agent/,/- name: eve-agent/' <<<"$EVE_PIN_RENDER" | grep -c 'name: EXPECTED_EVE_VERSION')" == "1" ]]; then
+  log "OK   eve runtime pin reaches the build container only"
+else
+  echo "FAIL eve runtime pin: expected one EXPECTED_EVE_VERSION=9.9.9 in the build container"
+  grep -n "EXPECTED_EVE_VERSION" <<<"$EVE_PIN_RENDER" | sed 's/^/       /'
+  FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+# The local loop runs a locally built image whose TAG is a build name, not an Eve
+# release (cli/src/platform/index.ts localEveRuntimeImage). The startup gate must
+# expect the release the image ships, or every locally deployed agent is refused.
+EVE_LOCAL_PIN="$(python3 -c "import json;print(json.load(open('$REPO_ROOT/versions.json'))['runtimes']['eve']['version'])")"
+for chart_dir in "$EVE_CHART_DIR" "$REPO_ROOT/harness/eve/charts/eve-bundle"; do
+  if [[ "$chart_dir" == "$EVE_CHART_DIR" ]]; then
+    LOCAL_RENDER="$(helm template ag-eve-echo "$chart_dir" -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-record-minimal.yaml" \
+      --set runtimeImage.tag=hermes-gitops-dev --set runtimeImage.eveVersion="$EVE_LOCAL_PIN" 2>&1)"
+  else
+    LOCAL_RENDER="$(helm template b "$chart_dir" --namespace b -f "$FIXTURES_DIR/eve-bundle-values.yaml" \
+      --set runtimeImage.tag=hermes-gitops-dev --set runtimeImage.eveVersion="$EVE_LOCAL_PIN" 2>&1)"
+  fi
+  EXPECTED_VALUES="$(grep -A1 "name: HG_EXPECTED_EVE_VERSION" <<<"$LOCAL_RENDER" | grep "value:" | sort -u)"
+  if [[ -n "$EXPECTED_VALUES" && "$(wc -l <<<"$EXPECTED_VALUES")" == "1" ]] && grep -q "\"$EVE_LOCAL_PIN\"" <<<"$EXPECTED_VALUES"; then
+    log "OK   $(basename "$chart_dir"): a locally tagged image still expects the Eve release it ships"
+  else
+    echo "FAIL $(basename "$chart_dir"): local image override expects ${EXPECTED_VALUES:-nothing}, not eve $EVE_LOCAL_PIN"
+    FAIL_COUNT=$((FAIL_COUNT+1))
+  fi
+done
+if grep -q "name: EXPECTED_EVE_VERSION" <<<"$EVE_MIN_RENDER_EARLY"; then
+  echo "FAIL eve unpinned record renders EXPECTED_EVE_VERSION"; FAIL_COUNT=$((FAIL_COUNT+1))
+else
+  log "OK   eve unpinned record carries no EXPECTED_EVE_VERSION"
+fi
+
+# The startup gate (ADR 0195): version metadata on the workload, never on a
+# selector; the receipt path and the expected values on the serving container;
+# the probe kinds; and the shipped verifier byte-identical to the source file.
+EVE_GATE="$(helm template ag-eve-echo "$EVE_CHART_DIR" --namespace ag-eve-echo \
+  -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-record-minimal.yaml" 2>&1)"
+if python3 - "$EVE_GATE" "$FIXTURES_DIR/eve-record-minimal.yaml" <<'PYMETA'
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d]
+sha = yaml.safe_load(open(sys.argv[2]))["spec"]["sha"]
+sts = next(d for d in docs if d["kind"] == "StatefulSet")
+P = "harness-hg.factorylevel.dev/"
+for where in (sts["metadata"], sts["spec"]["template"]["metadata"]):
+    labels, ann = where.get("labels", {}), where.get("annotations", {})
+    assert labels[P + "source-sha"] == sha, labels
+    assert labels[P + "eve-version"], labels
+    assert ann[P + "build-key"] and ann[P + "runtime-digest"], ann
+PYMETA
+then
+  log "OK   eve version metadata lands on the StatefulSet and the pod template"
+else
+  echo "FAIL eve version metadata: expected source-sha/eve-version labels and build-key/runtime-digest annotations on both"
+  grep -n "harness-hg.factorylevel.dev/" <<<"$EVE_GATE" | sed 's/^/       /'
+  FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+# A version label must never reach a selector: changing one would orphan the workload.
+if python3 - "$EVE_GATE" <<'PYGATE'
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d and d.get("kind") == "StatefulSet"]
+sel = docs[0]["spec"]["selector"]["matchLabels"]
+sys.exit(1 if any(k.startswith("harness-hg.factorylevel.dev/") for k in sel) else 0)
+PYGATE
+then
+  log "OK   eve version labels stay out of the selector"
+else
+  echo "FAIL eve version labels reached the StatefulSet selector"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+# Every label value must be a legal Kubernetes label (<=63 chars).
+if python3 - "$EVE_GATE" <<'PYLEN'
+import sys, yaml
+for d in yaml.safe_load_all(sys.argv[1]):
+    if not d or d.get("kind") != "StatefulSet": continue
+    for where in (d["metadata"].get("labels", {}), d["spec"]["template"]["metadata"].get("labels", {})):
+        for k, v in where.items():
+            if k.startswith("harness-hg.factorylevel.dev/") and len(str(v)) > 63: sys.exit(1)
+PYLEN
+then
+  log "OK   eve version label values fit the 63-character limit"
+else
+  echo "FAIL an eve version label value exceeds 63 characters"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+if grep -q 'command: \["node", "/scripts/verify-build.mjs"\]' <<<"$EVE_GATE" \
+    && [[ "$(grep -c "path: /eve/v1/health" <<<"$EVE_GATE")" == "2" ]] \
+    && grep -q "value: /app/.hermes-gitops/build-receipt.json" <<<"$EVE_GATE"; then
+  log "OK   eve startup probe execs the build gate; liveness and readiness stay HTTP"
+else
+  echo "FAIL eve startup gate: expected an exec startupProbe, two HTTP probes and the receipt path"
+  FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+# The overlay digest is expected only where overlays exist.
+if ! grep -q "name: HG_EXPECTED_OVERLAY_DIGEST" <<<"$EVE_GATE"; then
+  log "OK   a record without overlays expects no overlay digest"
+else
+  echo "FAIL eve record without overlays carries HG_EXPECTED_OVERLAY_DIGEST"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+# The gate's own variables are chart-owned: an injected empty value would disable a
+# check, and an injected receipt path would point the gate at a file of someone's choosing.
+for injected in HG_EXPECTED_SOURCE_SHA HG_EXPECTED_BUILD_KEY HG_EXPECTED_EVE_VERSION HG_BUILD_RECEIPT HG_RUNTIME_DIGEST; do
+  if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
+      -f "$FIXTURES_DIR/eve-record-minimal.yaml" --set "spec.env.$injected=x" >/dev/null 2>&1; then
+    echo "FAIL eve accepted spec.env.$injected, which the startup gate owns"; FAIL_COUNT=$((FAIL_COUNT+1))
+  else
+    log "OK   eve refuses spec.env.$injected"
+  fi
+done
+# A bundle has no single source-sha: each member's desired values ride as annotations.
+EVE_BUNDLE_GATE="$(helm template b "$REPO_ROOT/harness/eve/charts/eve-bundle" --namespace b -f "$FIXTURES_DIR/eve-bundle-values.yaml" 2>&1)"
+if python3 - "$EVE_BUNDLE_GATE" <<'PYBMETA'
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d]
+sts = next(d for d in docs if d["kind"] == "StatefulSet")
+P = "harness-hg.factorylevel.dev/"
+for where in (sts["metadata"], sts["spec"]["template"]["metadata"]):
+    ann = where.get("annotations", {})
+    assert ann[P + "eve-version"], ann
+    for member in ("echo", "greeter"):
+        assert ann[f"{P}source-sha.{member}"], ann
+        assert ann[f"{P}runtime-digest.{member}"], ann
+PYBMETA
+then
+  log "OK   bundle carries per-member desired versions on the workload and pod template"
+else
+  echo "FAIL bundle version annotations missing per member"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+
+# The PostSync smoke check (ADR 0195): a hook Job with its own namespaced,
+# read-only ServiceAccount, deleted before each sync and on success - so a
+# FAILED job is what stays behind to read.
+if python3 - "$EVE_GATE" <<'PYSMOKE'
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d]
+job = next((d for d in docs if d["kind"] == "Job"), None)
+role = next((d for d in docs if d["kind"] == "Role"), None)
+assert job and role, "no smoke Job/Role"
+ann = job["metadata"]["annotations"]
+assert ann["argocd.argoproj.io/hook"] == "PostSync", ann
+assert ann["argocd.argoproj.io/hook-delete-policy"] == "BeforeHookCreation,HookSucceeded", ann
+assert job["spec"]["backoffLimit"] == 1, job["spec"]
+assert job["spec"]["activeDeadlineSeconds"] == 240, job["spec"]
+verbs = {(r["apiGroups"][0], tuple(sorted(r["verbs"]))) for r in role["rules"]}
+assert verbs == {("", ("get", "list")), ("apps", ("get", "list"))}, verbs
+# The Job and the StatefulSet must agree about what this sync deployed.
+sts = next(d for d in docs if d["kind"] == "StatefulSet")
+served = {e["name"]: e.get("value") for c in sts["spec"]["template"]["spec"]["containers"] for e in c["env"]}
+smoke = {e["name"]: e.get("value") for c in job["spec"]["template"]["spec"]["containers"] for e in c["env"]}
+for key in [k for k in smoke if k.startswith("HG_EXPECTED_")]:
+    assert smoke[key] == served[key], (key, smoke[key], served[key])
+PYSMOKE
+then
+  log "OK   eve smoke hook is a PostSync Job with least-privilege RBAC and the gate's own expectations"
+else
+  echo "FAIL eve smoke hook shape or expectations"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+if python3 - "$EVE_GATE" <<'PYSEL'
+import sys, yaml
+docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d]
+job = next(d for d in docs if d["kind"] == "Job")
+service = next(d for d in docs if d["kind"] == "Service")
+selector = service["spec"]["selector"]
+pod = job["spec"]["template"]["metadata"]["labels"]
+# A smoke pod has no listener: if the Service could select it, live traffic breaks.
+assert not all(pod.get(k) == v for k, v in selector.items()), (selector, pod)
+PYSEL
+then
+  log "OK   the smoke pod can never become an endpoint of the agent Service"
+else
+  echo "FAIL the agent Service selector matches the smoke pod"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+EVE_NO_SMOKE="$(helm template ag-eve-echo "$EVE_CHART_DIR" --namespace ag-eve-echo \
+  -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-record-minimal.yaml" --set smoke.enabled=false 2>&1)"
+if ! grep -qE "^kind: Job$" <<<"$EVE_NO_SMOKE" && ! grep -q "argocd.argoproj.io/hook" <<<"$EVE_NO_SMOKE"; then
+  log "OK   smoke.enabled=false renders no hook at all"
+else
+  echo "FAIL smoke.enabled=false still renders a hook"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+if grep -q "name: HG_MEMBERS" <<<"$EVE_BUNDLE_GATE" && grep -qE "^kind: Job$" <<<"$EVE_BUNDLE_GATE"; then
+  log "OK   the bundle smoke hook checks every member"
+else
+  echo "FAIL bundle smoke hook missing or carries no member list"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+
+for chart in eve-agent eve-bundle; do
+  if cmp -s "$REPO_ROOT/harness/eve/charts/eve-agent/files/smoke.mjs" "$REPO_ROOT/harness/eve/charts/$chart/files/smoke.mjs"; then
+    log "OK   $chart ships the same smoke.mjs"
+  else
+    echo "FAIL $chart/files/smoke.mjs differs from the eve-agent copy"; FAIL_COUNT=$((FAIL_COUNT+1))
+  fi
+done
+for chart in eve-agent eve-bundle; do
+  if cmp -s "$REPO_ROOT/harness/eve/charts/eve-agent/files/verify-build.mjs" "$REPO_ROOT/harness/eve/charts/$chart/files/verify-build.mjs"; then
+    log "OK   $chart ships the same verify-build.mjs"
+  else
+    echo "FAIL $chart/files/verify-build.mjs differs from the eve-agent copy"; FAIL_COUNT=$((FAIL_COUNT+1))
+  fi
+done
+
 eve_golden "full" -f "$FIXTURES_DIR/eve-record-full.yaml"
 eve_golden "full-none" -f "$FIXTURES_DIR/eve-record-full.yaml" --set providers.ingress=none
 # The two-prefix contract (eve's self-hosting guide): an Ingress that
@@ -1026,6 +1248,28 @@ if grep -q "name: ag-eve-echo-env" <<<"$EVE_MIN_RENDER"; then
 else
   log "OK   eve minimal record mounts no env Secret"
 fi
+# Operator overlays (ADR 0194): the lines, tree hash, digest and credential
+# mounts reach only the build container of a record that declares overlays.
+eve_golden "overlays" -f "$FIXTURES_DIR/eve-record-overlays.yaml"
+EVE_OV_RENDER="$(helm template ag-eve-echo "$EVE_CHART_DIR" --namespace ag-eve-echo \
+  -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-record-overlays.yaml" 2>&1)"
+if grep -q "name: EVE_OVERLAYS$" <<<"$EVE_OV_RENDER" \
+    && grep -q "harness-hg.factorylevel.dev/overlay-digest:" <<<"$EVE_OV_RENDER" \
+    && grep -q "mountPath: /run/secrets/overlays/crm-connection/git" <<<"$EVE_OV_RENDER" \
+    && grep -q "name: ov-git-house-rules" <<<"$EVE_OV_RENDER" \
+    && ! grep -q "name: EVE_OVERLAY\|harness-hg.factorylevel.dev/overlay-digest:\|name: ov-git-" <<<"$EVE_MIN_RENDER"; then
+  log "OK   eve overlays reach only the build container of a record that declares them"
+else
+  echo "FAIL eve overlay env, digest annotation or credential mount missing, or leaked into a record without overlays"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+for bad in "spec.overlays[0].source.repository=--upload-pack=touch" "spec.overlays[0].source.repository=https://user:not-a-token@github.com/example/agent-skills.git" "spec.overlayTreeHash=null" "spec.overlays[0].source.commit=9b1c2d3" "spec.overlays[1].contentHash=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" "spec.overlays[2].id=Crm_Connection"; do
+  if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
+      -f "$FIXTURES_DIR/eve-record-overlays.yaml" --set "$bad" >/dev/null 2>&1; then
+    echo "FAIL eve chart rendered a malformed overlay record ($bad)"; FAIL_COUNT=$((FAIL_COUNT+1))
+  else
+    log "OK   eve malformed overlay refused ($bad)"
+  fi
+done
 # negatives
 if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
     -f "$FIXTURES_DIR/eve-record-minimal.yaml" --set spec.sha=null >/dev/null 2>&1; then
@@ -1075,6 +1319,30 @@ if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
   echo "FAIL eve chart let spec.env shadow ROUTE_AUTH_BASIC_PASSWORD"; FAIL_COUNT=$((FAIL_COUNT+1))
 else
   log "OK   eve envGuard refuses a chart-owned variable in spec.env"
+fi
+# MCP URLs are validated during eve build, before the runtime container starts.
+EVE_CAP_RENDER="$(helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
+  -f "$FIXTURES_DIR/eve-record-full.yaml" \
+  --set 'spec.env.HERMES_CAP_CRM_URL=http://crm.example:3000/mcp' \
+  --set 'spec.env.RUNTIME_ONLY_SETTING=runtime-only' 2>&1)"
+if EVE_CAP_RENDER="$EVE_CAP_RENDER" python3 - <<'PYEOF'
+import os
+s = os.environ["EVE_CAP_RENDER"]
+init = s.split("      initContainers:\n", 1)[1].split("      containers:\n", 1)[0]
+runtime = s.split("      containers:\n", 1)[1]
+for section in (init, runtime):
+    assert "name: HERMES_CAP_CRM_URL" in section
+    assert 'value: "http://crm.example:3000/mcp"' in section
+assert "RUNTIME_ONLY_SETTING" not in init
+assert "envFrom:" not in init
+assert "secretKeyRef:" not in init
+assert "RUNTIME_ONLY_SETTING" in runtime
+assert "envFrom:" in runtime
+PYEOF
+then
+  log "OK   Eve build receives capability URL without runtime-only env or Secrets"
+else
+  echo "FAIL Eve build capability environment"; FAIL_COUNT=$((FAIL_COUNT+1))
 fi
 for bad in "../../tmp/x" "/abs/path" "agents/./echo" "agents/echo/"; do
   if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" \
@@ -1131,7 +1399,7 @@ if grep -q 'hermes.dev/backup-routine: "true"' <<<"$EVE_AB" \
     && ! grep -q 'claimName: workspaces-' <<<"$EVE_AB" \
     && grep -q "exclude='\*/node_modules'" <<<"$EVE_AB" \
     && grep -q "exclude='\*/.output'" <<<"$EVE_AB" \
-    && grep -q 'hermes.dev/backup-protects: "state/,src/,.hermes-gitops/installed_sha"' <<<"$EVE_AB"; then
+    && grep -q 'hermes.dev/backup-protects: "state/,src/,.hermes-gitops/installed_sha,.hermes-gitops/build-receipt.json"' <<<"$EVE_AB"; then
   log "OK   eve backup routine archives the data claim only, excludes the rebuildable trees"
 else
   echo "FAIL eve backup routine shape"; FAIL_COUNT=$((FAIL_COUNT+1))
@@ -1188,6 +1456,139 @@ if helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$FIXTURES
   echo "FAIL eve chart let spec.env shadow a workspace variable"; FAIL_COUNT=$((FAIL_COUNT+1))
 else
   log "OK   eve envGuard refuses spec.env shadowing EVE_WORKSPACE_<NAME>"
+fi
+# ---- ADR 0197: tracked workspaces on the Eve chart -----------------------
+# One tracked private binding beside a pinned one. The golden pins the whole
+# render; the structural check says what the golden must mean: a sync sidecar on
+# the agent's own image, the credential in the build and sync containers only,
+# a read-only agent mount, scrape annotations, a WorkspaceStale rule at twice
+# the interval that alerts on missing freshness, and a manifest naming the
+# channel rather than a commit. The runtime behaviour is workspace-sync-test.sh
+# (section 7).
+eve_golden "workspace-tracked" -f "$FIXTURES_DIR/eve-record-workspace-tracked.yaml"
+TR_FILE="$(mktemp)"
+helm template ag-eve-echo "$EVE_CHART_DIR" --namespace ag-eve-echo -f "$CLUSTER_VALUES" \
+  -f "$FIXTURES_DIR/eve-record-workspace-tracked.yaml" --set networkPolicy.enabled=true > "$TR_FILE" 2>&1 || true
+AB_FILE="$(mktemp)"
+printf '%s\n' "$EVE_AB" > "$AB_FILE"
+if TR_OUT="$(python3 - "$TR_FILE" "$AB_FILE" <<'PYTRACKED'
+import json, sys, yaml
+problems = []
+def load(path):
+    return [d for d in yaml.safe_load_all(open(path)) if d]
+env = lambda c: {e["name"]: e.get("value") for e in c.get("env", [])}
+mounts = lambda c: {m["mountPath"]: m for m in c.get("volumeMounts", [])}
+try:
+    docs = load(sys.argv[1])
+except Exception as exc:
+    print(f"the tracked render does not parse: {exc}"); sys.exit(1)
+pod = next(d for d in docs if d["kind"] == "StatefulSet")["spec"]["template"]
+spec = pod["spec"]
+containers = {c["name"]: c for c in spec["containers"]}
+build = next(c for c in spec["initContainers"] if c["name"] == "build-agent")
+agent, sync = containers["eve-agent"], containers.get("workspace-sync")
+TRACKED = "vision https://github.com/factory-level/vision-manager.git main read-only tracked 1800"
+if not sync:
+    problems.append("no workspace-sync container")
+else:
+    if sync["image"] != agent["image"]: problems.append("the sync container does not run the agent's image")
+    if sync["command"] != ["/bin/sh", "/scripts/workspace-sync.sh", "loop"]: problems.append(f"sync command {sync['command']}")
+    if env(sync).get("EVE_WORKSPACE_BINDINGS") != TRACKED: problems.append(f"sync bindings {env(sync).get('EVE_WORKSPACE_BINDINGS')!r}")
+    if "/run/secrets/repositories/vision/git" not in mounts(sync): problems.append("the tracked credential is not mounted in the sync container")
+    if mounts(sync).get("/app/workspaces", {}).get("readOnly"): problems.append("the sync container cannot write the workspaces claim")
+    if not any(p.get("containerPort") == 9464 for p in sync.get("ports", [])): problems.append("no metrics port on the sync container")
+if "/run/secrets/repositories/vision/git" not in mounts(build): problems.append("the build container cannot clone the tracked workspace")
+if any(p.startswith("/run/secrets/repositories") for p in mounts(agent)): problems.append("a repository credential reaches the agent container")
+if mounts(agent).get("/app/workspaces", {}).get("readOnly") is not True: problems.append("the agent's workspaces mount is not read-only though every binding is")
+lines = env(build).get("EVE_WORKSPACE_BINDINGS", "").split("\n")
+if lines != [TRACKED, "platform https://github.com/factory-level/harness-hg b5113eb5c0ffee00000000000000000000000000 read-only"]:
+    problems.append(f"build bindings {lines!r}")
+annotations = pod["metadata"].get("annotations", {})
+for key, want in {"prometheus.io/scrape": "true", "prometheus.io/port": "9464", "prometheus.io/path": "/metrics",
+                  "kubectl.kubernetes.io/default-container": "eve-agent"}.items():
+    if annotations.get(key) != want: problems.append(f"pod annotation {key}={annotations.get(key)!r}")
+manifest = json.loads(next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-runtime-manifest"))["data"]["runtime-manifest.json"])
+revisions = {w["name"]: w["revision"] for w in manifest["spec"]["workspaces"]}
+if revisions != {"vision": "tracked:main", "platform": "b5113eb5c0ffee00000000000000000000000000"}: problems.append(f"manifest revisions {revisions}")
+boot = next(d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"].endswith("-boot"))["data"]
+if not {"workspace-sync.sh", "workspace-metrics.mjs"} <= set(boot): problems.append("the boot ConfigMap does not ship the sync files")
+alerts = [d for d in docs if d["kind"] == "ConfigMap" and d["metadata"].get("labels", {}).get("grafana_alert") == "1"]
+if len(alerts) != 1:
+    problems.append(f"{len(alerts)} alert ConfigMaps, want 1")
+else:
+    rule = yaml.safe_load(next(iter(alerts[0]["data"].values())))["groups"][0]["rules"][0]
+    expr = rule["data"][0]["model"]["expr"]
+    if not rule["title"].startswith("WorkspaceStale ("): problems.append(f"rule title {rule['title']}")
+    if expr != 'max(time() - hg_workspace_last_success_timestamp_seconds{namespace="ag-eve-echo"} - 2 * hg_workspace_refresh_interval_seconds{namespace="ag-eve-echo"})':
+        problems.append(f"rule expr {expr}")
+    if rule["data"][1]["model"]["conditions"][0]["evaluator"] != {"type": "gt", "params": [0]}: problems.append("rule threshold is not > 0")
+    if rule["noDataState"] != "Alerting": problems.append("missing freshness does not alert")
+    if rule["notification_settings"]["receiver"] != "ag-eve-echo-alerts": problems.append(f"rule receiver {rule['notification_settings']['receiver']!r}, want the namespace monitoring contact point")
+    if len(rule["uid"]) > 40: problems.append("rule uid exceeds Grafana's 40 characters")
+policy = next((d for d in docs if d["kind"] == "NetworkPolicy"), None)
+if not policy or {p["port"] for p in policy["spec"]["ingress"][0]["ports"]} != {3000, 9464}:
+    problems.append("the NetworkPolicy does not admit exactly the agent and metrics ports")
+# A pinned-only agent (apps-backup: one read-write binding) gains none of it.
+pinned = load(sys.argv[2])
+ppod = next(d for d in pinned if d["kind"] == "StatefulSet")["spec"]["template"]
+if any(c["name"] == "workspace-sync" for c in ppod["spec"]["containers"]): problems.append("a pinned-only agent renders a sync container")
+if "prometheus.io/scrape" in ppod["metadata"].get("annotations", {}): problems.append("a pinned-only agent is annotated for scraping")
+if any(d["kind"] == "ConfigMap" and d["metadata"].get("labels", {}).get("grafana_alert") == "1" for d in pinned): problems.append("a pinned-only agent renders WorkspaceStale")
+pagent = next(c for c in ppod["spec"]["containers"] if c["name"] == "eve-agent")
+if mounts(pagent).get("/app/workspaces", {}).get("readOnly"): problems.append("a read-write binding got a read-only agent mount")
+print("; ".join(problems))
+sys.exit(1 if problems else 0)
+PYTRACKED
+)"; then
+  log "OK   eve tracked workspace: sync sidecar, credential off the agent, read-only mount, metrics, WorkspaceStale, manifest channel; pinned-only unchanged"
+else
+  echo "FAIL eve tracked workspace shape: $TR_OUT"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+rm -f "$TR_FILE" "$AB_FILE"
+# The chart re-checks the contract where a branch becomes a shell word and a refspec.
+TR_NEG_DIR="$(mktemp -d)"
+tr_neg() { # slug description yaml-lines-for-the-binding expected-message
+  local file="$TR_NEG_DIR/$1.yaml" out
+  printf '%s\n' "spec:" "  persona: echo" "  runtime: eve" \
+    "  source: https://github.com/factorylevel/eve-agents.git" \
+    "  sha: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234" "  workspace:" "    repositories:" \
+    "      - name: vision" "        source: https://github.com/factory-level/vision-manager.git" \
+    "        access: read-only" "$3" > "$file"
+  if out="$(helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$file" 2>&1)"; then
+    echo "FAIL eve chart rendered a tracked binding with $2"; FAIL_COUNT=$((FAIL_COUNT+1))
+  elif grep -q "$4" <<<"$out"; then
+    log "OK   eve workspaceGuard refuses a tracked binding with $2"
+  else
+    echo "FAIL eve tracked guard ($2) failed with an unexpected message:"; tail -2 <<<"$out" | sed 's/^/       /'
+    FAIL_COUNT=$((FAIL_COUNT+1))
+  fi
+}
+tr_neg dotdot "a '..' branch" $'        tracking:\n          branch: main..release\n          refreshInterval: 30m' "is not a trackable branch name"
+tr_neg refs "a refs/heads/ branch" $'        tracking:\n          branch: refs/heads/main\n          refreshInterval: 30m' "is not a trackable branch name"
+tr_neg commit "a commit as the branch" $'        tracking:\n          branch: 0123456789abcdef0123456789abcdef01234567\n          refreshInterval: 30m' "is not a trackable branch name"
+tr_neg interval "an interval below 5m" $'        tracking:\n          branch: main\n          refreshInterval: 1m' "must be whole minutes (at least 5m)"
+tr_neg seconds "an interval in seconds" $'        tracking:\n          branch: main\n          refreshInterval: 900s' "must be whole minutes (at least 5m)"
+tr_neg sha "a sha beside the branch" $'        sha: 0123456789abcdef0123456789abcdef01234567\n        tracking:\n          branch: main\n          refreshInterval: 30m' "must not also carry a sha"
+rm -rf "$TR_NEG_DIR"
+# WorkspaceStale's receiver: the namespace's monitoring contact point (<namespace>-alerts, the
+# monitoring chart's name) by default, in whatever namespace the agent lands; an explicit
+# alerts.contactPoint overrides it. The receiver is never empty, so there is no silent render.
+if TR_CP_NS="$(helm template ag-eve-marketing-sre "$EVE_CHART_DIR" --namespace ag-eve-marketing-sre -f "$CLUSTER_VALUES" \
+    -f "$FIXTURES_DIR/eve-record-workspace-tracked.yaml" 2>&1)" \
+    && grep -q 'receiver: "ag-eve-marketing-sre-alerts"$' <<<"$TR_CP_NS" \
+  && TR_CP_SET="$(helm template ag-eve-echo "$EVE_CHART_DIR" --namespace ag-eve-echo -f "$CLUSTER_VALUES" \
+    -f "$FIXTURES_DIR/eve-record-workspace-tracked.yaml" --set alerts.contactPoint=team-pager 2>&1)" \
+    && grep -q 'receiver: "team-pager"$' <<<"$TR_CP_SET" && ! grep -q 'ag-eve-echo-alerts' <<<"$TR_CP_SET"; then
+  log "OK   eve WorkspaceStale routes to <namespace>-alerts by default, and to alerts.contactPoint when set"
+else
+  echo "FAIL eve WorkspaceStale receiver: default is not <namespace>-alerts or the override is ignored"; FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+if TR_OPTOUT="$(helm template ag-eve-echo "$EVE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-record-workspace-tracked.yaml" \
+    --set alerts.workspaceStale.enabled=false 2>&1)" \
+    && ! grep -q 'grafana_alert: "1"' <<<"$TR_OPTOUT" && grep -q 'name: workspace-sync$' <<<"$TR_OPTOUT"; then
+  log "OK   eve WorkspaceStale opt-out is explicit and keeps the sync sidecar"
+else
+  echo "FAIL eve WorkspaceStale opt-out"; FAIL_COUNT=$((FAIL_COUNT+1))
 fi
 # ---- ADR-150: the eve-bundle chart ---------------------------------------
 EVE_BUNDLE_CHART_DIR="$REPO_ROOT/harness/eve/charts/eve-bundle"
@@ -1275,8 +1676,28 @@ if helm template x "$EVE_BUNDLE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$FIXTURES_DI
 else
   log "OK   eve bundle refuses an undeclared repositoryRef"
 fi
+if helm template x "$EVE_BUNDLE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-bundle-values.yaml" --set 'spec.profiles[0].overlayTreeHash=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' >/dev/null 2>&1; then
+  echo "FAIL eve bundle accepted a member with operator overlays"; FAIL_COUNT=$((FAIL_COUNT+1))
+else
+  log "OK   eve bundle refuses operator overlays"
+fi
+# A bundle mounts each workspace through a subPath, which pins the directory at
+# member start: an in-pod refresh could never reach it (ADR 0197 cost). Refused.
+EB_TRACKED="$(mktemp)"
+printf '%s\n' "spec:" "  repositories:" "    - name: brand" "      source: https://example.invalid/vision-manager.git" \
+  "      tracking:" "        branch: main" "        refreshInterval: 30m" "      mountPath: /workspaces/brand" \
+  "      access: read-only" > "$EB_TRACKED"
+if EB_TR_OUT="$(helm template x "$EVE_BUNDLE_CHART_DIR" -f "$CLUSTER_VALUES" -f "$FIXTURES_DIR/eve-bundle-values.yaml" -f "$EB_TRACKED" 2>&1)"; then
+  echo "FAIL eve bundle accepted a tracked workspace"; FAIL_COUNT=$((FAIL_COUNT+1))
+elif grep -q 'repository "brand" tracks a branch' <<<"$EB_TR_OUT"; then
+  log "OK   eve bundle refuses a tracked workspace, naming why"
+else
+  echo "FAIL eve bundle tracked refusal failed with an unexpected message:"; tail -2 <<<"$EB_TR_OUT" | sed 's/^/       /'
+  FAIL_COUNT=$((FAIL_COUNT+1))
+fi
+rm -f "$EB_TRACKED"
 # The two charts run the SAME boot script and default channel, byte for byte.
-for f in boot.sh channel-eve.ts; do
+for f in boot.sh channel-eve.ts overlay-apply.mjs; do
   if cmp -s "$EVE_CHART_DIR/files/$f" "$EVE_BUNDLE_CHART_DIR/files/$f"; then
     log "OK   eve-bundle files/$f == eve-agent files/$f"
   else
@@ -1338,6 +1759,36 @@ if bash "$REPO_ROOT/infra/scripts/boot-auth-test.sh"; then
   echo "OK   boot-auth-test"
 else
   echo "FAIL boot-auth-test"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# 6. operator overlay merge and the boot script's overlay path (ADR 0194)
+# ---------------------------------------------------------------------------
+echo
+echo "== 6. operator overlays: merge rules and boot path =="
+if OVERLAY_UNIT_OUT="$(node --test "$REPO_ROOT/infra/scripts/overlay-apply.test.mjs" 2>&1)"; then
+  echo "OK   overlay-apply unit tests"
+else
+  echo "FAIL overlay-apply unit tests"; echo "$OVERLAY_UNIT_OUT" | tail -40 | sed 's/^/       /'
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+if bash "$REPO_ROOT/infra/scripts/overlay-boot-test.sh"; then
+  echo "OK   overlay-boot-test"
+else
+  echo "FAIL overlay-boot-test"
+  FAIL_COUNT=$((FAIL_COUNT + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# 7. tracked workspaces: the rendered refresh against local git (ADR 0197)
+# ---------------------------------------------------------------------------
+echo
+echo "== 7. tracked workspaces: first clone, refresh, refusals, metrics =="
+if bash "$REPO_ROOT/infra/scripts/workspace-sync-test.sh"; then
+  echo "OK   workspace-sync-test"
+else
+  echo "FAIL workspace-sync-test"
   FAIL_COUNT=$((FAIL_COUNT + 1))
 fi
 

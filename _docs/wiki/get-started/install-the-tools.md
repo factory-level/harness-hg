@@ -4,8 +4,12 @@
 
 ## Prerequisites
 
+A Linux x86-64 host (the local loop, the bootstrap and CI all assume it; macOS is untested).
 On your PATH: `bun`, `docker`, `git`, `k3d`, `kubectl`, `helm`, `uv` and `python3`. `hg`
 checks them and names every missing one at once. Nothing here needs a cloud account.
+
+Known-good versions are the ones the platform pins for its own hosts in `versions.json`:
+bun 1.3, helm 3.16, kubectl 1.36, k3d 5.9. Older minors usually work; these are proven.
 
 One host setting, Linux only, needs sudo once. k3s inside Docker opens many inotify
 watchers, and the default limit of 128 makes its container runtime fail to start with
@@ -31,7 +35,11 @@ git clone https://github.com/factory-level/harness-hg
 cd harness-hg/cli
 bun install --frozen-lockfile
 bun link
+export PATH="$HOME/.bun/bin:$PATH"   # where `bun link` puts hg; add it to your shell rc
 ```
+
+`hg --help` now prints the command tree. If it says `command not found`, the PATH line above
+did not reach the shell you are in.
 
 ## Proof
 

@@ -60,7 +60,7 @@ spec:
         # the brand fonts live INSIDE it (ADR-105) and a CSS-only update
         # must roll the pod, or standalone.py's boot-time DIST_VERSION keeps
         # advertising the old cache key over a new mount.
-        checksum/code: 71e1ce834deec459840cc8769c6ee72b95c1ad88d0b235bd8a2a2fad93ad39ea
+        checksum/code: 6f3eaf099d6496910309af98375f837ccdc733337ec98bd3ecfa664765682bc9
         # Same reason, for the CONFIG map: changing an integration base URL
         # rewrote the ConfigMap and left the running pod on the old value,
         # so Nexus kept serving dead Grafana/Argo links after a fixed `up`.

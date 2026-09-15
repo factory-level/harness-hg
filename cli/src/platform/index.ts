@@ -1,11 +1,13 @@
 // The "up" machinery: everything that stands up (idempotently) the lite
 // local platform - cluster, Argo CD, Grafana+Prometheus, the host git
 // remotes, the rendered record, and the profile's Application. Ported
-// from the proven mechanics of infra/scripts/smoke-local.sh: the docker
-// bridge gateway IP is the one address reachable from both the host and
-// every k3d pod, so a single URL string works on both sides.
+// from the proven mechanics of the Hermes-era smoke-local.sh (since removed
+// with the payload it installed): the docker bridge gateway IP is the one
+// address reachable from both the host and every k3d pod, so a single URL
+// string works on both sides.
 
 import * as crypto from "node:crypto";
+import { verifyInstalled } from "../skills/contract.ts";
 import { registryHost } from "./registry.ts";
 import { agentLayout, readAgentDeclaration, teamDir } from "../layout.ts";
 import * as fs from "node:fs";
@@ -84,7 +86,30 @@ export function ensureTools(): void {
   if (missing.length > 0) {
     throw new CliError(`required tool(s) not on PATH: ${missing.join(", ")}`);
   }
+  const shortfall = inotifyShortfall(readInotifyLimit());
+  if (shortfall) throw new CliError(shortfall);
   sh(["docker", "info"], { quiet: true });
+}
+
+/** Linux only: k3s inside Docker opens many inotify watchers, and at the
+ * stock limit of 128 its container runtime fails with `too many open
+ * files` ten minutes into `hg up`, as crash-looping pods rather than an
+ * error (#862). Read here so the fix is named before anything is built. */
+export const INOTIFY_MIN_INSTANCES = 512;
+function readInotifyLimit(): number | null {
+  const p = "/proc/sys/fs/inotify/max_user_instances";
+  if (!fs.existsSync(p)) return null; // not Linux: nothing to check
+  const n = Number.parseInt(fs.readFileSync(p, "utf8").trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+export function inotifyShortfall(limit: number | null): string | null {
+  if (limit === null || limit >= INOTIFY_MIN_INSTANCES) return null;
+  return (
+    `fs.inotify.max_user_instances is ${limit}; k3s inside Docker needs at least ${INOTIFY_MIN_INSTANCES} ` +
+    "or its container runtime fails with 'too many open files'. Fix once:\n" +
+    "  sudo sysctl -w fs.inotify.max_user_instances=1024\n" +
+    "  echo fs.inotify.max_user_instances=1024 | sudo tee /etc/sysctl.d/99-inotify.conf"
+  );
 }
 
 export function ensureCluster(): void {
@@ -458,6 +483,9 @@ export function validateProfile(
   const findings: ValidationFinding[] = [];
   const add = (f: Omit<ValidationFinding, "profile">) =>
     findings.push({ profile: ctx.name, ...f });
+
+  try { verifyInstalled(ctx.dir); }
+  catch (error) { add({ severity: "error", check: "skills", message: error instanceof Error ? error.message : String(error) }); }
 
   // 1. The real render pipeline: load_extension_file -> resolve_apps
   // (appValues merge, valuesRequired enforcement) -> build_record ->
@@ -2406,6 +2434,14 @@ export function importAgentImage(): void {
  * build it here at the versions.json pin - harness/eve/image/build.sh
  * reads the pin itself - then import it into k3d. Idempotent: docker's
  * layer cache makes a rebuild seconds once the image exists. */
+/** The local loop's Eve runtime image, as chart values: the locally built image, never pulled,
+ * and the Eve release it ships. The tag is a local build name, not a release, so the release is
+ * stated - the startup gate compares it with the build receipt (ADR 0195). */
+export function localEveRuntimeImage(): { repository: string; tag: string; pullPolicy: "Never"; eveVersion: string } {
+  const [repository, tag] = EVE_RUNTIME_IMAGE.split(":") as [string, string];
+  return { repository, tag, pullPolicy: "Never", eveVersion: VERSIONS.runtimes.eve.version };
+}
+
 export function ensureEveRuntimeImage(): void {
   sh(
     ["bash", path.join(PLATFORM_ROOT, "harness", "eve", "image", "build.sh"), EVE_RUNTIME_IMAGE],
@@ -2595,17 +2631,12 @@ export function applyApplication(state: HgState, ctx: ProfileCtx): void {
             // The one local-only divergence for Eve (the same class as
             // the Hermes image's cluster-values rewrite): the runtime
             // image is the locally built eve-runtime:hermes-gitops-dev,
-            // not the registry pin.
+            // not the registry pin. That tag is not an Eve release, so the
+            // release the image ships is named explicitly - otherwise the
+            // startup gate (ADR 0195) expects "hermes-gitops-dev" and
+            // refuses every locally built agent.
             ...(ctx.runtime === "eve"
-              ? {
-                  valuesObject: {
-                    runtimeImage: {
-                      repository: EVE_RUNTIME_IMAGE.split(":")[0],
-                      tag: EVE_RUNTIME_IMAGE.split(":")[1],
-                      pullPolicy: "Never",
-                    },
-                  },
-                }
+              ? { valuesObject: { runtimeImage: localEveRuntimeImage() } }
               : {}),
           },
         },
@@ -2701,7 +2732,7 @@ export function applyBundleApplication(state: HgState, bundle: { name: string; n
             // image, exactly as applyApplication does for a standalone
             // Eve agent (the cluster cannot pull the ghcr.io default).
             ...(bundle.chart === "eve-bundle"
-              ? { valuesObject: { runtimeImage: { repository: EVE_RUNTIME_IMAGE.split(":")[0], tag: EVE_RUNTIME_IMAGE.split(":")[1], pullPolicy: "Never" } } }
+              ? { valuesObject: { runtimeImage: localEveRuntimeImage() } }
               : {}),
             // cluster-values FIRST, exactly as the profile Application
             // layers it: environment (WHERE) then bundle (WHAT). Without it

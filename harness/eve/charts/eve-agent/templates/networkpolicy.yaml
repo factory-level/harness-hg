@@ -20,4 +20,9 @@ spec:
     - ports:
         - port: 3000
           protocol: TCP
+        {{- if include "eve.hasTrackedWorkspaces" . }}
+        # The workspace-sync metrics port (ADR 0197): Prometheus scrapes it.
+        - port: {{ .Values.workspaceSync.metricsPort }}
+          protocol: TCP
+        {{- end }}
 {{- end }}

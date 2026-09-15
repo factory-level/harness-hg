@@ -59,8 +59,8 @@ Present tense, defects included. Decisions: [ADR 0174](../adr/0174-slack-workspa
 
 The operator's workspace. **All three apps are
 state-provisioned through the ADR 0175 path** (migration completed
-2026-08-29): Eve Manager `A0BTH5X99S9` (bot `U0BT5U079FH`), Eve Research
-`A0BT5ULAWNB` (`U0BTP7B9YHF`), Eve SRE `A0BUFLUC3G8` (`U0BTM940QBU`) — created
+2026-08-29): Eve Manager `A0B…` (bot `U0B…`), Eve Research
+`A0B…` (`U0B…`), Eve SRE `A0B…` (`U0B…`) — created
 by their provision Commands inside `pulumi up`, credentials captured into
 encrypted state, zero pasted secrets. All three bots are members of `#social`
 (the pinned channel) and events are applied. The 2026-08-27 CLI-created apps

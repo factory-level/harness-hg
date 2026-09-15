@@ -60,3 +60,18 @@ contracts, the emitter and anything that reaches a cluster get the most scrutiny
 
 Bugs and feature requests: [GitHub issues](https://github.com/factory-level/harness-hg/issues).
 Security problems: [`SECURITY.md`](SECURITY.md), never a public issue.
+
+## Cutting a release
+
+The version is derived from the commit history (`make version`), never typed. A release is
+one snapshot commit on the public repository, tagged with that version, with notes rendered
+from the same conventional-commit parse:
+
+```bash
+make test                                   # the gate, on the ops fork
+infra/scripts/public-snapshot.sh /tmp/hg-pub  # exports, gates the export, prints the recipe
+# then the three lines it prints: push main, push the tag, gh release create
+gh workflow run wiki -R factory-level/harness-hg --ref main   # the orphan commit hides the path filter
+```
+
+`hg --version` on a checkout prints the same string the badge and the tag carry.

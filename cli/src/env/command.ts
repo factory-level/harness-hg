@@ -73,35 +73,43 @@ export function cmdEnvironment(json: boolean, args: string[], opts: EnvOpts): vo
 
   if (sub === "plan" || sub === "apply") {
     const generated = generateEnvironmentProjections(name, specPath(name, opts.spec));
-    let drift = 0;
     const missing = generated.flatMap((g) => g.result.missingSecrets);
+    const current = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "");
+    const drifting = generated.filter((g) => current(g.file) !== g.result.text);
+    const drift = drifting.length;
+    // An unset secret is generated as `secure: <UNSET - see findings>`, and Pulumi refuses a whole
+    // stack file holding one without naming the path (ADR 0196). So apply writes NOTHING - not even
+    // a drift-only stack - while any secret is unset: it names each fix and exits non-zero.
+    const write = sub === "apply" && missing.length === 0;
     for (const g of generated) {
-      const current = fs.existsSync(g.file) ? fs.readFileSync(g.file, "utf8") : "";
-      if (current === g.result.text) {
-        log(`  ${g.stack}: ${path.relative(PLATFORM_ROOT, g.file)} up to date`);
-        continue;
-      }
-      drift++;
-      if (sub === "apply") {
+      const relative = path.relative(PLATFORM_ROOT, g.file);
+      if (!drifting.includes(g)) {
+        log(`  ${g.stack}: ${relative} up to date`);
+      } else if (write) {
         fs.writeFileSync(g.file, g.result.text);
-        ok(`  ${g.stack}: wrote ${path.relative(PLATFORM_ROOT, g.file)}`);
+        ok(`  ${g.stack}: wrote ${relative}`);
+      } else if (sub === "apply") {
+        log(`  ${g.stack}: ${relative} drifts, NOT written while ${missing.length} secret(s) are unset`);
       } else {
-        log(`  ${g.stack}: ${path.relative(PLATFORM_ROOT, g.file)} DRIFTS from the spec:`);
-        printDiff(current, g.result.text);
+        log(`  ${g.stack}: ${relative} DRIFTS from the spec:`);
+        printDiff(current(g.file), g.result.text);
       }
     }
     for (const m of missing) {
       log(`  ! secret unset at ${m.stack}:${m.path} - supply it:\n      ${m.fix}`);
     }
     if (json) {
-      jsonOut({ command: `env-${sub}`, ok: missing.length === 0 && (sub === "apply" || drift === 0), drift, missingSecrets: missing });
+      jsonOut({ command: `env-${sub}`, ok: missing.length === 0 && (sub === "apply" || drift === 0), drift,
+        ...(sub === "apply" ? { written: write ? drifting.map((g) => path.relative(PLATFORM_ROOT, g.file)) : [] } : {}), missingSecrets: missing });
     } else if (sub === "plan") {
       if (drift === 0 && missing.length === 0) ok(`env plan: ${name} is clean (spec == generated config)`);
       else log(`env plan: ${drift} stack file(s) drift, ${missing.length} secret(s) unset`);
     }
     if (sub === "plan" && drift > 0) throw new CliError(`env plan: ${name} drifts from its spec`);
     if (missing.length > 0) {
-      throw new CliError(`env ${sub}: ${missing.length} secret(s) unset - run the printed commands, then re-apply`);
+      throw new CliError(sub === "apply"
+        ? `env apply: ${missing.length} secret(s) unset - nothing was written; set each with the printed command, then re-apply`
+        : `env plan: ${missing.length} secret(s) unset - run the printed commands, then apply`);
     }
     return;
   }

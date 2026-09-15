@@ -123,7 +123,7 @@ export function cmdTopology(
             );
           }
           output = topologyRoot(dest.repoUrl);
-          emitNote = `destination from ${dest.file} (${dest.repoUrl}) - review and push from ${output}`;
+          emitNote = `destination from ${dest.file} (${dest.repoUrl}) - local projection only; publish through bootstrap/reconciliation, never manually commit this checkout`;
         }
         // Knob validation BEFORE any write - a malformed value here lands
         // in Git and fails at the ApplicationSet, hours later (codex catch).

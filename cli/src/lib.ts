@@ -169,7 +169,28 @@ export function appOf(name: string): string {
   return instanceNameOf(name, runtimeOf(name));
 }
 
-export class CliError extends Error {}
+export class CliError extends Error {
+  /** The process exit code main.ts uses for this error (default 1). 75 means "pending: try again
+   * later" - the unattended team watcher's contract (ADR 0191). */
+  exitCode?: number;
+  constructor(message: string, exitCode?: number) { super(message); if (exitCode !== undefined) this.exitCode = exitCode; }
+}
+/** Why a child failed, when its stderr names a known cause (ADR 0196). Cause and fix name tools,
+ * paths and identities only - never a value from the child's output. */
+export interface ChildFailure {
+  kind: "google-auth" | "kms-denied" | "backend-login" | "stack-missing" | "config-key-missing" | "kube-context-missing" | "kube-unreachable" | "kube-forbidden"
+    | "argocd-cluster-config" | "eve-build-validation" | "kube-exec-failed";
+  cause: string;
+  fix: string;
+}
+/** A child process exited non-zero; its own exit code rides along so a caller can map it. */
+export class ChildFailed extends CliError {
+  constructor(message: string, public readonly childExitCode: number, public readonly failure?: ChildFailure) { super(message); }
+}
+/** A named human decision is missing (skill or overlay approval, ADR 0186/0194). */
+export class ApprovalRequired extends CliError {
+  constructor(message: string, public readonly subject: string, public readonly fingerprint: string) { super(message); }
+}
 
 /** §27 trust boundary, in ONE place: repo-shipped executables (reset hooks,
  * pyeval suites, eval scenarios) run only when the profile was onboarded

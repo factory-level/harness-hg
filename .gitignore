@@ -66,3 +66,9 @@ pulumi/programs/*/Pulumi.*.yaml
 .playwright-mcp/
 # `make site`: the assembled Pages artifact (landing + docs + demo).
 /site/
+# Operator identifiers read by infra/scripts/check-public-clean.sh; the snapshot ships the shape patterns only.
+infra/scripts/public-clean.local
+# Mascot renders live outside the repo (6.8MB of webp/gif/mp4; the served avatar inventory is control-plane/nexus/avatars/).
+/avatars/
+# infra/scripts/derive-version.py writes its badge partial here; the wiki reads HG_VERSION instead.
+/overrides/

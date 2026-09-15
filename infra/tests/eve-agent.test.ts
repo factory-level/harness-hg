@@ -2,7 +2,15 @@
 // the per-agent Command environment and the emit/decommission scripts. No
 // Pulumi runtime, no git, no network - the sha resolver is injected.
 import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import * as pulumi from "@pulumi/pulumi";
+import { stringify } from "yaml";
+// The team coordinator's cluster-free reader of the same stack config (ADR 0196) - pure, so it
+// imports without the CLI's wider graph.
+import { deliveredSecretNames } from "../../cli/src/team/delivery.ts";
+import { parseAgentSecrets } from "../src/components/agent-secrets/index.ts";
 import versions from "../../versions.json" with { type: "json" };
 import {
   EVE_DECOMMISSION_SCRIPT,
@@ -196,12 +204,53 @@ describe("the emit and decommission scripts", () => {
     expect(EVE_DECOMMISSION_SCRIPT).toContain("gitops_emitter.decommission_cli --source");
     // a monorepo's agents share one source - the subdir disambiguates
     expect(EVE_DECOMMISSION_SCRIPT).toContain('--subdir "$HERMES_GITOPS_DESIRED_SUBDIR"');
-    expect(EVE_DECOMMISSION_SCRIPT).toContain("exit 0"); // a gone checkout is reported, not fatal
+    // a gone checkout is reported, not fatal: delete runs with the environment recorded in
+    // state, so pre-coordinator agents must still destroy from any machine
+    expect(EVE_DECOMMISSION_SCRIPT).toContain("skipping GitOps prune");
+    expect(EVE_DECOMMISSION_SCRIPT).not.toContain("exit 1");
   });
 
   test("no script carries a literal eve version (ADR-63)", () => {
     for (const s of [EVE_EMIT_SCRIPT, EVE_DECOMMISSION_SCRIPT]) {
       expect(s).not.toContain(versions.runtimes.eve.version);
+    }
+  });
+});
+
+// ADR 0196: `hg team` refuses an install whose required agent secrets the plan does not deliver,
+// reading the stack config file without Pulumi. That reader must name exactly what this program
+// puts in each ag-eve-<name>-env Secret, or the gate would refuse good installs or pass bad ones.
+describe("hg team's deliveredSecretNames agrees with availableSecretNames", () => {
+  test("one stack config, both readers, the same names per instance", () => {
+    const agentSecrets = {
+      "manager-eve": { ANTHROPIC_API_KEY: { secure: "v1:fixture:a" }, WORKFLOW_ENABLED: "true" },
+      "research-eve": { APIFY_API_TOKEN: { secure: "v1:fixture:b" }, CONTENT_BRANCH: "" },
+      "adopted-eve": { SLACK_BOT_TOKEN: { secure: "v1:fixture:c" } },
+    };
+    const slack = {
+      enabled: true,
+      teamId: "T0000000000",
+      apps: {
+        "manager-eve": { displayName: "M", botScopes: ["chat:write"] },
+        "sre-eve": { displayName: "S", botScopes: ["chat:write"] },
+        "adopted-eve": { displayName: "A", botScopes: ["chat:write"], appId: "A0HANDMADE1" },
+      },
+    };
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "eve-agent-parity-"));
+    try {
+      fs.mkdirSync(path.join(root, "infra"));
+      fs.writeFileSync(
+        path.join(root, "infra", "Pulumi.factory.yaml"),
+        stringify({ config: { "hermes-gitops-bootstrap:agentSecrets": agentSecrets, "hermes-gitops-bootstrap:slack": slack } }),
+      );
+      // Pulumi hands the program decrypted strings; only the NAMES matter to either reader.
+      const program = availableSecretNames(cfg({ agentSecrets: parseAgentSecrets(agentSecrets), slack: parseSlack(slack) }));
+      const team = deliveredSecretNames({ id: "parity", bootstrap: { directory: "infra", stack: "factory" } }, root);
+      const sorted = (names: Record<string, string[]>) =>
+        Object.fromEntries(Object.entries(names).map(([k, v]) => [k, [...v].sort()] as const).sort(([a], [b]) => a.localeCompare(b)));
+      expect(sorted(team)).toEqual(sorted(program));
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
     }
   });
 });

@@ -54,6 +54,7 @@ See [Testing](../../platform/testing.md) for what the proofs establish.
 
 | Command | Journeys | `--json` | What it does |
 |---|---|---|---|
+| [`hg team`](team.md) | ops · agent-bundle | yes | plan, publish and track a complete registered agent-team installation |
 | [`hg platform`](platform.md) | ops | yes | the environment backup: create, schedule, fetch, restore, verify, prove |
 | [`hg backup`](backup.md) | ops · agent-bundle | yes | app-owned backup routines: list, run, verify, export, restore |
 | [`hg launch`](launch.md) | ops | yes | the whole acceptance matrix for an environment, aggregated |
@@ -77,6 +78,7 @@ See [Testing](../../platform/testing.md) for what the proofs establish.
 
 | Command | Journeys | `--json` | What it does |
 |---|---|---|---|
+| [`hg skills`](skills.md) | agent-bundle · ops | yes | prepare, approve, install and check locked per-agent skill packages |
 | [`hg eval`](eval.md) | agent-bundle · dev | yes | run the repo's eval suite; publish and read back results |
 | [`hg gitops`](gitops.md) | agent-bundle | yes | verify or upgrade a destination repo |
 | [`hg topology`](topology.md) | agent-bundle | yes | compile the declarations against an environment, no cluster |
@@ -102,6 +104,7 @@ See [Testing](../../platform/testing.md) for what the proofs establish.
 | `HG_CF_ACCESS_CLIENT_SECRET` | Cloudflare Access service-token secret. |
 | `HG_CLUSTER_NAME` | The local loop's k3d cluster (default `hermes-gitops-cli`). Set it with HERMES_GITOPS_HOME to run a second, isolated loop beside the default one; `reset --nuclear` deletes only this cluster. |
 | `HG_EVAL_TOKEN` | The Nexus eval publish token. Read from the environment or `--token-file`, never from argv, so it cannot land in shell history. |
+| `HG_EXPECT_EVE` | Internal production-container check against the platform Eve pin. |
 | `HG_GRAFANA_ANON_VIEWER` | Treat Grafana as anonymously readable when proving observability. |
 | `HG_KUBE_CONTEXT` | Overrides the kube context (default `k3d-<cluster>`). |
 | `HG_PROOFS_DIR` | Where `ProofResult` documents are written. |
@@ -110,6 +113,9 @@ See [Testing](../../platform/testing.md) for what the proofs establish.
 | `HG_SLACK_API_BASE` | Overrides the Slack API base, for testing against a fake. |
 | `HG_SLACK_BOT_TOKEN` | Bot token for the live ChatOps legs of `communication prove`. |
 | `HG_SLACK_SANDBOX_CHANNEL` | Channel id the live ChatOps legs are allowed to post into. |
+| `HG_TEAM_DIAGNOSTICS_DIR` | Private, credential-scrubbed subprocess diagnostics for team installation. |
+| `HG_TEAM_LOCK` | Internal team coordinator lock inherited by its child process. |
+| `PULUMI_BACKEND_URL` | The Pulumi state backend. `hg team` derives it from the bootstrap stack's environment spec and sets it on every Pulumi call it makes; if you set it and it differs, the command refuses and names both. |
 
 No command takes a secret as an argument. A credential comes from the environment or from a
 file named by a flag. See [Secrets](../../platform/secrets.md).

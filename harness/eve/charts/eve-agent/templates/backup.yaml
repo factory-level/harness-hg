@@ -60,7 +60,7 @@ metadata:
     # assert the paths in hermes.dev/backup-protects are inside it.
     hermes.dev/backup-routine: "true"
   annotations:
-    hermes.dev/backup-protects: "state/,src/,.hermes-gitops/installed_sha"
+    hermes.dev/backup-protects: "state/,src/,.hermes-gitops/installed_sha,.hermes-gitops/build-receipt.json"
     hermes.dev/backup-retention: {{ $retention | quote }}
     hermes.dev/backup-destination: {{ .Values.providers.backup | default "none" | quote }}
 spec:

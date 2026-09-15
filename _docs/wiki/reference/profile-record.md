@@ -6,7 +6,7 @@
 
 # Profile record reference
 
-This page is generated directly from `agent-bundle-contracts/hermesprofile/v1alpha3/profile.schema.json` — the versioned, frozen contract described in `agent-bundle-contracts/README.md`. It documents the shape of one `HermesProfile` instance record (`profiles/<name>/profile.yaml` in the GitOps repo, produced by `gitops_emitter/render.py` on `hermes profile install`/`update` — see `gitops_emitter/README.md`). If a field described here looks wrong, the schema file is the source of truth, not this page — file the fix there and re-run `make docs`.
+This page is generated directly from `agent-bundle-contracts/hermesprofile/v1alpha3/profile.schema.json` — the versioned, frozen contract described in `agent-bundle-contracts/README.md`. It documents the shape of one `HermesProfile` instance record (`profiles/<name>/profile.yaml` in the GitOps repo, produced by `gitops_emitter/render.py` when `hg` or the bootstrap program emits a record — see `gitops_emitter/README.md`). If a field described here looks wrong, the schema file is the source of truth, not this page — file the fix there and re-run `make docs`.
 
 Schema `$id`: `https://hermes-gitops.factorylevel.dev/schemas/hermesprofile/v1alpha3/profile.schema.json` — see `agent-bundle-contracts/README.md`'s "Versioning rule" for what a schema change of any kind implies (a new `v1alpha3`+ directory, never editing this one in place).
 

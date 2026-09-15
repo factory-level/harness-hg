@@ -267,7 +267,7 @@ image:
   repository: ghcr.io/factory-level/hermes-agent
   tag: latest
 platformRepo:
-  url: https://github.com/factory-level/hermes-gitops-plugin.git
+  url: https://github.com/factory-level/harness-hg.git
   revision: main
 appProject:
   name: hermes-gitops

@@ -1,7 +1,7 @@
 // Shell contracts: the ops aggregate's honesty rules and the two-gate
 // route resolution with its sentinel - pure, fixture-tested.
 import { describe, expect, test } from "bun:test";
-import { opsModel } from "../src/app/chrome/ops";
+import { opsModel, telemetryDescription } from "../src/app/chrome/ops";
 import { resolveRoute, tabs } from "../src/app/routes";
 import type { HealthOverlay, NexusData } from "../src/stores/data";
 
@@ -18,7 +18,7 @@ const base: NexusData = {
 const okHealth: HealthOverlay = {
   components: {},
   instances: {},
-  sources: { argocd: { status: "ok", kind: "argocd" } },
+  sources: { argocd: { status: "configured", kind: "argocd" } },
 };
 
 describe("opsModel", () => {
@@ -75,4 +75,32 @@ describe("routes", () => {
     const d = { ...base, capabilities: { views: { agents: false } } };
     expect(tabs(d).map((r) => r.id)).toEqual(["fleet", "communication", "backups"]);
   });
+});
+
+
+describe("live source freshness contract", () => {
+  test("only stale sources are named; configured and absent sources are distinct", () => {
+    const health = { ...okHealth, sources: {
+      argocd: { kind: "argocd", status: "configured" },
+      grafana: { kind: "grafana", status: "configured" },
+      uptime: { kind: "uptime", status: "not configured" },
+      reconciliation: { kind: "reconciliation", status: "stale" },
+    } };
+    expect(opsModel(base, health, true).staleSources).toEqual(["reconciliation"]);
+    expect(opsModel(base, health, true).level).toBe("unknown");
+  });
+  test("unconfigured sources remain unavailable, not stale or healthy", () => {
+    const health = { ...okHealth, sources: { uptime: { kind: "uptime", status: "not configured" } } };
+    expect(opsModel(base, health, false).staleSources).toEqual([]);
+    expect(opsModel(base, health, false).reason).toBe("telemetry unavailable: uptime");
+    expect(opsModel(base, health, false).level).toBe("unknown");
+  });
+});
+
+
+test("first failed poll cannot claim cached readings or quiet health", () => {
+  expect(opsModel(base, null, false).level).toBe("unknown");
+  expect(telemetryDescription(null, true, [])).toBe("No health readings have been fetched yet.");
+  expect(telemetryDescription(okHealth, true, [])).toBe("Showing the last successfully fetched readings.");
+  expect(telemetryDescription(okHealth, false, ["reconciliation"])).toBe("reconciliation — the latest report is out of date.");
 });

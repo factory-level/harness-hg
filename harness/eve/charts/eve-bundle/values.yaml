@@ -20,6 +20,21 @@ runtimeImage:
   repository: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime
   tag: "0.42.0"
   pullPolicy: IfNotPresent
+  # -- eveVersion: set ONLY when the installation pins this agent to a runtime
+  # from versions.json runtimes.eve.allowed (ADR 0192). It reaches the build
+  # container as EXPECTED_EVE_VERSION, which refuses an image shipping another
+  # eve. Empty = the image's own version governs, exactly as before.
+  eveVersion: ""
+
+# -- smoke: the PostSync check (ADR 0195). A Job per sync verifies that the
+# rollout finished, that the build receipt matches what this sync deployed, and
+# that the agent answers as the runtime manifest declares - and FAILS THE SYNC
+# when it does not. Disable only where a cluster forbids hook Jobs.
+smoke:
+  enabled: true
+  # One retry then fail: a check that keeps retrying turns a broken deployment
+  # into a slow one.
+  activeDeadlineSeconds: 240
 
 routeAuth:
   username: agent

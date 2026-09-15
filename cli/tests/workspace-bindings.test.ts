@@ -8,7 +8,9 @@ import {
   compileWorkspaceBindings,
   loadWorkspaceDeclarations,
   mergeWorkspacesIntoBundles,
+  parseRefreshInterval,
   readWorkspaceProfileRecords,
+  trackedBranchProblem,
   workspaceFiles,
   writeWorkspaceTree,
   type NormalizedWorkspaceBinding,
@@ -572,5 +574,126 @@ describe("loadWorkspaceDeclarations + readWorkspaceProfileRecords", () => {
     const records = readWorkspaceProfileRecords(root);
     expect(records.get("manager")).toEqual({ source: "u", sha: "s" });
     expect(records.has("broken")).toBe(false);
+  });
+});
+
+describe("tracked revisions (v1alpha2, ADR 0197)", () => {
+  function tracked(over: { branch?: string; refreshInterval?: string } = {}): WorkspaceDeclarations {
+    return {
+      apiVersion: "hermes.gitops/v1alpha2",
+      kind: "WorkspaceBindings",
+      repositories: [
+        {
+          name: "vision",
+          source: {
+            url: "https://github.com/org/vision-manager.git",
+            revision: { mode: "tracked", branch: over.branch ?? "main", refreshInterval: over.refreshInterval ?? "30m" },
+            authSecretRef: "vision-git-auth",
+          },
+          mount: { path: "/workspaces/vision-manager", access: "read-only" },
+        },
+      ],
+      bindings: [{ repository: "vision", profiles: ["manager"], purpose: "brand-context" }],
+    };
+  }
+  const EVE = new Map([["manager", { source: "https://example.invalid/personas.git", sha: "a".repeat(40), runtime: "eve" }]]);
+
+  test("a tracked binding compiles to its channel, never a commit", () => {
+    const result = compileWorkspaceBindings(tracked(), EVE, { requireResolution: true });
+    expect(errorsOf(result)).toEqual([]);
+    expect(result.bindings).toEqual([
+      {
+        repository: "vision",
+        source: "https://github.com/org/vision-manager.git",
+        resolvedRevision: "",
+        mountPath: "/workspaces/vision-manager",
+        access: "read-only",
+        purpose: "brand-context",
+        targetProfiles: ["manager"],
+        authSecretRef: "vision-git-auth",
+        tracking: { branch: "main", refreshInterval: "30m" },
+      },
+    ]);
+  });
+
+  test("the compiler re-checks the interval floor and the branch rules, and emits nothing it refuses", () => {
+    const tight = compileWorkspaceBindings(tracked({ refreshInterval: "4m" }), EVE, { requireResolution: true });
+    expect(errorsOf(tight).join("\n")).toMatch(/below the 5m minimum/);
+    expect(tight.bindings).toEqual([]);
+    const range = compileWorkspaceBindings(tracked({ branch: "main..release" }), EVE, { requireResolution: true });
+    expect(errorsOf(range).join("\n")).toMatch(/may not contain '\.\.'/);
+    const commit = compileWorkspaceBindings(tracked({ branch: "f".repeat(40) }), EVE, { requireResolution: true });
+    expect(errorsOf(commit).join("\n")).toMatch(/is a commit, not a branch/);
+    expect(commit.bindings).toEqual([]);
+  });
+
+  test("a tracked binding to a profile on another runtime is refused; an unknown runtime is not", () => {
+    const hermes = new Map([["manager", { source: "s", sha: "a".repeat(40), runtime: "hermes" }]]);
+    const refused = compileWorkspaceBindings(tracked(), hermes, { requireResolution: true });
+    expect(errorsOf(refused).join("\n")).toMatch(/profile manager runs "hermes" - only Eve agents refresh a workspace in the pod/);
+    expect(refused.bindings).toEqual([]);
+    const unknown = compileWorkspaceBindings(tracked(), new Map([["manager", {}]]), { requireResolution: false });
+    expect(errorsOf(unknown)).toEqual([]);
+    expect(unknown.bindings).toHaveLength(1);
+  });
+
+  test("a tracked binding to a bundled member is refused at merge, never half-mounted", () => {
+    const { bindings } = compileWorkspaceBindings(tracked(), EVE, { requireResolution: true });
+    expect(() => mergeWorkspacesIntoBundles(bundleDeclarations(), bindings)).toThrow(
+      /repository vision tracks branch main, but bundled agents mount workspaces through a subPath/,
+    );
+  });
+
+  test("an independent tracked profile's values carry tracking and no sha, byte for byte", () => {
+    const { bindings } = compileWorkspaceBindings(tracked(), EVE, { requireResolution: true });
+    const files = workspaceFiles(bindings);
+    expect(files.get("deployments/workspaces/profiles/manager.yaml")).toBe(
+      [
+        "spec:",
+        "  workspace:",
+        "    repositories:",
+        "      - access: read-only",
+        "        gitAuthSecretRef: vision-git-auth",
+        "        mountPath: /workspaces/vision-manager",
+        "        name: vision",
+        "        source: https://github.com/org/vision-manager.git",
+        "        tracking:",
+        "          branch: main",
+        "          refreshInterval: 30m",
+        "    terminalCwd: /workspaces/vision-manager",
+        "",
+      ].join("\n"),
+    );
+    expect(files.get("deployments/workspaces/bindings.yaml")).toContain("resolvedRevision: \"\"");
+    expect(files.get("deployments/workspaces/bindings.yaml")).toContain("refreshInterval: 30m");
+  });
+
+  test("v1alpha2 loads a tracked revision; v1alpha1 and a sub-floor interval are refused by the schema", () => {
+    const root = tempDir("hg-workspaces-");
+    const file = path.join(root, "workspaces.yaml");
+    fs.writeFileSync(file, yaml(tracked()));
+    expect(loadWorkspaceDeclarations(file).repositories[0]!.source).toMatchObject({
+      revision: { mode: "tracked", branch: "main", refreshInterval: "30m" },
+    });
+    fs.writeFileSync(file, yaml({ ...tracked(), apiVersion: "hermes.gitops/v1alpha1" }));
+    expect(() => loadWorkspaceDeclarations(file)).toThrow(/failed workspace schema validation/);
+    fs.writeFileSync(file, yaml(tracked({ refreshInterval: "2m" })));
+    expect(() => loadWorkspaceDeclarations(file)).toThrow(/failed workspace schema validation/);
+    fs.writeFileSync(file, yaml(tracked({ branch: "refs/heads/main" })));
+    expect(() => loadWorkspaceDeclarations(file)).toThrow(/failed workspace schema validation/);
+    // Every pinned v1alpha2 document is the v1alpha1 document with its version moved.
+    fs.writeFileSync(file, yaml({ ...declarations(), apiVersion: "hermes.gitops/v1alpha2" }));
+    expect(loadWorkspaceDeclarations(file).repositories[0]!.name).toBe("strategy-context");
+  });
+
+  test("parseRefreshInterval and trackedBranchProblem state the rules the chart and sync rely on", () => {
+    expect(parseRefreshInterval("30m")).toBe(1800);
+    expect(parseRefreshInterval("5m")).toBe(300);
+    expect(parseRefreshInterval("1h")).toBe(3600);
+    for (const bad of ["4m", "0h", "30s", "30", "05m", ""]) expect(() => parseRefreshInterval(bad)).toThrow();
+    for (const good of ["main", "release/2026.09", "feature_x-1"]) expect(trackedBranchProblem(good)).toBeNull();
+    for (const bad of ["refs/heads/main", "HEAD", "-main", ".main", "main/", "a..b", "a//b", "a/.b", "x.lock", "has space", "f".repeat(40)]) {
+      expect(trackedBranchProblem(bad)).not.toBeNull();
+    }
   });
 });

@@ -16,8 +16,8 @@ byte-for-byte (same "golden render, diffed on every run" pattern as
 infra/scripts/render-test.sh uses for the Helm chart).
 
 HOOK_KWARGS below is a fixed, documented stand-in for a real
-profile_install hook payload — persona-echo is a documentation example, not
-something infra/scripts/smoke-local.sh actually installs, so there is no real
+profile_install hook payload — persona-echo is a documentation example that
+no harness installs, so there is no real
 `hermes profile install` run to source these values from. The ref/sha are
 arbitrary but schema-valid (sha must be exactly 40 lowercase hex chars).
 """

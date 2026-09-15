@@ -127,10 +127,16 @@ just as much as a file is.
   without the block is a Hermes profile exactly as under v4; the emitter
   strips the block like every other versioned key, and its Hermes
   pipeline REFUSES a file whose runtime is `eve`).
+- `eveagent/v1alpha3/` — v1alpha2 + `spec.overlays` + `spec.overlayTreeHash`: the operator
+  overlays an installation approved for the agent (ADR 0194), in application order, each pinned
+  to a source commit and a content hash, plus the hash of the merged `agent/` tree. Kind and
+  target must agree, `remove` carries no source, and the agent definition, sandbox and channels
+  are never targets. Both keys appear only together and only when overlays exist, so a record
+  without them renders byte-identical to v1alpha2. The emitter validates against this version.
 - `eveagent/v1alpha2/` — v1alpha1 + `spec.apps` (resolved child helm apps, the same
   shape as the HermesProfile record) + `spec.backup` (schedule + retention), both realized
-  by the `eve-agent` chart (ADR-150). The emitter writes this version; v1alpha1 records stay
-  valid because both keys are optional.
+  by the `eve-agent` chart (ADR-150). v1alpha1 records stay valid because both keys are
+  optional.
 - `eveagent/v1alpha1/` — the record the emitter writes for an agent on the
   Eve runtime (ADR-149): `profiles/<name>/profile.yaml` as plain Helm values
   for `infra/charts/eve-agent`. `spec.runtime: eve` is the discriminator the
@@ -181,6 +187,13 @@ just as much as a file is.
   reference) and explicit repository→profile bindings, independent of
   bundle membership. Read by `cli/src/workspace-bindings.ts`; absent file =
   feature off, and the access default for every profile is none.
+- `environment-workspaces/v1alpha2/` — v1alpha1 plus one revision mode
+  ([ADR 0197](../_docs/adr/0197-branch-tracked-workspaces.md)): `tracked`
+  (`branch` without `refs/heads/`, `refreshInterval` of at least `5m`). The
+  pod clones the branch tip at boot and fast-forwards it in place every
+  interval, with no restart; standalone Eve agents only. Every v1alpha1
+  document means the same thing under v1alpha2 once its `apiVersion` moves;
+  `cli/src/workspace/bindings.ts` reads both versions.
 - `environment-connections/v1alpha1/` — the operator-authored
   `environment/connections.yaml` (`kind: Connections`, ADR-152): third-party
   app registrations (Discord application, GitHub App) declared ONCE and
@@ -251,6 +264,10 @@ named `invalid-*` must fail validation, everything else must pass.
   `digest` gives content-identity without content — the debug observer writes these to
   disk. `testRun` present means a human or harness asked for the run; absent means it
   happened on its own, which is how #349's autonomous-trigger proof is read.
+
+`agent-skills/v1alpha1` defines per-agent `skills.yaml` and `skills.lock.yaml`, plus
+bootstrap-owned approval records. This independent family is optional for existing Eve
+agents. Complete reviewed packages are committed in source and verified offline.
 
 Schemas are versioned by directory (`v1alpha1`, `v1alpha2`, ...). **Emitted**
 documents (records, values files) carry no version marker of their own, so the

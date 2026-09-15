@@ -78,6 +78,9 @@ const CONTROL_PLANE: Flag = { name: "--control-plane", value: "<url>", desc: "Ba
  * the LAST word of its name; a new sub whose verb is missing here fails
  * tests/commands-grammar.test.ts until a meaning is written. */
 export const VERBS: Record<string, string> = {
+  prepare: "stage a reviewable artifact without activating it",
+  approve: "record an operator's explicit human approval of reviewed content",
+  check: "verify installed content against its declarations offline",
   list: "enumerate the subject's declared or live items",
   inspect: "resolve ONE item and show it in full",
   show: "resolve ONE live item and show it (inspect's live twin)",
@@ -111,6 +114,7 @@ export const VERBS: Record<string, string> = {
   enable: "resume the subject",
   disable: "pause the subject without removing it",
   apply: "push the declared state to the live system",
+  resume: "continue a persisted operation after rechecking its evidence",
   import: "one-shot: existing hand-maintained state becomes a declared spec",
   new: "day-0 for a declared thing that does not exist yet - orchestrated, resumable",
   init: "scaffold the declared shape into an empty directory - idempotent, never overwrites",
@@ -134,6 +138,69 @@ export const VERBS: Record<string, string> = {
 };
 
 export const COMMANDS: Command[] = [
+  {
+    name: "skills", loops: ["agent-bundle", "ops"], json: true,
+    summary: "prepare, approve, install and check locked per-agent skill packages",
+    desc: "Reads per-agent skills.yaml and skills.lock.yaml. Preparation stages complete packages outside source without running upstream code. Human approvals belong to bootstrap. Installation vendors approved packages; checks and deployment are offline. Updates never resolve silently.",
+    subs: [
+      { name: "prepare", summary: "stage packages and their lock for human review", flags: [
+        { name: "--dir", value: "<source-root>", desc: "Agent application repository." },
+        { name: "--agent", value: "<name>", desc: "Receiving Eve agent; required." },
+        { name: "--subject", value: "<repository#agent>", desc: "Credential-free source repository URL (without .git) and agent identity." },
+        { name: "--stage", value: "<directory>", desc: "New directory outside source; defaults under HG_HOME/skill-reviews." },
+        { name: "--update", value: "<names>", desc: "Comma-separated skills explicitly allowed to resolve again." },
+        { name: "--credential-env", value: "<name>", desc: "Environment reference for private upstream Git access; never a credential value." },
+        { name: "--requirements", value: "<file>", desc: "YAML list of local skill requirements to include in the same review." },
+      ] },
+      { name: "approve", summary: "record explicit human approval of a review fingerprint", flags: [
+        { name: "--review", value: "<file>", desc: "Staged review.json; required." },
+        { name: "--approval-file", value: "<file>", desc: "Bootstrap-owned approval file; required." },
+        { name: "--approver", value: "<identity>", desc: "Human who explicitly approved this review; required." },
+        { name: "--fingerprint", value: "<sha256>", desc: "Exact fingerprint presented during review; required." },
+      ] },
+      { name: "install", summary: "install approved packages and lock into agent source", flags: [
+        { name: "--dir", value: "<source-root>", desc: "Agent application repository." },
+        { name: "--agent", value: "<name>", desc: "Receiving Eve agent; required." },
+        { name: "--review", value: "<file>", desc: "Reviewed staged review.json; required." },
+        { name: "--approval-file", value: "<file>", desc: "Bootstrap-owned approvals outside source; required." },
+      ] },
+      { name: "check", summary: "verify manifest, lock and installed packages offline", flags: [
+        { name: "--dir", value: "<source-root>", desc: "Agent application repository." },
+        { name: "--agent", value: "<name>", desc: "Receiving Eve agent; required." },
+      ] },
+    ], see: ["../../get-started/agent-skills.md"],
+  },
+  {
+    name: "team", loops: ["ops", "agent-bundle"], json: true,
+    summary: "plan, publish and track a complete registered agent-team installation",
+    desc: "Reads a versioned bootstrap-owned installation plan. Generated GitOps changes are published only through the team publisher. Required unknown or failed stages leave installation incomplete. A version 2 plan publishes only the source commits recorded in its installation lock, which `hg team compile` writes. Operator overlays publish only after `hg team overlays approve` records a human decision over exactly their content.",
+    subs: [{ name: "inspect", args: "<skill-directory>", summary: "inspect a skill directory's reproducible content hash" }, ...[
+      { name: "compile", summary: "resolve a version 2 plan's tag or commit refs into its installation lock" },
+      { name: "plan", summary: "validate source requirements and compile every registered projection" },
+      { name: "apply", summary: "validate production startup, apply bootstrap and track live evidence" },
+      { name: "resume", summary: "resume installation after rechecking source revisions and live evidence", flags: [
+        { name: "--unattended", desc: "Watcher mode (needs a version 2 plan): exit 0 complete, 75 pending on a human decision, merge or convergence, 1 failed; prints one JSON report. Never approves, merges a non-auto-merge PR, flips an activation gate or runs an un-opted write scenario." },
+      ] },
+      { name: "status", summary: "observe the cluster: what each agent runs against what the lock intends" },
+      { name: "publish", summary: "publish the complete generated projection through a GitOps pull request" },
+    ].map(sub => ({ ...sub, flags: [
+      ...((sub as { flags?: { name: string; value?: string; desc: string }[] }).flags ?? []),
+      { name: "--plan", value: "<file>", desc: "Bootstrap-owned installation YAML: version 1, or version 2 with tag or commit refs and a committed lock; required." },
+      { name: "--dir", value: "<bootstrap-root>", desc: "Bootstrap checkout containing the plan and environment; defaults to cwd." },
+    ], examples: [`hg team ${sub.name} --plan teams/installation.yaml --dir ./bootstrap --json`] })),
+      { name: "overlays prepare", summary: "fetch, hash and merge each agent's operator overlays and stage them for human review", flags: [
+        { name: "--plan", value: "<file>", desc: "Bootstrap-owned installation YAML whose sources or agents declare overlays; required." },
+        { name: "--dir", value: "<bootstrap-root>", desc: "Bootstrap checkout containing the plan; defaults to cwd." },
+        { name: "--stage", value: "<dir>", desc: "A new review directory outside every source repository; defaults under $HG_HOME/overlay-reviews." },
+      ], examples: ["hg team overlays prepare --plan teams/installation.yaml --dir ./bootstrap --json"] },
+      { name: "overlays approve", summary: "record a named human's approval of one staged operator overlay review", flags: [
+        { name: "--review", value: "<review.json>", desc: "The staged review a human inspected." },
+        { name: "--approval-file", value: "<file>", desc: "The source's bootstrap-owned skillPolicy.approvals file." },
+        { name: "--approver", value: "<name>", desc: "The human recording the decision." },
+        { name: "--fingerprint", value: "<sha256>", desc: "The fingerprint the human reviewed; must equal the review's." },
+      ], examples: ["hg team overlays approve --review <stage>/<agent>/review.json --approval-file teams/approvals.yaml --approver 'A. Operator' --fingerprint <sha256>"] },
+    ],
+  },
   {
     name: "onboard",
     loops: ["dev"],
@@ -530,6 +597,9 @@ export const COMMANDS: Command[] = [
           { name: "--kube-context", value: "<name>", desc: "Kube context for post-apply health checks." },
           { name: "--status-namespace", value: "<ns>", desc: "Namespace status records are published into." },
           { name: "--timeout", value: "<seconds>", default: "900", desc: "Argo CD health timeout after an apply." },
+          { name: "--kind", value: "command|team", default: "command", desc: "`team` watches a bootstrap repository and runs `hg team resume --unattended` against `--team-plan`; `--checks`/`--apply` do not apply. Pending decisions (approval, merge, activation) retry on a capped backoff, never block." },
+          { name: "--team-plan", value: "<path>", desc: "Bootstrap-relative installation plan a `--kind team` watcher resumes (a version 2 plan with its lock)." },
+          { name: "--environment-file", value: "<file>", desc: "A 0600 dotenv file the unit loads (`EnvironmentFile=`) carrying the plan's credential names." },
           { name: "--now", desc: "Enable and start immediately (`--enable` is a value flag elsewhere; mirrors `systemctl enable --now`)." },
         ],
       },

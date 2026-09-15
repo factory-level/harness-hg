@@ -17,6 +17,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
+import { verifyInstalled } from "./skills/contract.ts";
 import Ajv2020 from "ajv/dist/2020";
 import type { ErrorObject, ValidateFunction } from "ajv/dist/2020";
 
@@ -213,6 +214,8 @@ export function readAgentDeclaration(
     return { layout, raw: doc ?? {}, findings: [] };
   }
   const findings: LayoutFinding[] = [];
+  try { verifyInstalled(srcDir); }
+  catch (error) { findings.push({ file: path.join(layout.contractDir, "skills.yaml"), message: error instanceof Error ? error.message : String(error) }); }
   if (!layout.harness) {
     findings.push({
       file: layout.agentFile,

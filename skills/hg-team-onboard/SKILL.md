@@ -1,6 +1,6 @@
 ---
 name: hg-team-onboard
-description: Guide a user through a repo-aware onboarding survey, then configure their repository as a Harness Hg Eve agent team with tailored roles, instructions, and skills.sh skills. Use to create or extend any agent team and validate its source setup.
+description: Configure an arbitrary Harness Hg agent team through a repo-aware survey, author its runtime skills and acceptance scenarios, and prepare the persisted handoff to bootstrap apply. Use for the source-configuration phase of team onboarding.
 ---
 
 # Onboard an agent team
@@ -46,18 +46,29 @@ is deployable; ask for the real value if it cannot be discovered.
 2. Tailor each agent's instructions, repo context, and role procedures. Read the installed
    `node_modules/eve/docs/README.md` and relevant guides before adding Eve code. Keep the
    runtime pin compatible with the platform; do not upgrade Eve as an onboarding side effect.
-3. Read [skills and capabilities](references/skills.md) to select and install upstream skills
-   and package locally owned procedures. Install only capabilities relevant to that agent.
+3. Read [skills and capabilities](references/skills.md) to stage version-locked upstream skills
+   and local procedures. Obtain required approval of exact content before installation.
+   Keep coding-assistant and deployed-runtime skill approval decisions separate.
 4. Read [validation](references/validation.md), run the applicable checks, and fix failures
    introduced by onboarding. Preserve pre-existing work and report unrelated failures.
 
 ## Completion
 
-Deliver the configured team source, its specification, and evidence of validation. Distinguish
+Deliver the configured team source, its specification, and evidence of validation. Record
+the machine-readable installation requirements beside `docs/agent-team.md`: stable source
+and role identities, required environment names, Git Secret bindings, actual tools and write
+destinations, skill content hashes, and executable live acceptance scenarios. Preserve
+already supplied decisions and authorization; do not ask the survey again on resume.
+Distinguish
 passing static/build checks from runtime evaluations that require credentials or services.
 List unresolved prerequisites with concrete next steps; a blocked check is never a pass.
 
-The default endpoint is a locally validated, deployable source setup. Publishing, deployment,
-live channel activation, and external service provisioning belong to the operator workflow;
-perform them only when the user's scope includes them. A role description or installed skill
-does not establish a working integration or grant permission to use one.
+This is phase one of two. For a launch request, continue with `hg-team-bootstrap` in the
+bootstrap checkout; source validation is not the end of onboarding. Provisioning,
+publication, channel activation and acceptance remain within the user's recorded scope.
+A role description or installed skill does not establish an integration or grant permission.
+
+GitOps repositories are generated output. Never manually edit or commit them, including
+compiler output prepared in a scratch checkout. Fix the source, bootstrap declaration or
+platform operation and let `hg team apply` publish the complete projection. Do not turn
+missing automation into a customer-specific script or a third user workflow.

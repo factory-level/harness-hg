@@ -1,0 +1,22 @@
+# A tracked revision carries no sha: the commit is whatever the branch tip
+# is when the pod refreshes, never a value in this file.
+apiVersion: hermes.gitops/v1alpha2
+kind: WorkspaceBindings
+
+repositories:
+  - name: vision
+    source:
+      url: https://github.com/organization/vision-manager.git
+      revision:
+        mode: tracked
+        branch: main
+        refreshInterval: 30m
+        sha: 0123456789abcdef0123456789abcdef01234567
+    mount:
+      path: /workspaces/vision-manager
+      access: read-only
+
+bindings:
+  - repository: vision
+    profiles: [marketing-manager]
+    purpose: brand-context

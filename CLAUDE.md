@@ -170,12 +170,12 @@ bun cli/src/main.ts env apply <env>      # Pulumi.<env>.yaml (state/ + infra/) a
                                          # infra/environments/<env>.yaml — never hand-edit them (#674)
 ```
 
-Not in `make test` — needs Docker, takes 10–20 minutes, runs nightly in CI:
+Not in `make test`:
 
 ```bash
-make drift-test        # drift + decommission against a real k3d cluster
-make verify-git-side   # bootstrap stages 1–2, no cluster (this IS a PR gate in CI)
-make e2e               # the 12-step dev-loop chain (cli/e2e-local.sh) on a throwaway k3d
+make verify-git-side   # bootstrap stages 1–2, no cluster; needs a hermes-agent-gitops checkout
+make e2e               # the 14-step dev-loop chain on a real Eve agent (cli/e2e-local.sh), throwaway
+                       # k3d, Docker, 20–30 min; run from the main checkout or a clone, not a worktree
 ```
 
 The three operator-loop walkthroughs are executable (ADR 0170): `make loop-dev` /

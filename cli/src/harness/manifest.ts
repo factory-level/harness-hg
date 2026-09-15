@@ -169,7 +169,16 @@ export interface AgentRecordValues {
   envRequires?: (string | { name?: string })[];
   apps?: { name?: string }[];
   connections?: { name?: string; provider?: string }[];
-  workspace?: { repositories?: { name?: string; source?: string; sha?: string; access?: string }[] };
+  workspace?: {
+    repositories?: {
+      name?: string;
+      source?: string;
+      sha?: string;
+      access?: string;
+      /** A tracked workspace (ADR 0197): a channel, never a commit. */
+      tracking?: { branch?: string; refreshInterval?: string };
+    }[];
+  };
   deployment?: { runtimeImageTag?: string };
 }
 
@@ -198,7 +207,10 @@ export function manifestFromRecord(
       path: `/app/workspaces/${r.name ?? ""}`,
       access: r.access ?? "read-write",
       repository: r.source ?? "",
-      revision: r.sha ?? "",
+      // A tracked workspace claims no commit: the manifest (and so the
+      // runtime digest the startup gate compares) stays the same across
+      // in-pod refreshes. The live commit is the workspace's stamp.
+      revision: r.tracking?.branch ? `tracked:${r.tracking.branch}` : r.sha ?? "",
     })),
     requiredSecrets: (record.envRequires ?? []).map(envRequireName).filter(Boolean),
     connections: (record.connections ?? []).map((c) => ({ name: c.name ?? "", provider: c.provider ?? "" })),

@@ -1,0 +1,44 @@
+apiVersion: team-status.hermes-gitops.factorylevel.dev/v1alpha1
+kind: TeamStatus
+installation: factory-teams
+observedAt: '2026-09-11T12:00:00Z'
+verdict: unknown
+agents:
+- agent: manager
+  source: social
+  namespace: ag-eve-manager
+  verdict: unknown
+  fields:
+    argo:
+      verdict: pass
+      running: Synced/Healthy
+    ready:
+      verdict: pass
+      running: Ready
+    source:
+      verdict: unknown
+      desired: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      reason: the build container published no receipt; this agent cannot prove what it built
+    overlay:
+      verdict: pass
+      desired: none
+      running: none
+    eve:
+      verdict: pass
+      desired: 0.42.0
+      running: 0.42.0
+    image:
+      verdict: pass
+      desired: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      running: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    smoke:
+      verdict: unknown
+      reason: no smoke hook Job is present; it is deleted when it succeeds, so this proves nothing either
+        way
+    watcher:
+      verdict: pass
+      desired: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      running: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ledger:
+  complete: true
+  installation: factory-teams

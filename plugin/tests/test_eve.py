@@ -309,3 +309,192 @@ class TestRecord:
         rec["spec"]["sha"] = "short"
         with pytest.raises(GitopsEmitterError, match="sha"):
             eve.validate_eve_record(rec)
+
+
+OVERLAY_COMMIT = "9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c"
+CONTENT_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+TREE_HASH = "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+
+
+def _skill_overlay(**fields):
+    # Deliberately out of schema field order: the builder owns the order.
+    entry = {
+        "contentHash": CONTENT_HASH,
+        "source": {
+            "path": "skills/brand-voice",
+            "commit": OVERLAY_COMMIT,
+            "repository": "https://github.com/example/agent-skills.git",
+        },
+        "target": "agent/skills/brand-voice",
+        "mode": "append",
+        "kind": "skill",
+        "id": "brand-voice",
+    }
+    entry.update(fields)
+    return entry
+
+
+def _instructions_overlay(overlay_id, mode):
+    return {
+        "id": overlay_id,
+        "kind": "instructions",
+        "mode": mode,
+        "target": "agent/instructions.md",
+        "source": {
+            "repository": "git@github.com:example/bootstrap.git",
+            "commit": OVERLAY_COMMIT,
+            "path": f"overlays/echo/{overlay_id}.md",
+        },
+        "contentHash": CONTENT_HASH,
+    }
+
+
+DISABLE_BASH = {"id": "disable-bash", "kind": "tool", "mode": "remove", "target": "agent/tools/bash.ts"}
+
+
+class TestOverlays:
+    """ADR 0194: the record half of operator overlays (eveagent/v1alpha3)."""
+
+    def _record(self, overlays=None, ext=None):
+        ext = ext if ext is not None else {"contractVersion": 5, "runtime": {"kind": "eve"}}
+        return eve.build_eve_record(
+            "echo", source=SRC, sha=SHA, ref="main", subdir="agents/echo", extension=ext, overlays=overlays
+        )
+
+    def test_no_overlays_renders_byte_identical_to_before(self):
+        ext = eve.load_eve_extension(EXAMPLE)
+        before = render_yaml(
+            eve.build_eve_record("echo", source=SRC, sha=SHA, ref="main", subdir="agents/echo", extension=ext)
+        )
+        for empty in (None, {}, {"overlays": []}):
+            assert render_yaml(self._record(empty, ext=ext)) == before
+
+    def test_overlays_keep_application_order_and_schema_field_order(self):
+        rec = self._record({"overlays": [_skill_overlay(), DISABLE_BASH], "overlayTreeHash": TREE_HASH})
+        eve.validate_eve_record(rec)
+        spec = rec["spec"]
+        assert [o["id"] for o in spec["overlays"]] == ["brand-voice", "disable-bash"]
+        assert list(spec["overlays"][0]) == ["id", "kind", "mode", "target", "source", "contentHash"]
+        assert list(spec["overlays"][0]["source"]) == ["repository", "commit", "path"]
+        assert list(spec)[-2:] == ["overlays", "overlayTreeHash"]
+        assert spec["overlayTreeHash"] == TREE_HASH
+        assert yaml.safe_load(render_yaml(rec)) == rec
+
+    def test_overlay_ids_are_unique(self):
+        with pytest.raises(GitopsEmitterError, match="appears twice"):
+            self._record(
+                {
+                    "overlays": [_skill_overlay(), _skill_overlay(target="agent/skills/other")],
+                    "overlayTreeHash": TREE_HASH,
+                }
+            )
+
+    def test_one_writer_per_target_unless_instructions_stack(self):
+        with pytest.raises(GitopsEmitterError, match="one overlay per target"):
+            self._record(
+                {"overlays": [_skill_overlay(id="a"), _skill_overlay(id="b")], "overlayTreeHash": TREE_HASH}
+            )
+        stacked = [
+            _instructions_overlay("house", "override"),
+            _instructions_overlay("extra", "append"),
+            _instructions_overlay("more", "append"),
+        ]
+        eve.validate_eve_record(self._record({"overlays": stacked, "overlayTreeHash": TREE_HASH}))
+        late_override = [_instructions_overlay("extra", "append"), _instructions_overlay("house", "override")]
+        with pytest.raises(GitopsEmitterError, match="an optional override first"):
+            self._record({"overlays": late_override, "overlayTreeHash": TREE_HASH})
+
+    def test_tree_hash_and_overlays_come_together(self):
+        with pytest.raises(GitopsEmitterError, match="need overlayTreeHash"):
+            self._record({"overlays": [DISABLE_BASH]})
+        with pytest.raises(GitopsEmitterError, match="but no overlays"):
+            self._record({"overlayTreeHash": TREE_HASH})
+
+    @pytest.mark.parametrize(
+        "unsafe",
+        [
+            dict(DISABLE_BASH, source=_skill_overlay()["source"], contentHash=CONTENT_HASH),
+            _skill_overlay(kind="file", target="agent/../package-lock.json"),
+            _skill_overlay(kind="file", target="agent/channels/eve.ts"),
+            _skill_overlay(target="agent/tools/brand-voice.ts"),
+            {"id": "gone", "kind": "instructions", "mode": "remove", "target": "agent/instructions.md"},
+            _skill_overlay(source={**_skill_overlay()["source"], "commit": "9b1c2d3"}),
+            {"id": "gone", "kind": "file", "mode": "remove", "target": "agent/instructions.md"},
+            _skill_overlay(kind="file", mode="override", target="agent/skills/drafting/SKILL.md"),
+            _skill_overlay(kind="file", mode="override", target="agent/tools/bash.ts"),
+            _skill_overlay(
+                source={
+                    **_skill_overlay()["source"],
+                    "repository": "https://github.com?token=x/example/agent-skills.git",
+                }
+            ),
+            _skill_overlay(kind="file", mode="override", target="agent/tools"),
+            _skill_overlay(kind="file", mode="override", target="agent/package.json"),
+        ],
+        ids=[
+            "remove-with-source",
+            "target-escape",
+            "channels",
+            "kind-target",
+            "instructions-remove",
+            "short-commit",
+            "file-instructions",
+            "file-skill",
+            "file-tool-override",
+            "query-url",
+            "file-tools-root",
+            "package-json",
+        ],
+    )
+    def test_schema_refuses_unsafe_overlays(self, unsafe):
+        rec = self._record({"overlays": [unsafe], "overlayTreeHash": TREE_HASH})
+        with pytest.raises(GitopsEmitterError, match="schema validation"):
+            eve.validate_eve_record(rec)
+
+    def test_file_overlays_may_remove_authored_tools(self):
+        retire = {"id": "retire", "kind": "file", "mode": "remove", "target": "agent/tools/legacy-lookup.ts"}
+        eve.validate_eve_record(self._record({"overlays": [retire], "overlayTreeHash": TREE_HASH}))
+
+    @pytest.mark.parametrize(
+        "document, message",
+        [
+            ({"overlays": False}, "list of overlay objects"),
+            ({"overlays": [DISABLE_BASH], "overlayTreeHash": None}, "need overlayTreeHash"),
+            ({"overlay": [DISABLE_BASH], "overlayTreeHash": TREE_HASH}, "unknown keys overlay"),
+            ({"overlayTreeHash": None}, "but no overlays"),
+            (["disable-bash"], "must be an object"),
+        ],
+        ids=["overlays-not-a-list", "null-tree-hash", "misspelled-key", "orphan-null-hash", "not-a-mapping"],
+    )
+    def test_malformed_documents_are_refused_never_dropped(self, document, message):
+        with pytest.raises(GitopsEmitterError, match=message):
+            self._record(document)
+
+    def test_overlay_values_are_single_tokens(self):
+        with pytest.raises(GitopsEmitterError, match="overlay #1 has a value with whitespace"):
+            self._record(
+                {"overlays": [dict(DISABLE_BASH, target="agent/tools/bash.ts\n")], "overlayTreeHash": TREE_HASH}
+            )
+        with pytest.raises(GitopsEmitterError, match="overlayTreeHash contains whitespace"):
+            self._record({"overlays": [DISABLE_BASH], "overlayTreeHash": TREE_HASH + "\n"})
+
+    def test_schema_errors_never_echo_the_rejected_value(self):
+        leaky = _skill_overlay(
+            source={
+                **_skill_overlay()["source"],
+                "repository": "https://user:private-token-fixture@github.com/example/agent-skills.git",
+            }
+        )
+        rec = self._record({"overlays": [leaky], "overlayTreeHash": TREE_HASH})
+        with pytest.raises(GitopsEmitterError) as info:
+            eve.validate_eve_record(rec)
+        assert "schema validation" in str(info.value)
+        assert "private-token-fixture" not in str(info.value)
+
+    @pytest.mark.parametrize("version", ["v1alpha1", "v1alpha2"])
+    def test_older_valid_records_stay_valid(self, version):
+        examples = REPO_ROOT / "agent-bundle-contracts" / "eveagent" / version / "examples"
+        fixtures = sorted(examples.glob("valid-*.yaml"))
+        assert fixtures
+        for fixture in fixtures:
+            eve.validate_eve_record(yaml.safe_load(fixture.read_text()))

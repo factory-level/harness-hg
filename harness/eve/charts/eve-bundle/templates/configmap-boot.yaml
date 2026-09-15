@@ -21,3 +21,9 @@ data:
 {{ .Files.Get "files/channel-eve.ts" | indent 4 }}
   boot.sh: |
 {{ .Files.Get "files/boot.sh" | indent 4 }}
+  overlay-apply.mjs: |
+{{ .Files.Get "files/overlay-apply.mjs" | indent 4 }}
+  verify-build.mjs: |
+{{ .Files.Get "files/verify-build.mjs" | indent 4 }}
+  smoke.mjs: |
+{{ .Files.Get "files/smoke.mjs" | indent 4 }}

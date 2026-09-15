@@ -62,8 +62,8 @@ describes `infra/` + `state/` because that is what exists.
   doc-link checking (`check-doc-links.sh`), version derivation (`derive-version.py`), the
   generators (`generate-cli-docs.py`, `generate-schema-docs.py`, `generate-contract-types.mjs`,
   `generate-mark-svg.mjs`), the projections (`sync-nexus-chart.sh`, `sync-alerting-lib.sh`), the
-  cluster-bearing suites (`test-drift-and-decommission.sh`, `test-recovery.sh`,
-  `verify-bootstrap-git-side.sh`, `eve-boot-test.sh`), the avatar pipeline (`rekey-avatars.py`,
+  cluster-bearing suites (`test-recovery.sh`, `verify-bootstrap-git-side.sh`,
+  `eve-boot-test.sh`), the avatar pipeline (`rekey-avatars.py`,
   `gen-avatars.py`), and `server/` with the vendored, sha256-verified k3s installer.
 - **`infra/pulumi/programs/cloudflare-tunnel/`** — a self-contained uv project with its own
   lockfile; collecting it from the root venv fails at import time by design (root `pytest` is
@@ -77,8 +77,11 @@ describes `infra/` + `state/` because that is what exists.
 - **Gates**: `cd infra && bun run typecheck && bun test` (component suites incl.
   `module-paths.test.ts`, which asserts every `import.meta`-derived path resolves — the gate the
   harness-registry move itself lacked); `make verify-git-side` executes stages 1–2 under node
-  with no cluster; `make drift-test` runs drift + decommission against a real k3d cluster
-  (Docker, 10–20 min, nightly).
+  with no cluster, and is the only gate that runs the program rather than importing it — it
+  needs a hermes-agent-gitops checkout and stops at its first check without one; `make e2e`
+  runs the local loop on a real Eve agent against a throwaway k3d cluster. Nothing tests drift,
+  self-heal or decommission against a cluster: the Hermes-only harness that did was removed
+  because it installed a payload deleted in #678.
 
 ## What does not exist yet
 
@@ -110,7 +113,52 @@ value-identical config, secretsprovider, and encryptedkey across both stacks.
   (`maintainers/final-pass/naming-scheme.md` defers it to #676/#674).
 - CI is manually disabled repo-wide (`.github/workflows/DISABLED.md`,
   [#737](https://github.com/factory-level/harness-hg/issues/737)), so the infra bun suites and
-  the nightly `drift-test` run only when a developer runs them.
+  the nightly `make e2e` run only when a developer runs them.
 - `state/`'s backup-bucket block is code with no live apply behind it — the IAM denials and
   bucket posture have been proven against the emulator only (`maintainers/gaps.md`,
   [#304](https://github.com/factory-level/harness-hg/issues/304)).
+
+## Separate application credentials
+
+The encrypted Pulumi configuration channel
+`applicationSecrets.<agent-owner>.<application>.<KEY>` creates a distinct Secret named
+`<agent-namespace>-app-<application>-env`. Owners must match registered agents. The existing
+AgentSecrets component owns the namespace and tracks each value as a Pulumi secret. These keys
+are never merged into agent environment Secrets and do not trigger agent restarts. Applications
+must reference this Secret explicitly and own their credential-rotation/restart procedure.
+
+Hg installation `credentials.bindings` can target this channel. It is not a new field in the
+frozen environment YAML schema. Validation and resource creation reject invalid shapes before
+publication; no plaintext credential values belong in source. Live CRM provisioning is not yet
+verified. This closes the missing separate-Secret primitive, not workspace or API-key setup.
+
+Application Secrets are protected against deletion. The configuration is a team-managed
+overlay: each reconciler/apply must replay its Hg credential bindings. A standalone regenerated
+configuration that omits the overlay is refused by Pulumi protection instead of deleting keys.
+
+Installation agents can opt into `appChartSource`. The team compiler emits only that
+owner's `platformRepo` Helm values overlay using its registered private source repository
+and exact 40-character chart commit. Profile records remain byte-identical. This supplies private
+local charts without public OCI publication or shared chart-source changes. Argo credentials
+and its explicit repository allowlist remain bootstrap responsibilities.
+
+The opt-in is restricted to the agent's own registered private source repository. Hg captures
+its existing Git credential into the encrypted `applicationGitAuth` overlay. Bootstrap creates
+an owner-specific Argo project (`hg-appcharts-<owner>`) limited to that repository, the owner's
+namespace and ordinary application resource kinds, plus its repository credential Secret.
+The team compiler points only that owner's child applications at this project. Application
+charts remain in the team repository; none are copied into the platform or published publicly.
+Production startup receives the same compiled capability environment as the deployed agent.
+
+The application-credentials integration generates protected 32-byte random values and exports
+only secret-tracked outputs. The workshop DB uses base64url; its encryption key uses base64.
+It creates no Kubernetes resources and can precede namespace creation. Missing integration
+outputs mark startup verification unknown so the provider provision phase can create them.
+
+
+The factory workshop environment pins platform chart revision
+`dbaa717eb17701d311d5fc4a84088bb76b510044`, including the standalone Eve build capability
+environment fix. `hg env apply factory --spec infra/environments/factory-workshops/environment.yaml`
+regenerates the bootstrap configs before `hg team resume`. This fixes the observed init-build
+URL validation failure through the source environment and bootstrap scaffold; no direct GitOps
+repair is required. The coordinator's private application chart pin remains separate.

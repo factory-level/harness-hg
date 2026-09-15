@@ -75,6 +75,18 @@ is the gap list.
   `HERMES_GITOPS_CONTRACT_DIR` so the emitter hook finds the contract `hermes profile install
   --subdir` stages away. The scaffold lands in the follow-on change of ADR 0178. `hg env` dispatches on the
   spec's `apiVersion`. The `.harness-hg/` dot-directory ADR 0157 named was never built.
+- **Operator overlays are contracted and applied by the charts, but nothing produces them**
+  (ADR 0194). `eveagent/v1alpha3` carries `spec.overlays` (id, kind, mode, target, commit-pinned
+  source, content hash) and `spec.overlayTreeHash`, with twenty fixtures proving kind/target
+  agreement, source-free removal, forbidden targets (package files, `node_modules`, `.eve`,
+  `.output` and `.git` included), `file` overlays kept off skills and instructions and limited to
+  removal at or below tools and connections, and URLs free of user info, query and fragment.
+  `emit_cli --overlays-file` validates and emits the document in application order, refusing unknown
+  keys, malformed shapes, whitespace in any value, duplicate ids and a second writer per target
+  (stacked instructions excepted); without the file the record is byte-identical to its v1alpha2
+  rendering (`plugin/tests/test_eve.py` `TestOverlays`). The eve charts apply overlays when a record
+  carries them (see `harness.md`). The team plan has no overlay field, and `hg team` neither fetches
+  nor approves overlay content.
 - The one-event-envelope contract tests across every surface
   ([#655](https://github.com/factory-level/harness-hg/issues/655)) — the envelope exists per
   surface, the cross-surface divergence gate does not.

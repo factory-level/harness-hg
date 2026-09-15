@@ -85,8 +85,9 @@
 
   // ------------------------------------------------------------ the scenes
   //
-  // The verb changes rarely and the target rolls beneath it: three deploys,
-  // two upgrades, one restore. Each scene lists what that command puts on the
+  // The verb changes rarely and the target rolls beneath it: three onboards,
+  // two dev loops, one backup restore - every verb is a real `hg` verb
+  // (cli/src/commands.ts). Each scene lists what that command puts on the
   // Fleet canvas, using the eight kinds of the canvas object system.
   //
   //   profile   an agent profile      tall card, owner's bar, lifted
@@ -131,7 +132,7 @@
   // is 238px at 1366x768 — so the vertical values carry the composition and
   // are deliberately NOT evenly spaced.
   var SCENES = [
-    { verb: 'deploy', target: 'social-media',
+    { verb: 'onboard', target: 'social-media',
       objects: [
         { kind: 'profile', name: 'Social Media', icon: 'mkt-engagement', desc: 'Drafts and ships campaign posts.',
           foot: 'Agent · healthy', at: [23, 42] },
@@ -143,7 +144,7 @@
       ],
       wires: [[0, 1, 'ships'], [0, 2, 'emits to']] },
 
-    { verb: 'deploy', target: 'support-triage',
+    { verb: 'onboard', target: 'support-triage',
       objects: [
         { kind: 'profile', name: 'Support Triage', icon: 'customer-service', desc: 'Routes and answers inbound tickets.',
           foot: 'Agent · healthy', at: [24, 41] },
@@ -156,7 +157,7 @@
       ],
       wires: [[0, 1, 'ships'], [0, 2, 'ships']] },
 
-    { verb: 'deploy', target: 'marketing-suite',
+    { verb: 'onboard', target: 'marketing-suite',
       objects: [
         { kind: 'dist', name: 'Marketing suite', meta: '4 profiles · marketing',
           fans: ['MM', 'CS', 'BV', 'SR'], front: 'Social Reply', at: [24, 41] },
@@ -167,7 +168,7 @@
       ],
       wires: [[0, 1, 'called by'], [0, 2, 'approves']] },
 
-    { verb: 'upgrade', target: 'support-triage',
+    { verb: 'dev', target: 'support-triage',
       objects: [
         { kind: 'profile', name: 'Support Triage', icon: 'customer-service', desc: 'Routes and answers inbound tickets.',
           foot: 'Agent · v2.4.1', at: [23, 42] },
@@ -179,7 +180,7 @@
       ],
       wires: [[1, 0, 'called by'], [0, 2, 'approves']] },
 
-    { verb: 'upgrade', target: 'billing-reconcile',
+    { verb: 'dev', target: 'billing-reconcile',
       objects: [
         { kind: 'profile', name: 'Billing Reconcile', icon: 'finance-manager', desc: 'Matches ledger entries nightly.',
           foot: 'Agent · v3.0.2', at: [23, 42] },
@@ -191,7 +192,7 @@
       ],
       wires: [[0, 1, 'ships'], [0, 2, 'runs on']] },
 
-    { verb: 'restore', target: 'ledger-db',
+    { verb: 'backup', target: 'restore --from ledger-db-20260914',
       objects: [
         { kind: 'tool', name: 'Ledger DB', meta: 'Tool · restore verified', at: [24, 29] },
         { kind: 'reserved', name: 'Billing SRE', meta: 'Reserved · 4 links',

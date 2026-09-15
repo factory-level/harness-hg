@@ -72,14 +72,31 @@ routePrefix: ""
 # (cli/tests/versions.test.ts).
 runtimeImage:
   repository: us-docker.pkg.dev/inferlab-dev/harness-hg/eve-runtime
+  # Digest takes precedence over tags so startup validation and deployment use identical bytes.
+  digest: ""
   tag: "0.42.0"
   pullPolicy: IfNotPresent
+  # -- eveVersion: set ONLY when the installation pins this agent to a runtime
+  # from versions.json runtimes.eve.allowed (ADR 0192). It reaches the build
+  # container as EXPECTED_EVE_VERSION, which refuses an image shipping another
+  # eve. Empty = the image's own version governs, exactly as before.
+  eveVersion: ""
 
 # -- routeAuth: the Basic credential the chart mints per instance
 # (templates/route-auth-secret.yaml) and hands to the pod as
 # ROUTE_AUTH_BASIC_USERNAME / ROUTE_AUTH_BASIC_PASSWORD. The boot script
 # writes a default agent/channels/eve.ts that verifies it when the agent
 # authored none.
+# -- smoke: the PostSync check (ADR 0195). A Job per sync verifies that the
+# rollout finished, that the build receipt matches what this sync deployed, and
+# that the agent answers as the runtime manifest declares - and FAILS THE SYNC
+# when it does not. Disable only where a cluster forbids hook Jobs.
+smoke:
+  enabled: true
+  # One retry then fail: a check that keeps retrying turns a broken deployment
+  # into a slow one.
+  activeDeadlineSeconds: 240
+
 routeAuth:
   username: agent
 
@@ -124,3 +141,34 @@ probes:
 
 # -- resources: the main container's requests/limits. Empty by default.
 resources: {}
+
+# -- workspaceSync: the container that refreshes TRACKED workspace bindings in
+# place (ADR 0197), rendered only when a binding tracks a branch. It runs the
+# same eve-runtime image as the agent (no second pin) and serves each tracked
+# workspace's freshness as Prometheus metrics on metricsPort, which the pod's
+# prometheus.io annotations expose to the monitoring stack's annotation job.
+workspaceSync:
+  metricsPort: 9464
+  resources: {}
+
+# -- alerts: Grafana alert rules this chart provisions, as a ConfigMap labelled
+# grafana_alert: "1" that the platform Grafana's alerts sidecar imports (the
+# monitoring and fleet-dashboard charts' pattern; Grafana, not Alertmanager).
+alerts:
+  # The Grafana contact point every rule routes to via notification_settings.
+  # Empty means this namespace's monitoring contact point, <Release.Namespace>-alerts:
+  # the name the monitoring app provisions for the agent it watches. That needs
+  # the monitoring app deployed in the same namespace, because Grafana refuses a
+  # rule naming a contact point that does not exist. A non-empty value overrides
+  # the default with any contact point that does exist.
+  contactPoint: ""
+  # The platform Prometheus datasource's fixed uid.
+  datasourceUid: prometheus
+  # WorkspaceStale renders only when a binding tracks a branch. It fires when a
+  # tracked workspace's last successful refresh is older than twice its
+  # refreshInterval (never refreshed counts), or when the pod exports no
+  # freshness at all. Set enabled: false to opt out explicitly.
+  workspaceStale:
+    enabled: true
+    evaluationInterval: 1m
+    pendingFor: 5m

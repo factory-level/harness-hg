@@ -1,0 +1,151 @@
+{{- /*
+The PostSync smoke check (ADR 0195). The startup gate keeps a wrong build from
+becoming ready; this answers the other question - did THIS sync land? - and
+fails the Argo CD sync when it did not, so a bad revision shows up on the
+Application instead of only in a pod that quietly never went ready.
+
+Argo CD deletes and recreates the hook on every sync
+(BeforeHookCreation), and removes it once it succeeds (HookSucceeded), so a
+FAILED job is what stays behind for an operator to read.
+*/ -}}
+{{- if .Values.smoke.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "eve-bundle.fullname" . }}-smoke
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    {{- include "eve-bundle.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "eve-bundle.fullname" . }}-smoke
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    {{- include "eve-bundle.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+rules:
+  # Read-only, and only in this agent's own namespace: the revision the pod
+  # runs and the receipt its build container published.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "eve-bundle.fullname" . }}-smoke
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    {{- include "eve-bundle.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "eve-bundle.fullname" . }}-smoke
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "eve-bundle.fullname" . }}-smoke
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "eve-bundle.fullname" . }}-smoke
+  namespace: {{ .Release.Namespace }}
+  labels:
+    hermes-gitops.factorylevel.dev/plane: workload
+    hermes-gitops.factorylevel.dev/component: eve-bundle
+    {{- include "eve-bundle.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    {{- include "eve-bundle.versionAnnotations" . | nindent 4 }}
+spec:
+  # One retry, then fail the sync: a check that keeps retrying would turn a
+  # broken deployment into a slow one.
+  backoffLimit: 1
+  activeDeadlineSeconds: {{ .Values.smoke.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        # Deliberately NOT the workload's labels: those are the Service's
+        # selector, and a smoke pod with no listener must never become an
+        # endpoint. Enough to identify the pod, nothing that selects it.
+        hermes-gitops.factorylevel.dev/plane: workload
+        hermes-gitops.factorylevel.dev/component: eve-bundle-smoke
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "eve-bundle.fullname" . }}-smoke
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: smoke
+          image: {{ include "eve-bundle.image" . }}
+          imagePullPolicy: {{ .Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          command: ["node", "/scripts/smoke.mjs"]
+          env:
+            - name: HG_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: HG_WORKLOAD
+              value: {{ include "eve-bundle.fullname" . | quote }}
+            # One workload, many members: the check loops over these.
+            - name: HG_MEMBERS
+              value: {{ range $i, $p := .Values.spec.profiles }}{{ if $i }},{{ end }}{{ $p.name }}:{{ include "eve-bundle.memberPort" (dict "index" $i "profile" $p) }}:{{ $p.sha | toString }}:{{ include "eve-bundle.runtimeManifest" (dict "root" $ "member" $p) | sha256sum }}{{ end }}
+            - name: HG_AGENT_HOST
+              value: {{ include "eve-bundle.fullname" . }}.{{ .Release.Namespace }}.svc
+            - name: HG_ROUTE_AUTH_USERNAME
+              value: {{ .Values.routeAuth.username | quote }}
+            # The cluster's own CA, the dependency-free way to trust the API server.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - name: HG_EXPECTED_EVE_VERSION
+              value: {{ .Values.runtimeImage.eveVersion | default .Values.spec.deployment.runtimeImageTag | default .Values.runtimeImage.tag | toString | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          volumeMounts:
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            {{- range .Values.spec.profiles }}
+            - name: runtime-manifest-{{ .name }}
+              mountPath: /hg/{{ .name }}
+              readOnly: true
+            - name: route-auth-{{ .name }}
+              mountPath: /run/secrets/route-auth/{{ .name }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: boot-script
+          configMap:
+            name: {{ include "eve-bundle.fullname" . }}-boot
+        {{- range .Values.spec.profiles }}
+        - name: runtime-manifest-{{ .name }}
+          configMap:
+            name: {{ include "eve-bundle.fullname" $ }}-{{ .name }}-runtime-manifest
+        - name: route-auth-{{ .name }}
+          secret:
+            secretName: {{ include "eve-bundle.routeAuthSecretName" (dict "root" $ "member" .name) }}
+        {{- end }}
+{{- end }}

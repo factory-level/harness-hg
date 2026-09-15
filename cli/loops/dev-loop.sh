@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # The dev loop's executable walkthrough (#670): onboard -> up -> dev ->
 # test -> eval -> reset, with asserted outcomes at every step.
-# cli/e2e-local.sh IS that sequence (12 steps, including the reconcile
-# acceptance) - this wrapper exists so the loop has a front door named
-# like its SOP entry rather than like a test artifact.
+# cli/e2e-local.sh IS that sequence (14 steps on a real Eve agent, including
+# the reconcile acceptance and `hg team status` proving the agent) - this
+# wrapper exists so the loop has a front door named like its SOP entry rather
+# than like a test artifact.
 set -euo pipefail
 CLI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 

@@ -4,12 +4,19 @@
 {{- include "eve.subdirGuard" . -}}
 {{- include "eve.envGuard" . -}}
 {{- include "eve.workspaceGuard" . -}}
+{{- include "eve.overlayGuard" . -}}
 {{- $repo := .Values.runtimeImage.repository -}}
 {{- $tag := .Values.runtimeImage.tag -}}
 {{- if and .Values.spec.deployment .Values.spec.deployment.runtimeImageTag -}}
 {{- $tag = .Values.spec.deployment.runtimeImageTag -}}
 {{- end -}}
 {{- $image := printf "%s:%s" $repo $tag -}}
+{{- if .Values.runtimeImage.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.runtimeImage.digest) -}}
+{{- fail "runtimeImage.digest must be a sha256 digest" -}}
+{{- end -}}
+{{- $image = printf "%s@%s" $repo .Values.runtimeImage.digest -}}
+{{- end -}}
 {{- $diskSizeGb := 10 -}}
 {{- if and .Values.spec.deployment .Values.spec.deployment.diskSizeGb -}}
 {{- $diskSizeGb = .Values.spec.deployment.diskSizeGb -}}
@@ -20,6 +27,13 @@
 {{- $workspace := .Values.spec.workspace | default dict -}}
 {{- $wsRepos := $workspace.repositories | default list -}}
 {{- $wsSizeGb := $workspace.sizeGb | default 20 -}}
+{{- $wsTracked := list -}}
+{{- $wsAllReadOnly := true -}}
+{{- range $wsRepos -}}
+{{- if .tracking -}}{{- $wsTracked = append $wsTracked . -}}{{- end -}}
+{{- if ne (.access | default "read-write" | toString) "read-only" -}}{{- $wsAllReadOnly = false -}}{{- end -}}
+{{- end -}}
+{{- $overlays := .Values.spec.overlays | default list -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -29,6 +43,9 @@ metadata:
     hermes-gitops.factorylevel.dev/plane: workload
     hermes-gitops.factorylevel.dev/component: eve-agent
     {{- include "eve.labels" . | nindent 4 }}
+    {{- include "eve.versionLabels" . | nindent 4 }}
+  annotations:
+    {{- include "eve.versionAnnotations" . | nindent 4 }}
 spec:
   # One replica, one volume: the default Workflow world persists run state
   # under <project>/.eve/.workflow-data on the data claim (eve's self-hosting
@@ -75,7 +92,9 @@ spec:
     metadata:
       labels:
         {{- include "eve.labels" . | nindent 8 }}
+        {{- include "eve.versionLabels" . | nindent 8 }}
       annotations:
+        {{- include "eve.versionAnnotations" . | nindent 8 }}
         # Rolls the pod whenever the record changes (new sha, envRequires,
         # ...) even though none of this chart's template bytes changed.
         checksum/record: {{ include "eve.recordChecksum" . }}
@@ -83,6 +102,15 @@ spec:
         # change (a chart upgrade that fixes the build path must re-run the
         # initContainer on the existing instance, not wait for a new sha).
         checksum/boot: {{ include (print $.Template.BasePath "/configmap-boot.yaml") . | sha256sum }}
+        {{- if $wsTracked }}
+        # Tracked workspaces (ADR 0197): the workspace-sync container serves
+        # their freshness, scraped by the monitoring stack's annotation job.
+        # kubectl exec/logs keep defaulting to the agent, not the sidecar.
+        kubectl.kubernetes.io/default-container: eve-agent
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.workspaceSync.metricsPort | quote }}
+        prometheus.io/path: /metrics
+        {{- end }}
     spec:
       serviceAccountName: {{ include "eve.fullname" . }}
       # eve stops every open sandbox on SIGTERM and an in-flight step must
@@ -106,12 +134,42 @@ spec:
               value: {{ .Values.spec.sha | quote }}
             - name: EVE_DIST_SUBDIR
               value: {{ $subdir | quote }}
+            # Recorded in the build receipt (ADR 0195), so the startup gate can
+            # tell a rebuilt agent from one whose runtime manifest moved.
+            - name: HG_RUNTIME_DIGEST
+              value: {{ include "eve.runtimeManifest" . | sha256sum | quote }}
+            {{- if .Values.runtimeImage.eveVersion }}
+            # A per-agent runtime pin (ADR 0192): boot.sh refuses an image that
+            # ships a different eve before it clones or installs anything.
+            - name: EXPECTED_EVE_VERSION
+              value: {{ .Values.runtimeImage.eveVersion | quote }}
+            {{- end }}
             {{- if $wsRepos }}
             # Workspace bindings for boot.sh: "name source sha access" per
             # line (the script is a plain file, files/boot.sh, so the
             # bundle chart can ship the same bytes).
             - name: EVE_WORKSPACE_BINDINGS
               value: {{ include "eve.workspaceBindings" $wsRepos | quote }}
+            {{- end }}
+            {{- if $overlays }}
+            # Operator overlays (ADR 0194) for boot.sh and files/overlay-apply.mjs:
+            # one "id kind mode target repository commit path contentHash" line
+            # per overlay ("-" where a removal has no source), the merged agent/
+            # tree hash, and their digest - the rebuild key's second half.
+            - name: EVE_OVERLAYS
+              value: {{ include "eve.overlayLines" $overlays | quote }}
+            - name: EVE_OVERLAY_TREE_HASH
+              value: {{ .Values.spec.overlayTreeHash | quote }}
+            - name: EVE_OVERLAY_DIGEST
+              value: {{ include "eve.overlayDigest" . | quote }}
+            {{- end }}
+            {{- /* Eve validates MCP URLs while building. Capability URLs are non-secret
+            configuration; agent Secrets remain runtime-only. */}}
+            {{- range $k, $v := (.Values.spec.env | default dict) }}
+            {{- if hasPrefix "HERMES_CAP_" $k }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
             {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -132,6 +190,13 @@ spec:
             {{- if .gitAuthSecretRef }}
             - name: ws-git-{{ .name }}
               mountPath: /run/secrets/repositories/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- range $overlays }}
+            {{- if .gitAuthSecretRef }}
+            - name: ov-git-{{ .id }}
+              mountPath: /run/secrets/overlays/{{ .id }}/git
               readOnly: true
             {{- end }}
             {{- end }}
@@ -164,6 +229,23 @@ spec:
               value: production
             - name: EVE_PROJECT_DIR
               value: {{ $projectDir | quote }}
+            # What this pod was rendered to run (ADR 0195). files/verify-build.mjs
+            # compares each of these with the build receipt; an unset one is a
+            # field this deployment does not pin, and is skipped.
+            - name: HG_BUILD_RECEIPT
+              value: /app/.hermes-gitops/build-receipt.json
+            - name: HG_EXPECTED_SOURCE_SHA
+              value: {{ .Values.spec.sha | toString | quote }}
+            - name: HG_EXPECTED_BUILD_KEY
+              value: {{ include "eve.buildKey" . | quote }}
+            - name: HG_EXPECTED_RUNTIME_DIGEST
+              value: {{ include "eve.runtimeManifest" . | sha256sum | quote }}
+            - name: HG_EXPECTED_EVE_VERSION
+              value: {{ include "eve.expectedEveVersion" . | quote }}
+            {{- if $overlays }}
+            - name: HG_EXPECTED_OVERLAY_DIGEST
+              value: {{ include "eve.overlayDigest" . | quote }}
+            {{- end }}
             {{- if .Values.routePrefix }}
             - name: EVE_PUBLIC_ROUTE_PREFIX
               value: {{ .Values.routePrefix | quote }}
@@ -222,10 +304,12 @@ spec:
               protocol: TCP
           # GET /eve/v1/health is public by design (route auth never covers
           # it), so probes need no credentials.
+          # The startup gate (ADR 0195): the build receipt must match what this
+          # pod was rendered for BEFORE health decides readiness. Liveness and
+          # readiness stay plain HTTP - a running agent is not re-gated.
           startupProbe:
-            httpGet:
-              path: /eve/v1/health
-              port: 3000
+            exec:
+              command: ["node", "/scripts/verify-build.mjs"]
             failureThreshold: {{ .Values.probes.startup.failureThreshold }}
             periodSeconds: {{ .Values.probes.startup.periodSeconds }}
           livenessProbe:
@@ -250,11 +334,20 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
+            # files/verify-build.mjs, the startup gate (ADR 0195).
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
             - name: data
               mountPath: /app
             {{- if $wsRepos }}
             - name: workspaces
               mountPath: /app/workspaces
+              {{- if $wsAllReadOnly }}
+              # Every binding is read-only: the kernel enforces it on the whole
+              # claim, beside the checkouts' own mode bits (ADR 0197).
+              readOnly: true
+              {{- end }}
             {{- end }}
             # /hg: what the platform resolved for this agent (ADR-153).
             # Read-only and outside /app deliberately - it describes the
@@ -265,6 +358,54 @@ spec:
             - name: route-auth
               mountPath: /run/secrets/route-auth
               readOnly: true
+        {{- if $wsTracked }}
+        # Tracked workspaces (ADR 0197): refreshes each tracked binding in place
+        # every refreshInterval - fast-forward only, each revision its own
+        # checkout switched in by one rename - and serves their freshness on
+        # the metrics port. It holds the workspace credentials; the agent
+        # container never does. A failed refresh keeps serving the last good
+        # tree and says so (stamp, metrics, WorkspaceStale, hg workspace
+        # verify); it never restarts or un-readies the pod.
+        - name: workspace-sync
+          image: {{ $image }}
+          imagePullPolicy: {{ .Values.runtimeImage.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "/scripts/workspace-sync.sh", "loop"]
+          env:
+            - name: HOME
+              value: /tmp
+            - name: EVE_WORKSPACES_DIR
+              value: /app/workspaces
+            - name: EVE_WORKSPACE_BINDINGS
+              value: {{ include "eve.workspaceBindings" $wsTracked | quote }}
+            - name: HG_WORKSPACE_METRICS_PORT
+              value: {{ .Values.workspaceSync.metricsPort | quote }}
+          ports:
+            - name: ws-metrics
+              containerPort: {{ .Values.workspaceSync.metricsPort }}
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+          {{- with .Values.workspaceSync.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
+            - name: workspaces
+              mountPath: /app/workspaces
+            {{- range $wsTracked }}
+            {{- if .gitAuthSecretRef }}
+            - name: ws-git-{{ .name }}
+              mountPath: /run/secrets/repositories/{{ .name }}/git
+              readOnly: true
+            {{- end }}
+            {{- end }}
+        {{- end }}
       volumes:
         - name: boot-script
           configMap:
@@ -289,6 +430,14 @@ spec:
         {{- range $wsRepos }}
         {{- if .gitAuthSecretRef }}
         - name: ws-git-{{ .name }}
+          secret:
+            secretName: {{ .gitAuthSecretRef }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}
+        {{- range $overlays }}
+        {{- if .gitAuthSecretRef }}
+        - name: ov-git-{{ .id }}
           secret:
             secretName: {{ .gitAuthSecretRef }}
             defaultMode: 0440

@@ -37,6 +37,31 @@ hg reconcile prove
 
 `sync` is skipped, not queued, while the timer holds its lock. Retry.
 
+A watcher can also resume a whole team installation instead of running a command. Declare it
+with `kind: team` and the plan it resumes. On every new commit to the bootstrap repository it
+runs `hg team resume --unattended`. That run never approves content, never merges a pull
+request that needs review, never turns on an activation gate, and never runs a write scenario
+you did not opt in. When it stops on one of those it reports **pending**, names the reason and
+the link, and tries again on a growing interval up to thirty minutes. `hg reconcile sync`
+tries again now. A new commit clears the wait. Pending is not a failure and never blocks a
+commit. When the installation lock records a platform revision, the watcher runs that revision's
+`hg` rather than its own: it keeps one checkout per revision in use and drops the rest, so the
+tool that publishes is the one the plan asked for, and a rollback is one lock commit. A failure
+is something waiting cannot fix: an acceptance scenario that ran and did not
+pass, or a credential name the plan needs that neither the bootstrap configuration nor the
+watcher's environment file carries. The watcher names the missing name, never a value, and
+runs nothing until it is present.
+
+A watcher whose apply is `hg team resume` still applies a commit that changes nothing its
+agents are built from, such as content the agents committed themselves, but nothing rolls out
+and acceptance does not run again. `hg reconcile status` prints the reason as the last run's
+note.
+
+```bash
+hg reconcile install --repo <bootstrap-url> --kind team --team-plan teams/installation.yaml --now
+hg reconcile status        # shows pending, its reason, and the next attempt
+```
+
 ## The generators
 
 Each ApplicationSet under `bootstrap/applicationsets/` turns a directory of records into

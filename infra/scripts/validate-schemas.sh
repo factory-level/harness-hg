@@ -121,6 +121,12 @@ validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/eveagent/v1alpha2/examples"
 
 echo
+echo "== EveAgent v1alpha3 (ADR 0194: + operator overlays and the merged tree hash) =="
+validate_examples_dir \
+  "$REPO_ROOT/agent-bundle-contracts/eveagent/v1alpha3/eveagent.schema.json" \
+  "$REPO_ROOT/agent-bundle-contracts/eveagent/v1alpha3/examples"
+
+echo
 echo "== Agent runtime manifest v1alpha1 (ADR-153: what the pod actually got) =="
 validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/agent-runtime/v1alpha1/agent-runtime.schema.json" \
@@ -301,6 +307,13 @@ validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/agent-team/v1alpha1/examples/topology"
 
 echo
+echo "== Agent skills v1alpha1 =="
+for stem in manifest lock approvals; do
+  validate_examples_dir \
+    "$REPO_ROOT/agent-bundle-contracts/agent-skills/v1alpha1/$stem.schema.json" \
+    "$REPO_ROOT/agent-bundle-contracts/agent-skills/v1alpha1/examples/$stem"
+done
+
 echo "== Environment spec v1alpha2 (+ grants: the bootstrap's half of an agent-team repo, ADR 0178) =="
 validate_examples_dir \
   "$REPO_ROOT/cli/schemas/environment/v1alpha2/environment.schema.json" \
@@ -397,6 +410,12 @@ validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/runtime-overlay/v1alpha1/examples/reconciliation-status"
 
 echo
+echo "== Runtime overlay v1alpha2: team-watcher reconciliation status (ADR 0191) =="
+validate_examples_dir \
+  "$REPO_ROOT/agent-bundle-contracts/runtime-overlay/v1alpha2/reconciliation-status.schema.json" \
+  "$REPO_ROOT/agent-bundle-contracts/runtime-overlay/v1alpha2/examples/reconciliation-status"
+
+echo
 echo "== Runtime overlay v1alpha2: platform backup status (cloud sinks) =="
 validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/runtime-overlay/v1alpha2/platform-backup-status.schema.json" \
@@ -407,6 +426,12 @@ echo "== Runtime overlay v1alpha3: platform backup status (ephemeral ledger, #58
 validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/runtime-overlay/v1alpha3/platform-backup-status.schema.json" \
   "$REPO_ROOT/agent-bundle-contracts/runtime-overlay/v1alpha3/examples/platform-backup-status"
+
+echo
+echo "== Team status v1alpha1: live agent health at the intended version (ADR 0195) =="
+validate_examples_dir \
+  "$REPO_ROOT/agent-bundle-contracts/team-status/v1alpha1/status.schema.json" \
+  "$REPO_ROOT/agent-bundle-contracts/team-status/v1alpha1/examples"
 
 echo
 echo "== Panel catalog v1alpha1: the embeddable Grafana panels =="
@@ -455,6 +480,12 @@ echo "== Environment workspaces v1alpha1: deployment-neutral repository bindings
 validate_examples_dir \
   "$REPO_ROOT/agent-bundle-contracts/environment-workspaces/v1alpha1/workspaces.schema.json" \
   "$REPO_ROOT/agent-bundle-contracts/environment-workspaces/v1alpha1/examples/workspaces"
+
+echo
+echo "== Environment workspaces v1alpha2: + tracked branch revisions (ADR 0197) =="
+validate_examples_dir \
+  "$REPO_ROOT/agent-bundle-contracts/environment-workspaces/v1alpha2/workspaces.schema.json" \
+  "$REPO_ROOT/agent-bundle-contracts/environment-workspaces/v1alpha2/examples/workspaces"
 
 echo
 echo "== Communication deployment v1alpha3 (ADR-152: + the connection gateway) =="

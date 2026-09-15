@@ -25,7 +25,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CliError, log, ok, parseDotenv, toRfc3339, writeJsonAtomic } from "../lib.ts";
+import { parse as parseYaml } from "yaml";
 import { SECRET_PATTERNS } from "../nexus/prove.ts";
+import { loadPlan, secretEnvironmentNames } from "../team/plan.ts";
+import { unsetMarkerFindings } from "../team/delivery.ts";
+import { deriveBackend } from "../team/backend.ts";
 import * as os from "node:os";
 
 // Paths are RESOLVED PER CALL, not bound at import: bun runs the whole
@@ -55,6 +59,10 @@ export const ledgerFile = (): string => path.join(reconcileDir(), "state.json");
 export const lockFile = (): string => path.join(hgHome(), "reconcile", "lock");
 export const checkoutDir = (): string => path.join(reconcileDir(), "checkout");
 export const logsDir = (): string => path.join(reconcileDir(), "logs");
+/** The platform revisions this watcher runs from (ADR 0193): one bare clone, one worktree per
+ * revision in use. Kept beside the bootstrap checkout, never inside it. */
+export const platformGitDir = (): string => path.join(reconcileDir(), "platform.git");
+export const platformDir = (): string => path.join(reconcileDir(), "platform");
 const credentialsFile = (): string => path.join(reconcileDir(), "git-credentials");
 const HISTORY_KEEP = 10;
 const LOGS_KEEP = 20;
@@ -70,6 +78,7 @@ export type ReconcileState =
   | "waiting-for-argocd"
   | "degraded"
   | "failed"
+  | "pending"
   | "authentication-required";
 
 export interface ReconcileRun {
@@ -79,9 +88,25 @@ export interface ReconcileRun {
   trigger: "timer" | "manual";
   phase: "poll" | "check" | "apply" | "argocd" | "done";
   step?: string;
-  result?: "success" | "failure";
+  result?: "success" | "failure" | "pending";
   failure?: { phase: string; step?: string; exitCode?: number; summary: string };
+  /** Why a successful apply rolled nothing out (ADR 0198): `hg team` names it as `skipped.reason`. */
+  note?: string;
 }
+
+/** A team-kind tick that stopped on a decision only a human, a merge or time can supply
+ * (ADR 0191): retried with capped backoff, never counted as a failure, cleared by a new commit. */
+export interface ReconcilePending {
+  sha: string;
+  attempts: number;
+  lastAt: string;
+  nextAttemptAt: string;
+  reason: string;
+  link?: string;
+  stage?: string;
+}
+/** What `hg team resume --unattended --json` reported on its last run; published to Nexus. */
+export type TeamReport = Record<string, unknown>;
 
 export interface ReconcileLedger {
   apiVersion: "cli.hermes.dev/v1alpha1";
@@ -98,6 +123,11 @@ export interface ReconcileLedger {
   appliedAt?: string;
   run?: ReconcileRun;
   blocked?: { sha: string; attempts: number; lastAt: string; summary: string };
+  pending?: ReconcilePending;
+  report?: TeamReport;
+  /** The installation a team-kind watcher watches. Recorded from the plan every tick, so a run
+   * that fails before writing a report still publishes an attributable status. */
+  installation?: string;
   history: ReconcileRun[];
 }
 
@@ -119,6 +149,17 @@ export interface ReconcileConfig {
    * in (its reader defaults to its own). hermes-nexus in the local loop,
    * hermes-gitops in-cluster. */
   statusNamespace?: string;
+  /** `command` (default) runs `checks` then `apply`. `team` (ADR 0191) watches a BOOTSTRAP
+   * repository and runs `hg team resume --unattended` against `team.plan` inside the checkout;
+   * checks/apply are unused. */
+  kind?: "command" | "team";
+  team?: { plan: string };
+  /** A 0600 dotenv file the unit loads (`EnvironmentFile=`): the plan's credential names. */
+  environmentFile?: string;
+}
+export const PENDING_BACKOFF = { baseSeconds: 120, capSeconds: 1800 };
+export function pendingBackoffSeconds(attempts: number): number {
+  return Math.min(PENDING_BACKOFF.capSeconds, PENDING_BACKOFF.baseSeconds * 2 ** Math.max(0, attempts - 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +262,7 @@ export function shouldApply(
   ledger: ReconcileLedger,
   desiredSha: string,
   trigger: { manual: boolean; retry: boolean },
+  now: number = Date.now(),
 ): { act: boolean; reason: string } {
   if (trigger.retry) return { act: true, reason: "operator retry" };
   if (ledger.blocked?.sha === desiredSha) {
@@ -230,6 +272,17 @@ export function shouldApply(
         `commit ${desiredSha.slice(0, 12)} already failed ${ledger.blocked.attempts}x - ` +
         "push a fix or run `hg reconcile retry`",
     };
+  }
+  // Pending is not failure: the same commit is re-attempted on a capped backoff, sooner on
+  // `sync`, and immediately once the commit changes.
+  if (ledger.pending?.sha === desiredSha) {
+    if (!trigger.manual && now < Date.parse(ledger.pending.nextAttemptAt)) {
+      return {
+        act: false,
+        reason: `commit ${desiredSha.slice(0, 12)} is pending (${ledger.pending.reason}) - next attempt at ${ledger.pending.nextAttemptAt}`,
+      };
+    }
+    return { act: true, reason: `pending commit ${desiredSha.slice(0, 12)} is due for another attempt` };
   }
   if (desiredSha !== ledger.appliedSha) return { act: true, reason: "desired commit differs from applied" };
   if (trigger.manual) return { act: true, reason: "operator sync (sha unchanged)" };
@@ -273,7 +326,7 @@ export function summarize(text: string, secrets: string[], maxChars = 2000): str
  * handshake: ConfigMap hermes-reconciliation-status, schema
  * runtime-overlay/v1alpha1/reconciliation-status.schema.json). A ledger
  * field not named here does not leave the host. */
-export function nexusRecord(ledger: ReconcileLedger): Record<string, unknown> {
+export function nexusRecord(ledger: ReconcileLedger, kind: "command" | "team" = "command"): Record<string, unknown> {
   const phase: Record<ReconcileState, string> = {
     "synced": "synced",
     "change-detected": "change-detected",
@@ -282,16 +335,49 @@ export function nexusRecord(ledger: ReconcileLedger): Record<string, unknown> {
     "waiting-for-argocd": "waiting-for-argocd",
     "degraded": "degraded",
     "failed": "failed",
+    "pending": "pending",
     "authentication-required": "authentication-required",
   };
+  // A command-kind watcher keeps the v1alpha1 record (no pending, no report); a team-kind
+  // watcher publishes v1alpha2 with the installation's per-source and per-agent facts.
   const out: Record<string, unknown> = {
-    apiVersion: "nexus.hermes.ai/v1alpha1",
+    apiVersion: kind === "team" ? "nexus.hermes.ai/v1alpha2" : "nexus.hermes.ai/v1alpha1",
     kind: "ReconciliationStatus",
     observedAt: toRfc3339(ledger.observedAt),
     phase: phase[ledger.state],
     retryable: ledger.state === "failed",
     version: ledger.version,
   };
+  if (kind === "team") {
+    const report = ledger.report ?? {};
+    const label = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    // The report names it when there is one; the ledger names it even when the run failed
+    // before writing one. An anonymous failed watcher is one nobody can attribute.
+    const installation = typeof report["installation"] === "string" ? report["installation"] : ledger.installation;
+    if (typeof installation === "string" && label.test(installation)) out["installation"] = installation;
+    if (typeof report["stage"] === "string" && /^[a-z-]{1,40}$/.test(report["stage"])) out["stage"] = report["stage"];
+    if (ledger.pending) {
+      out["pending"] = {
+        reason: ledger.pending.reason,
+        ...(ledger.pending.link && /^https:\/\/[^\s@]+$/.test(ledger.pending.link) ? { link: ledger.pending.link } : {}),
+        since: toRfc3339(ledger.pending.lastAt),
+        nextAttemptAt: toRfc3339(ledger.pending.nextAttemptAt),
+      };
+    }
+    const sources = Array.isArray(report["sources"]) ? report["sources"] : [];
+    out["sources"] = sources.filter((s: any) => s && label.test(String(s.id))).map((s: any) => ({
+      id: s.id, ...(typeof s.ref === "string" ? { ref: String(s.ref).slice(0, 200) } : {}),
+      ...(isSha(s.desiredSha) ? { desiredSha: s.desiredSha } : {}), ...(isSha(s.appliedSha) ? { appliedSha: s.appliedSha } : {}),
+    }));
+    const agents = Array.isArray(report["agents"]) ? report["agents"] : [];
+    out["agents"] = agents.filter((a: any) => a && label.test(String(a.name))).map((a: any) => ({
+      name: a.name, ...(label.test(String(a.source)) ? { source: a.source } : {}),
+      ...(isSha(a.desiredSha) ? { desiredSha: a.desiredSha } : {}), ...(isSha(a.appliedSha) ? { appliedSha: a.appliedSha } : {}),
+      ...(typeof a.runtimeDigest === "string" && /^\S{1,300}$/.test(a.runtimeDigest) ? { runtimeDigest: a.runtimeDigest } : {}),
+      ...(typeof a.eveVersion === "string" && /^[A-Za-z0-9.+-]{1,40}$/.test(a.eveVersion) ? { eveVersion: a.eveVersion } : {}),
+      ...(typeof a.ready === "boolean" ? { ready: a.ready } : {}),
+    }));
+  }
   if (isSha(ledger.desiredSha)) out["desiredSha"] = ledger.desiredSha;
   if (isSha(ledger.attemptedSha)) out["attemptedSha"] = ledger.attemptedSha;
   if (isSha(ledger.appliedSha)) out["appliedSha"] = ledger.appliedSha;
@@ -342,6 +428,130 @@ export function readToken(hermesHome: string): string | undefined {
   const envFile = path.join(hermesHome, ".env");
   if (!fs.existsSync(envFile)) return undefined;
   return parseDotenv(fs.readFileSync(envFile, "utf8"))["GITOPS_GIT_TOKEN"];
+}
+
+/** The plan's credential names for a team-kind tick: a 0600 dotenv file (`EnvironmentFile=`).
+ * Values are handed to the child by name and scrubbed from everything that leaves the host. */
+export function readEnvironmentFile(file: string | undefined): Record<string, string> {
+  if (!file || !fs.existsSync(file)) return {};
+  const mode = fs.statSync(file).mode & 0o777;
+  if (mode !== 0o600) throw new CliError(`environment file ${file} has mode ${mode.toString(8)} (want 600) - it carries credentials`);
+  return parseDotenv(fs.readFileSync(file, "utf8"));
+}
+
+/** The bootstrap directory named by a plan: where the team tick runs `bun install` before the
+ * installed hg validates the rest. Parsed, not pattern-matched - a plan written as a flow
+ * mapping is the same document, and a launcher that reads it differently from the parser the
+ * rest of the system uses would run in the wrong place, or refuse a valid plan. */
+export function planBootstrapDirectory(planFile: string): string {
+  const bootstrap = document(planFile)["bootstrap"];
+  const dir = bootstrap && typeof bootstrap === "object" && !Array.isArray(bootstrap)
+    ? (bootstrap as Record<string, unknown>)["directory"] : undefined;
+  if (typeof dir !== "string" || !dir || path.isAbsolute(dir) || dir.split(/[\\/]/).some((p) => p === "..")) {
+    throw new CliError(`${planFile}: bootstrap.directory must be a relative path inside the checkout`);
+  }
+  return dir;
+}
+
+/** The lock a plan names and the platform it declares, read with the real YAML parser but
+ * WITHOUT the plan's schema: a launcher at an older revision must understand a newer plan, and
+ * must never disagree with the parser the rest of the system uses about whether a platform is
+ * declared at all. Only these fields are read; everything else is ignored. */
+function document(file: string): Record<string, unknown> {
+  const parsed = parseYaml(fs.readFileSync(file, "utf8"));
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new CliError(`${file}: expected a YAML mapping`);
+  return parsed as Record<string, unknown>;
+}
+/** A checkout-relative file that is really inside the checkout: no absolute path, no `..`, and
+ * no symlink anywhere on the way - the same boundary `lockPath` enforces, applied BEFORE the
+ * launcher reads anything that decides which code runs. */
+export function checkoutFile(checkout: string, relative: string): string {
+  if (path.isAbsolute(relative) || relative.split(/[\\/]/).some((part) => part === "..")) {
+    throw new CliError(`${relative}: must be a relative path inside the checkout`);
+  }
+  const root = fs.realpathSync(checkout), target = path.resolve(root, relative);
+  const parent = fs.realpathSync(path.dirname(target));
+  if (parent !== root && !parent.startsWith(`${root}${path.sep}`)) throw new CliError(`${relative}: resolves outside the checkout`);
+  const file = path.join(parent, path.basename(target));
+  if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink()) throw new CliError(`${relative}: must not be a symbolic link`);
+  return file;
+}
+/** The installation a plan declares, for attributing a status document. */
+export function planInstallation(planFile: string): string | undefined {
+  const id = document(planFile)["id"];
+  return typeof id === "string" && /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/.test(id) ? id : undefined;
+}
+export function planLockFile(planFile: string): string | undefined {
+  const value = document(planFile)["lock"];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !value) throw new CliError(`${planFile}: lock must be a path`);
+  return value;
+}
+export function planPlatform(planFile: string): { repository: string; credentialEnv?: string } | undefined {
+  const value = document(planFile)["platform"];
+  if (value === undefined || value === null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new CliError(`${planFile}: platform must be a mapping`);
+  const { repository, credentialEnv } = value as Record<string, unknown>;
+  // The same credential-free shapes the plan itself validates, re-checked before git sees it.
+  if (typeof repository !== "string" || (!/^https:\/\/[^/@\s]+\/[^\s?#]+$/.test(repository) && !/^git@[^:\s]+:[^\s]+$/.test(repository))) {
+    throw new CliError(`${planFile}: platform.repository must be a credential-free https:// or git@ URL`);
+  }
+  if (credentialEnv !== undefined && (typeof credentialEnv !== "string" || !/^[A-Z][A-Z0-9_]*$/.test(credentialEnv))) {
+    throw new CliError(`${planFile}: platform.credentialEnv must be an environment name`);
+  }
+  return { repository, ...(typeof credentialEnv === "string" ? { credentialEnv } : {}) };
+}
+/** The platform revisions a lock records: what to run, and what a rollback returns to. */
+export function lockPlatformRevisions(lockFile: string): { revision: string; previousRevision?: string } | undefined {
+  const value = document(lockFile)["platform"];
+  if (value === undefined || value === null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new CliError(`${lockFile}: platform must be a mapping`);
+  const { revision, previousRevision } = value as Record<string, unknown>;
+  const full = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{40}$/.test(v) && !/^0+$/.test(v);
+  if (!full(revision)) throw new CliError(`${lockFile}: platform.revision must be a full 40-character commit`);
+  if (previousRevision !== undefined && previousRevision !== null && !full(previousRevision)) throw new CliError(`${lockFile}: platform.previousRevision must be a full 40-character commit`);
+  return { revision, ...(full(previousRevision) ? { previousRevision } : {}) };
+}
+
+/** Every credential name the plan needs that the plan itself cannot resolve (bootstrap config
+ * inputs, managed Secret inputs and integration outputs are read at run time; the rest must be
+ * in the environment). Names only. */
+export function missingCredentialNames(planFile: string, env: NodeJS.ProcessEnv): string[] {
+  const plan = loadPlan(planFile);
+  const provided = new Set([
+    ...Object.keys(plan.credentials?.inputs ?? {}),
+    ...Object.keys(plan.credentials?.secretInputs ?? {}),
+    ...(plan.integrations ?? []).flatMap((i) => Object.keys(i.outputs)),
+  ]);
+  return [...secretEnvironmentNames(plan)].filter((name) => !provided.has(name) && !env[name]).sort();
+}
+
+/** Scrub every string inside a JSON-ish value. */
+export function scrubValues(value: unknown, secrets: string[]): unknown {
+  if (typeof value === "string") return scrub(value, secrets);
+  if (Array.isArray(value)) return value.map((v) => scrubValues(v, secrets));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, scrubValues(v, secrets)]));
+  return value;
+}
+
+/** The last JSON document on a stream: the unattended run's report. */
+export function lastJsonDocument(stdout: string): Record<string, unknown> | undefined {
+  const start = stdout.lastIndexOf("\n{");
+  const candidate = start >= 0 ? stdout.slice(start + 1) : stdout.trim().startsWith("{") ? stdout.trim() : "";
+  try {
+    const doc = JSON.parse(candidate) as unknown;
+    return doc && typeof doc === "object" && !Array.isArray(doc) ? (doc as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Why an apply changed nothing that deploys, when the apply was `hg team` and said so (ADR 0198):
+ * the new commit is still applied, and the host ledger records the reason beside it. */
+export function skippedNote(stdout: string, secrets: string[]): string | undefined {
+  const skipped = lastJsonDocument(stdout)?.["skipped"];
+  const reason = skipped && typeof skipped === "object" ? (skipped as Record<string, unknown>)["reason"] : undefined;
+  return typeof reason === "string" && reason ? scrub(reason, secrets).slice(0, 500) : undefined;
 }
 
 export function gitArgs(cfg: ReconcileConfig, token: string | undefined, sub: string[]): string[] {
@@ -400,6 +610,101 @@ export interface TickDeps {
   argocdReady?: () => boolean;
   argocdConverged?: (timeoutSec: number) => Promise<boolean>;
   publish?: (record: Record<string, unknown>) => void;
+  /** The team-kind apply: `hg team resume --unattended --json` in the checkout. Injected so the
+   * watcher's state machine is testable without a bootstrap, a cluster or Pulumi. */
+  teamResume?: (checkout: string, planFile: string, env: Record<string, string>, main?: string) => ExecResult;
+  now?: () => number;
+}
+
+/** Materialize the locked platform revision as a detached worktree and return its `hg` entry
+ * point, installing dependencies once per revision. One bare clone serves every revision, so a
+ * rollback to the previous one costs a checkout, not a clone. */
+export function preparePlatformWorktree(cfg: ReconcileConfig, token: string | undefined, repository: string, revision: string,
+  exec: Exec, log: (label: string, r: ExecResult) => void): { main: string; worktree: string } | ExecResult {
+  const bare = platformGitDir(), worktree = path.join(platformDir(), revision);
+  const ready = path.join(worktree, ".hg-platform-ready");
+  if (!fs.existsSync(path.join(bare, "HEAD"))) {
+    fs.mkdirSync(path.dirname(bare), { recursive: true });
+    const cloned = exec(gitArgs(cfg, token, ["clone", "--bare", "--", repository, bare]));
+    log("git clone --bare (platform)", cloned);
+    if (cloned.exitCode !== 0) { fs.rmSync(bare, { recursive: true, force: true }); return cloned; }
+  } else {
+    // A plan that moved to another platform repository must not be served from the old cache.
+    const origin = exec(["git", "remote", "get-url", "origin"], { cwd: bare });
+    if (origin.exitCode !== 0 || origin.stdout.trim() !== repository) {
+      const repointed = exec(["git", "remote", "set-url", "origin", repository], { cwd: bare });
+      log("git remote set-url (platform)", repointed);
+      if (repointed.exitCode !== 0) return repointed;
+      fs.rmSync(ready, { force: true }); // the revision must be proven against the new origin
+    }
+  }
+  const present = () => exec(["git", "cat-file", "-e", `${revision}^{commit}`], { cwd: bare }).exitCode === 0;
+  if (!present()) {
+    // Fetch refs, not the bare sha: a server that refuses an unadvertised object still serves this.
+    const fetched = exec(gitArgs(cfg, token, ["fetch", "--prune", "--tags", "origin", "+refs/heads/*:refs/heads/*"]), { cwd: bare });
+    log("git fetch (platform)", fetched);
+    if (fetched.exitCode !== 0) return fetched;
+    if (!present()) return { exitCode: 1, stdout: "", stderr: `platform revision ${revision.slice(0, 12)} is not in ${repository}` };
+  }
+  // The stamp is written LAST and names the revision: a run killed mid-install leaves no stamp,
+  // so the next tick rebuilds the worktree instead of executing a half-installed checkout.
+  const stamped = fs.existsSync(ready) && fs.readFileSync(ready, "utf8").trim() === revision;
+  if (!stamped) {
+    fs.rmSync(worktree, { recursive: true, force: true });
+    fs.mkdirSync(platformDir(), { recursive: true });
+    exec(["git", "worktree", "prune"], { cwd: bare });
+    const added = exec(["git", "worktree", "add", "--detach", "--force", worktree, revision], { cwd: bare });
+    log("git worktree add (platform)", added);
+    if (added.exitCode !== 0) return added;
+    const head = exec(["git", "rev-parse", "HEAD"], { cwd: worktree });
+    if (head.exitCode !== 0 || head.stdout.trim() !== revision) {
+      fs.rmSync(worktree, { recursive: true, force: true });
+      return { exitCode: 1, stdout: "", stderr: `platform worktree did not land on ${revision.slice(0, 12)}` };
+    }
+    const dirty = exec(["git", "status", "--porcelain"], { cwd: worktree });
+    if (dirty.exitCode !== 0 || dirty.stdout.trim()) {
+      fs.rmSync(worktree, { recursive: true, force: true });
+      return { exitCode: 1, stdout: "", stderr: `platform worktree at ${revision.slice(0, 12)} is not a clean checkout` };
+    }
+    const entry = path.join(worktree, "cli", "src", "main.ts");
+    if (!fs.existsSync(entry) || fs.lstatSync(entry).isSymbolicLink()) {
+      fs.rmSync(worktree, { recursive: true, force: true });
+      return { exitCode: 1, stdout: "", stderr: `platform revision ${revision.slice(0, 12)} has no cli/src/main.ts` };
+    }
+    for (const workspace of ["cli", "infra"]) {
+      const installed = exec([process.execPath, "install", "--frozen-lockfile"], { cwd: path.join(worktree, workspace) });
+      log(`bun install (platform ${workspace})`, installed);
+      if (installed.exitCode !== 0) { fs.rmSync(worktree, { recursive: true, force: true }); return installed; }
+    }
+    fs.writeFileSync(ready, `${revision}\n`, { mode: 0o600 });
+  }
+  return { main: path.join(worktree, "cli", "src", "main.ts"), worktree };
+}
+
+/** Drop every platform worktree but the ones the lock still names, so a host keeps one checkout
+ * per revision IN USE rather than one per revision ever seen. */
+export function prunePlatformWorktrees(keep: string[], exec: Exec): string[] {
+  if (!fs.existsSync(platformDir())) return [];
+  const removed: string[] = [];
+  for (const entry of fs.readdirSync(platformDir())) {
+    if (keep.includes(entry)) continue;
+    fs.rmSync(path.join(platformDir(), entry), { recursive: true, force: true });
+    removed.push(entry);
+  }
+  if (removed.length && fs.existsSync(path.join(platformGitDir(), "HEAD"))) exec(["git", "worktree", "prune"], { cwd: platformGitDir() });
+  return removed;
+}
+
+function realTeamResume(exec: Exec): NonNullable<TickDeps["teamResume"]> {
+  return (checkout, planFile, env, main = path.resolve(import.meta.dir, "..", "main.ts")) => {
+    const saved: Record<string, string | undefined> = {};
+    for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
+    try {
+      return exec([process.execPath, main, "team", "resume", "--unattended", "--json", "--plan", planFile, "--dir", checkout], { cwd: checkout });
+    } finally {
+      for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+  };
 }
 
 export async function reconcileOnce(
@@ -408,18 +713,23 @@ export async function reconcileOnce(
 ): Promise<ReconcileLedger> {
   const cfg = readConfig();
   const exec = deps.exec ?? realExec;
+  const now = deps.now ?? Date.now;
   const token = readToken(cfg.hermesHome);
-  const secrets = token ? [token] : [];
+  const environment = readEnvironmentFile(cfg.environmentFile);
+  const secrets = [...(token ? [token] : []), ...Object.values(environment).filter(Boolean)];
   if (token && cfg.repoUrl.startsWith("http")) writeCredentials(cfg, token);
 
   let ledger = recoverLedger(readLedger(cfg));
+  // A watcher re-pointed at another repository or branch starts a fresh ledger: its applied
+  // and blocked commits describe a history this configuration never had.
+  if (ledger.repo !== stripUserinfo(cfg.repoUrl) || ledger.branch !== cfg.branch) ledger = emptyLedger(cfg);
   ledger.observedAt = new Date().toISOString();
   ledger.version = cfg.version;
 
   const finish = (l: ReconcileLedger): ReconcileLedger => {
     saveLedger(l);
     try {
-      deps.publish?.(nexusRecord(l));
+      deps.publish?.(nexusRecord(l, cfg.kind ?? "command"));
     } catch {
       // Publication is reporting, not reconciliation - a cluster that
       // cannot accept the record must not fail the tick that fixed it.
@@ -442,12 +752,13 @@ export async function reconcileOnce(
   }
   ledger.desiredSha = desired;
 
-  // Blocked SHA replaced by a new push? The gate clears itself.
+  // Blocked or pending SHA replaced by a new push? The gate clears itself.
   if (ledger.blocked && ledger.blocked.sha !== desired) ledger.blocked = undefined;
+  if (ledger.pending && ledger.pending.sha !== desired) ledger.pending = undefined;
 
-  const verdict = shouldApply(ledger, desired, trigger);
+  const verdict = shouldApply(ledger, desired, trigger, now());
   if (!verdict.act) {
-    if (ledger.state !== "failed" && ledger.state !== "degraded") ledger.state = "synced";
+    if (ledger.state !== "failed" && ledger.state !== "degraded" && ledger.state !== "pending") ledger.state = "synced";
     log(verdict.reason);
     // A degraded state re-checks Argo convergence without touching git.
     if (ledger.state === "degraded" && deps.argocdConverged && (await deps.argocdConverged(30))) {
@@ -480,8 +791,9 @@ export async function reconcileOnce(
 
   const logFile = path.join(logsDir(), `${desired.slice(0, 12)}-${Date.now()}.log`);
   fs.mkdirSync(logsDir(), { recursive: true });
+  // Even the 0600 host log is scrubbed: a credential the child echoed must not outlive the run.
   const appendLog = (label: string, r: ExecResult) => {
-    fs.appendFileSync(logFile, `\n===== ${label} (exit ${r.exitCode}) =====\n${r.stdout}\n${r.stderr}\n`, {
+    fs.appendFileSync(logFile, scrub(`\n===== ${label} (exit ${r.exitCode}) =====\n${r.stdout}\n${r.stderr}\n`, secrets), {
       mode: 0o600,
     });
     fs.chmodSync(logFile, 0o600);
@@ -546,6 +858,105 @@ export async function reconcileOnce(
     });
   }
 
+  if (cfg.kind === "team") {
+    // The team kind (ADR 0191): the checkout is a bootstrap repository; the installed hg resumes
+    // the installation it names, unattended. Exit 0 completes, 75 is pending, else failed.
+    if (!cfg.team?.plan) return failRun("check", "team plan", { exitCode: 1, stdout: "", stderr: "reconcile config kind=team names no team.plan" });
+    ledger.state = "validating";
+    run.phase = "check";
+    run.step = "bun install";
+    saveLedger(ledger);
+    let bootstrapDir: string;
+    try {
+      bootstrapDir = planBootstrapDirectory(path.join(checkoutDir(), cfg.team.plan));
+      // Attributed before any gate can fail the run: a watcher missing its credentials still
+      // publishes WHICH installation it could not reconcile, never an anonymous failure.
+      ledger.installation = planInstallation(path.join(checkoutDir(), cfg.team.plan));
+    } catch (err) { return failRun("check", "team plan", { exitCode: 1, stdout: "", stderr: (err as Error).message }); }
+    // The plan's credential NAMES must all be present (environment file or service environment)
+    // before anything runs; the values never appear here, only the names that are missing.
+    try {
+      const missing = missingCredentialNames(path.join(checkoutDir(), cfg.team.plan), { ...process.env, ...environment });
+      if (missing.length) return failRun("check", "credentials", { exitCode: 1, stdout: "", stderr: `missing credential environment names: ${missing.join(", ")} - add them to the watcher's environment file` });
+    } catch (err) {
+      return failRun("check", "team plan", { exitCode: 1, stdout: "", stderr: (err as Error).message });
+    }
+    // A stack file still holding the generator's unset placeholder is one Pulumi rejects whole,
+    // without naming the path (ADR 0196): name each path and its fix before anything runs.
+    try {
+      const teamPlan = loadPlan(path.join(checkoutDir(), cfg.team.plan));
+      const unset = unsetMarkerFindings(teamPlan, checkoutDir(), deriveBackend(teamPlan, checkoutDir(), undefined).derived);
+      if (unset.length) {
+        return failRun("check", "credentials", { exitCode: 1, stdout: "", stderr: unset.map((f) => `unset secret placeholder at ${f.pulumiPath} in ${f.configFile} - set it: ${f.fix[0]}`).join("\n") });
+      }
+    } catch (err) {
+      return failRun("check", "team plan", { exitCode: 1, stdout: "", stderr: (err as Error).message });
+    }
+    const installed = exec([process.execPath, "install", "--frozen-lockfile"], { cwd: path.join(checkoutDir(), bootstrapDir) });
+    appendLog("bun install", installed);
+    if (installed.exitCode !== 0) return failRun("check", "bun install --frozen-lockfile", installed);
+    // The platform revision the lock records (ADR 0193) decides which `hg` resumes: the compiler
+    // that publishes is then the same revision as the charts Argo CD syncs. A lock that names
+    // none - or a plan with no platform - keeps running the installed hg, as before.
+    let platformMain: string | undefined, keepRevisions: string[] | undefined;
+    try {
+      const planFile = checkoutFile(checkoutDir(), cfg.team.plan);
+      const lockRelative = planLockFile(planFile), platform = planPlatform(planFile);
+      const lockFile = lockRelative ? checkoutFile(checkoutDir(), lockRelative) : undefined;
+      const revisions = lockFile && fs.existsSync(lockFile) ? lockPlatformRevisions(lockFile) : undefined;
+      if (revisions && !platform) throw new CliError(`${planFile}: the lock records a platform revision but the plan declares no platform.repository`);
+      // Known either way: a plan with no platform prunes every worktree a previous one left.
+      keepRevisions = revisions ? [revisions.revision, ...(revisions.previousRevision ? [revisions.previousRevision] : [])] : [];
+      if (revisions && platform) {
+        run.step = `platform revision ${revisions.revision.slice(0, 12)}`;
+        saveLedger(ledger);
+        const platformToken = platform.credentialEnv ? environment[platform.credentialEnv] ?? process.env[platform.credentialEnv] : token;
+        const prepared = preparePlatformWorktree(cfg, platformToken, platform.repository, revisions.revision, exec, appendLog);
+        if ("exitCode" in prepared) return failRun("check", "platform revision", prepared);
+        platformMain = prepared.main;
+        log(`platform revision ${revisions.revision.slice(0, 12)}`);
+      }
+    } catch (err) {
+      return failRun("check", "platform revision", { exitCode: 1, stdout: "", stderr: (err as Error).message });
+    }
+    // Prune as soon as the keep set is known, not only after a clean resume: a tick that fails or
+    // goes pending must not leave a checkout per revision ever tried behind.
+    const removed = prunePlatformWorktrees(keepRevisions, exec);
+    if (removed.length) log(`pruned ${removed.length} platform worktree(s) no longer named by the lock`);
+    ledger.state = "applying";
+    run.phase = "apply";
+    run.step = "hg team resume --unattended";
+    saveLedger(ledger);
+    const resumed = (deps.teamResume ?? realTeamResume(exec))(checkoutDir(), cfg.team.plan, environment, platformMain);
+    appendLog("hg team resume --unattended", resumed);
+    // The report is this run's, never a previous run's: absent means absent.
+    const report = lastJsonDocument(resumed.stdout)?.["report"];
+    ledger.report = report && typeof report === "object" ? (scrubValues(report, secrets) as TeamReport) : undefined;
+    if (resumed.exitCode === 75) {
+      const previous = ledger.pending?.sha === desired ? ledger.pending.attempts : 0;
+      const at = new Date(now());
+      const pendingInfo = (report as any)?.pending ?? {};
+      const done: ReconcileRun = { ...run, finishedAt: at.toISOString(), result: "pending" };
+      ledger.run = undefined;
+      ledger.history = pushHistory(ledger.history, done);
+      ledger.state = "pending";
+      ledger.blocked = undefined; // a retry that turned pending must keep retrying on its own
+      ledger.pending = {
+        sha: desired,
+        attempts: previous + 1,
+        lastAt: at.toISOString(),
+        nextAttemptAt: new Date(at.getTime() + pendingBackoffSeconds(previous + 1) * 1000).toISOString(),
+        reason: typeof pendingInfo.reason === "string" ? pendingInfo.reason : "in-flight",
+        ...(typeof pendingInfo.link === "string" ? { link: redact(pendingInfo.link) } : {}),
+        ...(typeof (report as any)?.stage === "string" ? { stage: (report as any).stage } : {}),
+      };
+      log(`PENDING at ${ledger.pending.stage ?? "?"} (${ledger.pending.reason}) - next attempt ${ledger.pending.nextAttemptAt}`);
+      return finish(ledger);
+    }
+    if (resumed.exitCode !== 0) return failRun("apply", "hg team resume --unattended", resumed);
+    ledger.pending = undefined;
+    run.note = skippedNote(resumed.stdout, secrets);
+  } else {
   // 3. checks - host-configured preflights, before any mutation.
   ledger.state = "validating";
   run.phase = "check";
@@ -566,6 +977,9 @@ export async function reconcileOnce(
   const applied = exec(["bash", "-lc", cfg.apply], { cwd: checkoutDir() });
   appendLog(`apply: ${cfg.apply}`, applied);
   if (applied.exitCode !== 0) return failRun("apply", cfg.apply, applied);
+  run.note = skippedNote(applied.stdout, secrets);
+  }
+  if (run.note) log(`applied without a rollout: ${run.note}`);
 
   // The apply SUCCEEDED: appliedSha advances now, whatever Argo does next.
   ledger.appliedSha = desired;
@@ -674,7 +1088,8 @@ export function publishRecord(cfg: ReconcileConfig, record: Record<string, unkno
     metadata: {
       name: statusName(),
       namespace: ns,
-      labels: { "hermes.dev/overlay-source": "reconciliation" },
+      // The phase label lets alerting select degraded/pending watchers with kube-state-metrics.
+      labels: { "hermes.dev/overlay-source": "reconciliation", "harness-hg.factorylevel.dev/phase": String(record["phase"] ?? "unknown") },
     },
     data: { "status.json": JSON.stringify(record, null, 2) + "\n" },
   });
@@ -720,6 +1135,9 @@ export function unitFiles(cfg: ReconcileConfig, hgEntry: { bun: string; main: st
   ]
     .map((k) => (process.env[k] ? `\nEnvironment=${k}=${process.env[k]}` : ""))
     .join("");
+  // A team-kind watcher's plan credentials come from a 0600 dotenv file, never from the unit:
+  // `-` tolerates a missing file (the tick then reports the missing names itself).
+  const environmentFile = cfg.environmentFile ? `\nEnvironmentFile=-${cfg.environmentFile}` : "";
   const service = `# Generated by \`hg reconcile install\` - edit the config, not this file.
 [Unit]
 Description=Harness Hg reconciliation (version ${cfg.version})
@@ -728,7 +1146,7 @@ Description=Harness Hg reconciliation (version ${cfg.version})
 Type=oneshot
 Environment=HERMES_GITOPS_HOME=${hgHome()}
 Environment=HERMES_HOME=${cfg.hermesHome}
-Environment=PATH=${binDir}:/usr/local/bin:/usr/bin:/bin${passthrough}
+Environment=PATH=${binDir}:/usr/local/bin:/usr/bin:/bin${passthrough}${environmentFile}
 ExecStart=${hgEntry.bun} ${hgEntry.main} reconcile run${instanceName() ? ` --instance ${instanceName()}` : ""}
 # The tick's own Argo wait plus generous apply headroom - systemd kills
 # a hung run rather than letting it hold the flock forever.
@@ -761,6 +1179,9 @@ export function installReconcile(cfg: ReconcileConfig, opts: { enable: boolean }
   // depends on it.
   const bun = Bun.which("bun");
   if (!bun) throw new CliError("bun not found on PATH - the timer would fail on every tick");
+  if (cfg.kind === "team" && !cfg.team?.plan) throw new CliError("kind=team needs --team-plan <bootstrap-relative installation.yaml>");
+  if (cfg.kind === "team" && (cfg.checks.length || cfg.apply)) throw new CliError("kind=team runs `hg team resume --unattended`; --checks and --apply do not apply");
+  readEnvironmentFile(cfg.environmentFile); // refuses a world-readable credential file at install, not at 3am
   writeConfig(cfg);
   const main = path.resolve(import.meta.dir, "..", "main.ts");
   const units = unitFiles(cfg, { bun, main });
@@ -941,6 +1362,26 @@ export function proveReconcile(): ProofResult {
       );
     }
 
+    // RECON009 - when pending, the wait is auditable AND bounded: a reason,
+    // a next attempt in the future (or due now), and the gate holding until
+    // then. A pending record nothing could ever retry is a stall.
+    if (ledger.state !== "pending") {
+      add("RECON009", "unknown", "pending-audit", `state is ${ledger.state} - nothing pending`);
+    } else {
+      const p = ledger.pending;
+      const parsed = p ? Date.parse(p.nextAttemptAt) : NaN;
+      const bounded = Boolean(p && p.reason && Number.isFinite(parsed) && parsed - Date.parse(p.lastAt) <= PENDING_BACKOFF.capSeconds * 1000);
+      const gateHolds = Boolean(p && !shouldApply(ledger, p.sha, { manual: false, retry: false }, Date.parse(p.lastAt)).act);
+      add(
+        "RECON009",
+        bounded && gateHolds ? "pass" : "fail",
+        "pending-audit",
+        bounded && gateHolds
+          ? `pending ${p!.sha.slice(0, 12)} (${p!.reason}), attempt ${p!.attempts}, next at ${p!.nextAttemptAt}`
+          : "pending state without a bounded, gate-backed record",
+      );
+    }
+
     // RECON008 - the published record matches the ledger and carries no
     // secrets. The record is what Nexus renders; a drifted one is a lie
     // in the UI even when the host ledger is honest.
@@ -968,7 +1409,7 @@ export function proveReconcile(): ProofResult {
       add("RECON008", "unknown", "published-record", "ConfigMap unreadable (no cluster, or not yet published)");
     }
   } else {
-    for (const id of ["RECON002", "RECON003", "RECON004", "RECON005", "RECON006", "RECON007", "RECON008"]) {
+    for (const id of ["RECON002", "RECON003", "RECON004", "RECON005", "RECON006", "RECON007", "RECON008", "RECON009"]) {
       add(id, "unknown", "install", "reconcile is not installed");
     }
   }

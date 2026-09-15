@@ -1,0 +1,7 @@
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: ReconciliationStatus
+observedAt: "2026-09-10T11:00:00Z"
+phase: synced
+agents:
+  - name: manager
+    secret: nope

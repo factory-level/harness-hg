@@ -48,6 +48,17 @@ a re-pin re-clones only that one. A clone that fails DEGRADES (loud log
 line, the directory is removed, the pod still starts): the agent's own
 code decides whether a missing workspace is fatal, the platform never
 takes the pod down for it (the bundle chart's rule).
+
+A TRACKED binding (ADR 0197) is cloned at its branch tip by
+files/workspace-sync.sh, shipped here and run `once` by this script; the
+workspace-sync container runs the same file in a loop every refreshInterval,
+and files/workspace-metrics.mjs serves each workspace's freshness stamp as
+metrics. Each revision is its own checkout under /app/workspaces/.revs/<name>
+and /app/workspaces/<name> is a symlink switched by one rename.
+
+Operator overlays (ADR 0194) are the exception to degrading: files/overlay-apply.mjs,
+shipped here, merges approved commit-pinned content into agent/ before the
+build, and a fetch or verification failure stops the build.
 */}}
 apiVersion: v1
 kind: ConfigMap
@@ -63,3 +74,13 @@ data:
 {{ .Files.Get "files/channel-eve.ts" | indent 4 }}
   boot.sh: |
 {{ .Files.Get "files/boot.sh" | indent 4 }}
+  overlay-apply.mjs: |
+{{ .Files.Get "files/overlay-apply.mjs" | indent 4 }}
+  verify-build.mjs: |
+{{ .Files.Get "files/verify-build.mjs" | indent 4 }}
+  smoke.mjs: |
+{{ .Files.Get "files/smoke.mjs" | indent 4 }}
+  workspace-sync.sh: |
+{{ .Files.Get "files/workspace-sync.sh" | indent 4 }}
+  workspace-metrics.mjs: |
+{{ .Files.Get "files/workspace-metrics.mjs" | indent 4 }}

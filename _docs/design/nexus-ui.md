@@ -37,3 +37,12 @@ The tree touches real data only at named seams: the Nexus plugin API, the compil
 plan, Grafana embeds, and the avatar library. Control-plane dashboards read as platform
 surfaces, visually distinct from workload dashboards
 ([#663](https://github.com/factory-level/harness-hg/issues/663)).
+
+A shared destination's plan includes every registered team at its emitted deployment revision.
+The operator joins validated source contributions before compilation; a missing source or
+conflicting identity refuses publication of the whole plan. Source provenance accompanies the
+generated plan, and adding a team preserves existing teams (ADR 0184).
+
+Each agent shows its desired and built versions side by side — source commit, overlay digest,
+Eve version — with drift marked. Evidence that is missing (no receipt, no pod, no record)
+reads as unknown, never as no drift (ADR 0195).

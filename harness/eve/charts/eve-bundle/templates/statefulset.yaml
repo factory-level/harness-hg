@@ -11,6 +11,8 @@ metadata:
     hermes-gitops.factorylevel.dev/plane: workload
     hermes-gitops.factorylevel.dev/component: eve-bundle
     {{- include "eve-bundle.labels" . | nindent 4 }}
+  annotations:
+    {{- include "eve-bundle.versionAnnotations" . | nindent 4 }}
 spec:
   # One replica: every member's local Workflow world is single-process
   # (eve-agent/templates/statefulset.yaml says why).
@@ -53,6 +55,7 @@ spec:
       annotations:
         checksum/spec: {{ .Values.spec | toJson | sha256sum }}
         checksum/boot: {{ include (print $.Template.BasePath "/configmap-boot.yaml") . | sha256sum }}
+        {{- include "eve-bundle.versionAnnotations" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "eve-bundle.fullname" . }}
       terminationGracePeriodSeconds: {{ .Values.shutdown.gracePeriodSeconds }}
@@ -74,6 +77,14 @@ spec:
               value: {{ $p.sha | quote }}
             - name: EVE_DIST_SUBDIR
               value: {{ $p.sourceSubdir | default "" | quote }}
+            # Recorded in this member's build receipt (ADR 0195).
+            - name: HG_RUNTIME_DIGEST
+              value: {{ include "eve-bundle.runtimeManifest" (dict "root" $ "member" $p) | sha256sum | quote }}
+            {{- if $.Values.runtimeImage.eveVersion }}
+            # The bundle runs one image, so its pin covers every member (ADR 0192).
+            - name: EXPECTED_EVE_VERSION
+              value: {{ $.Values.runtimeImage.eveVersion | quote }}
+            {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
@@ -146,6 +157,18 @@ spec:
               value: {{ $port | quote }}
             - name: NODE_ENV
               value: production
+            # What this member was rendered to run (ADR 0195); the startup gate
+            # compares each against its own receipt. PORT reaches the probe too.
+            - name: HG_BUILD_RECEIPT
+              value: /app/members/{{ $p.name }}/.hermes-gitops/build-receipt.json
+            - name: HG_EXPECTED_SOURCE_SHA
+              value: {{ $p.sha | toString | quote }}
+            - name: HG_EXPECTED_BUILD_KEY
+              value: {{ $p.sha | toString | quote }}
+            - name: HG_EXPECTED_RUNTIME_DIGEST
+              value: {{ include "eve-bundle.runtimeManifest" (dict "root" $ "member" $p) | sha256sum | quote }}
+            - name: HG_EXPECTED_EVE_VERSION
+              value: {{ $.Values.runtimeImage.eveVersion | default $.Values.spec.deployment.runtimeImageTag | default $.Values.runtimeImage.tag | toString | quote }}
             - name: EVE_PROJECT_DIR
               value: {{ $projectDir | quote }}
             {{- if $.Values.routePrefix }}
@@ -184,10 +207,11 @@ spec:
             - name: {{ $p.name | trunc 15 | trimSuffix "-" }}
               containerPort: {{ $port }}
               protocol: TCP
+          # The startup gate (ADR 0195): this member's receipt must match what it
+          # was rendered for before health decides readiness.
           startupProbe:
-            httpGet:
-              path: /eve/v1/health
-              port: {{ $port }}
+            exec:
+              command: ["node", "/scripts/verify-build.mjs"]
             failureThreshold: {{ $.Values.probes.startup.failureThreshold }}
             periodSeconds: {{ $.Values.probes.startup.periodSeconds }}
           livenessProbe:
@@ -212,6 +236,10 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
+            # files/verify-build.mjs, this member's startup gate (ADR 0195).
+            - name: boot-script
+              mountPath: /scripts
+              readOnly: true
             - name: data
               mountPath: /app
             {{- if $p.repositoryRefs }}

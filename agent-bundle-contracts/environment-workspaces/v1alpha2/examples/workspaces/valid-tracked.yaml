@@ -1,0 +1,37 @@
+# A tracked repository: brand and company documents whose release channel is
+# the main branch. The pod clones the tip at boot and refreshes it every 30
+# minutes without restarting; a pinned repository sits beside it unchanged.
+apiVersion: hermes.gitops/v1alpha2
+kind: WorkspaceBindings
+
+repositories:
+  - name: vision
+    source:
+      url: https://github.com/organization/vision-manager.git
+      revision:
+        mode: tracked
+        branch: main
+        refreshInterval: 30m
+      authSecretRef: vision-git-auth
+    mount:
+      path: /workspaces/vision-manager
+      access: read-only
+
+  - name: strategy-context
+    source:
+      url: git@github.com:organization/strategy-context.git
+      revision:
+        mode: pinned
+        sha: 0123456789abcdef0123456789abcdef01234567
+      authSecretRef: hermes-strategy-context-git
+    mount:
+      path: /workspaces/strategy-context
+      access: read-only
+
+bindings:
+  - repository: vision
+    profiles: [marketing-manager, marketing-research]
+    purpose: brand-context
+  - repository: strategy-context
+    profiles: [marketing-manager]
+    purpose: strategy-context

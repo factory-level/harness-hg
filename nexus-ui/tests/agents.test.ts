@@ -1,6 +1,6 @@
 // Agents directory contracts, fixture-tested.
 import { describe, expect, test } from "bun:test";
-import { agentLevel, applyFilters, bundleOf, groupLevel, groups } from "../src/app/agents/model";
+import { agentInstances, agentLevel, applyFilters, bundleOf, groupLevel, groups } from "../src/app/agents/model";
 import { DEMO_DATA, DEMO_HEALTH } from "../src/stores/demo";
 
 describe("grouping", () => {
@@ -52,5 +52,18 @@ describe("bundles wire shape", () => {
     };
     const gs = groups(data as never);
     expect(gs.map((g) => g.id)).toEqual(["bundle:core", "bucket:unbundled"]);
+  });
+});
+
+
+describe("deployment instance details", () => {
+  const data = { ...DEMO_DATA, plan: { components: [{ id: "sre", kind: "agent", bind: { profile: "inferops-sre" }, instances: [{ id: "inferops-sre", application: "ag-eve-inferops-sre", namespace: "ag-eve-inferops-sre" }] }] } };
+  test("display IDs do not need to prefix deployment IDs", () => {
+    const health = { ...DEMO_HEALTH, instances: { "inferops-sre": { level: "healthy", reasons: [] }, "sre-other": { level: "unhealthy" } } };
+    expect(agentInstances(data, health, "sre")).toEqual([{ id: "inferops-sre", application: "ag-eve-inferops-sre", namespace: "ag-eve-inferops-sre", level: "healthy", reasons: [] }]);
+  });
+  test("missing health remains unknown while declared identity remains visible", () => {
+    expect(agentInstances(data, null, "sre")[0].level).toBe("unknown");
+    expect(agentInstances(data, null, "missing")).toEqual([]);
   });
 });

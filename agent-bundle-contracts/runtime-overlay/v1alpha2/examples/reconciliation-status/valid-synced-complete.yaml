@@ -1,0 +1,26 @@
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: ReconciliationStatus
+observedAt: "2026-09-10T11:00:00Z"
+phase: synced
+installation: factory-teams
+stage: complete
+desiredSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+appliedSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+appliedAt: "2026-09-10T10:58:41Z"
+retryable: false
+version: factory-team-watcher-1
+sources:
+  - id: social
+    ref: refs/tags/v1.4.0
+    desiredSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+    appliedSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+agents:
+  - name: manager
+    source: social
+    desiredSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+    appliedSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+    runtimeDigest: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    eveVersion: 0.42.0
+    ready: true
+platform:
+  desiredRevision: c585d195d3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8

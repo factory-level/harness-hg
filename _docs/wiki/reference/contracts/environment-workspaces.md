@@ -1,6 +1,6 @@
 <!-- GENERATED FILE — DO NOT HAND-EDIT.
      Sources:
-       agent-bundle-contracts/environment-workspaces/v1alpha1/workspaces.schema.json
+       agent-bundle-contracts/environment-workspaces/v1alpha2/workspaces.schema.json
      Regenerate with `make docs` (infra/scripts/generate-schema-docs.py);
      `make docs-drift` (part of `make test`) fails on stale. -->
 
@@ -8,19 +8,19 @@
 
 **What this page tells you:** every field of this contract, with types, constraints and defaults — generated from the frozen schema, so it cannot drift from what validates.
 
-Written by the **team** as `harness-hg/workspaces.yaml` (`kind: WorkspaceBindings`): pinned Git checkouts assigned to agents. A repository reaches an agent only when a binding names both. The default is nothing.
+Written by the **team** as `harness-hg/workspaces.yaml` (`kind: WorkspaceBindings`): Git checkouts assigned to agents, each pinned to a commit, resolved from a deployed application, or (v1alpha2) tracked on a branch and refreshed in the running pod. A repository reaches an agent only when a binding names both. The default is nothing. v1alpha1 documents stay valid.
 
-Schema: `agent-bundle-contracts/environment-workspaces/v1alpha1/workspaces.schema.json` — **Hermes workspace repository bindings**
+Schema: `agent-bundle-contracts/environment-workspaces/v1alpha2/workspaces.schema.json` — **Hermes workspace repository bindings**
 
 ## (root)
 
-Operator-authored, deployment-neutral assignment of immutable Git checkouts to Hermes profiles. A repository is available to a profile only when a binding names both; bundle membership, distribution source, credentials, prompts, and event sources grant nothing. The default access for every profile is none. In an agent-team repository this file lives at `harness-hg/workspaces.yaml`; the legacy path stays readable for repositories not yet migrated.
+Operator-authored, deployment-neutral assignment of Git checkouts to Hermes profiles. A repository is available to a profile only when a binding names both; bundle membership, distribution source, credentials, prompts, and event sources grant nothing. The default access for every profile is none. A checkout is pinned to a commit, resolved from a deployed application, or (new in v1alpha2) tracked on a branch and refreshed in the running pod. In an agent-team repository this file lives at `harness-hg/workspaces.yaml`; the legacy path stays readable for repositories not yet migrated.
 
 _Unknown fields are rejected (`additionalProperties: false`)._
 
 | Field | Type | Required | Constraints | Description |
 |---|---|---|---|---|
-| `apiVersion` | const `hermes.gitops/v1alpha1` | **yes** | — | Contract identifier this document is validated against; unknown versions are refused loudly. |
+| `apiVersion` | const `hermes.gitops/v1alpha2` | **yes** | — | Contract identifier this document is validated against; unknown versions are refused loudly. |
 | `kind` | const `WorkspaceBindings` | **yes** | — | Document kind - always WorkspaceBindings. |
 | `repositories` | array of object | **yes** | minItems: 1 | The catalogue of mountable repositories. Declaring one grants nothing: a repository reaches a profile only through a binding. |
 | `bindings` | array of object | **yes** | minItems: 1 | Explicit repository-to-profile grants - the only thing that makes a repository reach a profile, independent of bundle membership. |
@@ -32,7 +32,7 @@ _Unknown fields are rejected (`additionalProperties: false`)._
 | Field | Type | Required | Constraints | Description |
 |---|---|---|---|---|
 | `name` | any | **yes** | — | Short name bindings reference this repository by. |
-| `source` | any | **yes** | — | Where the checkout comes from: self (the bound profile's own distribution repository) or an explicit url with a pinned or application-resolved revision. |
+| `source` | any | **yes** | — | Where the checkout comes from: self (the bound profile's own distribution repository) or an explicit url with a pinned, application-resolved or tracked revision. |
 | `mount` | object | **yes** | — | Where and how the checkout appears inside a granted profile's runtime. |
 
 #### `repositories[].mount`
@@ -58,15 +58,28 @@ _Unknown fields are rejected (`additionalProperties: false`)._
 
 ## Example
 
-`agent-bundle-contracts/environment-workspaces/v1alpha1/examples/workspaces/valid-pinned.yaml` — a fixture validated against this exact schema by `make schema-validate`, so it cannot go stale:
+`agent-bundle-contracts/environment-workspaces/v1alpha2/examples/workspaces/valid-tracked.yaml` — a fixture validated against this exact schema by `make schema-validate`, so it cannot go stale:
 
 ```yaml
-# A pinned repository bound to two profiles. Bundle membership is absent by
-# design: the same declaration compiles for bundled and independent profiles.
-apiVersion: hermes.gitops/v1alpha1
+# A tracked repository: brand and company documents whose release channel is
+# the main branch. The pod clones the tip at boot and refreshes it every 30
+# minutes without restarting; a pinned repository sits beside it unchanged.
+apiVersion: hermes.gitops/v1alpha2
 kind: WorkspaceBindings
 
 repositories:
+  - name: vision
+    source:
+      url: https://github.com/organization/vision-manager.git
+      revision:
+        mode: tracked
+        branch: main
+        refreshInterval: 30m
+      authSecretRef: vision-git-auth
+    mount:
+      path: /workspaces/vision-manager
+      access: read-only
+
   - name: strategy-context
     source:
       url: git@github.com:organization/strategy-context.git
@@ -79,8 +92,11 @@ repositories:
       access: read-only
 
 bindings:
-  - repository: strategy-context
+  - repository: vision
     profiles: [marketing-manager, marketing-research]
+    purpose: brand-context
+  - repository: strategy-context
+    profiles: [marketing-manager]
     purpose: strategy-context
 ```
 

@@ -1,0 +1,16 @@
+spec:
+  persona: echo
+  runtime: eve
+  source: https://github.com/factorylevel/eve-agents.git
+  sha: 3f06a1b2c3d4e5f60718293a4b5c6d7e8f901234
+  overlays:
+    - id: replace-tools
+      kind: file
+      mode: override
+      target: agent/tools
+      source:
+        repository: https://github.com/example/agent-skills.git
+        commit: 9b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c
+        path: tools
+      contentHash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  overlayTreeHash: 5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9

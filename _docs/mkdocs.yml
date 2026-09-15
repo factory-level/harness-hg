@@ -101,6 +101,9 @@ markdown_extensions:
 # leading slash untouched — a relative value would resolve per page.
 extra:
   homepage: !ENV [HG_HOMEPAGE, "/harness-hg/"]
+  # The version badge in the header (overrides/partials/source.html): the
+  # derived platform version, exported by `make wiki-build`. Empty = no badge.
+  hg_version: !ENV [HG_VERSION, ""]
 
 extra_css:
   - stylesheets/extra.css
@@ -210,6 +213,7 @@ nav:
       - Alert destinations: runbooks/alert-destinations.md
       - Slack apps: runbooks/slack-apps.md
       - Multiple repositories: runbooks/multiple-repositories.md
+      - Upgrade or roll back: runbooks/upgrade.md
       - Recovery: runbooks/recovery.md
       - The destructive test: runbooks/destructive-test.md
       - Workspace bindings: runbooks/workspace-bindings.md
@@ -250,8 +254,10 @@ nav:
           - hg reconcile: reference/cli/reconcile.md
           - hg reset: reference/cli/reset.md
           - hg server: reference/cli/server.md
+          - hg skills: reference/cli/skills.md
           - hg slack: reference/cli/slack.md
           - hg status: reference/cli/status.md
+          - hg team: reference/cli/team.md
           - hg test: reference/cli/test.md
           - hg topology: reference/cli/topology.md
           - hg up: reference/cli/up.md
@@ -261,6 +267,7 @@ nav:
       - Contract files:
           - Overview: reference/contracts/index.md
           - Agent team: reference/contracts/agent-team.md
+          - Agent skills: reference/contracts/agent-skills.md
           - Dashboard contribution: reference/contracts/dashboard-contribution.md
           - Eval suite: reference/contracts/evals.md
           - Bundle destination: reference/contracts/bundle-destination.md

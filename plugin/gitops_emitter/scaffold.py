@@ -359,7 +359,8 @@ def operator_source_repos(workdir: Optional[Path]) -> List[str]:
     """cluster-values' ``appProject.sourceRepos`` with every ``oci://`` entry
     doubled by its scheme-less twin (the hermes-profile chart renders
     helm-OCI child Applications scheme-less, #187). Sorted, deduplicated;
-    empty when the file or the list is absent. Pure."""
+    includes the declared platformRepo.url used by preserved local apps.
+    Empty when the file or both declarations are absent. Pure."""
     if workdir is None:
         return []
     path = workdir / _CLUSTER_VALUES_RELPATH
@@ -374,7 +375,7 @@ def operator_source_repos(workdir: Optional[Path]) -> List[str]:
     project = doc.get("appProject") if isinstance(doc, dict) else None
     repos = (project or {}).get("sourceRepos") if isinstance(project, dict) else None
     if repos is None:
-        return []
+        repos = []
     if not isinstance(repos, list) or not all(
         isinstance(r, str) and _REPO_URL_RE.match(r) for r in repos
     ):
@@ -382,6 +383,14 @@ def operator_source_repos(workdir: Optional[Path]) -> List[str]:
             f"gitops-emitter: {_CLUSTER_VALUES_RELPATH} appProject.sourceRepos must be a list "
             "of repository URLs (no whitespace, quotes or '#')"
         )
+    platform = doc.get("platformRepo") if isinstance(doc, dict) else None
+    if platform is not None:
+        url = platform.get("url") if isinstance(platform, dict) else None
+        if not isinstance(url, str) or not _REPO_URL_RE.fullmatch(url):
+            raise GitopsEmitterError(
+                f"gitops-emitter: {_CLUSTER_VALUES_RELPATH} platformRepo.url must be a repository URL"
+            )
+        repos = [*repos, url]
     out = set()
     for repo in repos:
         out.add(repo)
@@ -400,6 +409,7 @@ def _scaffold_tokens(cfg: Dict[str, Any], workdir: Optional[Path] = None) -> Dic
         "__IMAGE_TAG__": cfg.get("image_tag") or _DEFAULT_IMAGE_TAG,
         _OPERATOR_SOURCE_REPOS_TOKEN: "".join(
             f"    - {repo}\n" for repo in operator_source_repos(workdir)
+            if repo not in {cfg["repo_url"], cfg.get("hermes_gitops_repo_url")}
         ),
     }
 

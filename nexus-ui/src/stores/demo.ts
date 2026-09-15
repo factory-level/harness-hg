@@ -210,7 +210,7 @@ export const DEMO_WORKSPACE = {
         { ref: "mkt-engage", x: 560, y: 420 },
         { ref: "app-postiz", x: 960, y: 400 },
         { ref: "ghost-card", x: 960, y: 100 },
-        { ref: "calvin", x: 90, y: 520 },
+        { ref: "former-agent", x: 90, y: 520 },
         { ref: "higgsfield", x: 960, y: 560 },
         { ref: "marketing", x: 220, y: 680 },
         { ref: "content-published", x: 1290, y: 380 },
@@ -224,7 +224,7 @@ export const DEMO_WORKSPACE = {
         { id: "demo-c3", from: "card:mkt-engage", to: "card:content-published" },
       ],
     },
-    { id: "dumdum", name: "DumDum Version", mode: "concept" as const, cards: [{ ref: "mkt-manager", x: 120, y: 120 }] },
+    { id: "draft", name: "Draft board", mode: "concept" as const, cards: [{ ref: "mkt-manager", x: 120, y: 120 }] },
   ],
 };
 

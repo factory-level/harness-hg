@@ -571,6 +571,20 @@ class TestScaffoldLifecycle:
         doc = _yaml.safe_load(text)
         assert doc["spec"]["sourceRepos"] == [cfg["repo_url"], cfg["hermes_gitops_repo_url"]]
 
+    def test_platform_source_change_retains_declared_local_app_repository(self, bare_repo, tmp_path):
+        import yaml as _yaml
+
+        cfg, _record = self._seed(bare_repo)
+        original = cfg["hermes_gitops_repo_url"]
+        values_before = _show(bare_repo, "bootstrap/values/cluster-values.yaml")
+        cfg["hermes_gitops_repo_url"] = "https://git.example/private-platform.git"
+        ensure_repo_and_scaffold(cfg, None)
+        doc = _yaml.safe_load(_show(bare_repo, "bootstrap/project.yaml"))
+        assert original in doc["spec"]["sourceRepos"]
+        assert cfg["hermes_gitops_repo_url"] in doc["spec"]["sourceRepos"]
+        assert len(doc["spec"]["sourceRepos"]) == len(set(doc["spec"]["sourceRepos"]))
+        assert _show(bare_repo, "bootstrap/values/cluster-values.yaml") == values_before
+
     def test_cluster_values_source_repos_render_into_project_yaml(self, bare_repo, tmp_path):
         """The environment's half of the allowlist is declared once, in
         cluster-values; the scaffold renders it into the managed

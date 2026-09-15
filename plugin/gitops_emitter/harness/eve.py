@@ -5,7 +5,7 @@ directory - at ``agents/<name>/`` in its source repository, with
 ``hermes-gitops.yaml`` (contract version 5, ``runtime.kind: eve``) beside
 ``package.json``. This module turns that project, at one commit, into the
 record ``profiles/<name>/profile.yaml`` the eve-agent chart consumes
-(``agent-bundle-contracts/eveagent/v1alpha2``).
+(``agent-bundle-contracts/eveagent/v1alpha3``).
 
 It is the Eve counterpart of the Hermes pipeline in ``emitter.emit``:
 ``read_eve_manifest`` replaces the distribution.yaml read (identity comes
@@ -24,6 +24,7 @@ another runtime stops here with the fix named, before anything is written.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -197,6 +198,107 @@ def eve_env_requires(extension: Dict[str, Any]) -> List[Dict[str, Any]]:
     return sorted(_extract_env_requires({"env_requires": entries}), key=lambda e: e["name"])
 
 
+_OVERLAY_FIELD_ORDER = ("id", "kind", "mode", "target", "source", "contentHash", "gitAuthSecretRef")
+_OVERLAY_SOURCE_FIELD_ORDER = ("repository", "commit", "path")
+_OVERLAY_TOKEN = re.compile(r"[^\s\x00-\x1f\x7f]+")
+
+
+def _string_leaves(value: Any):
+    """Every string anywhere inside one overlay entry."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _string_leaves(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _string_leaves(item)
+
+
+def eve_overlays(document: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The operator-overlay half of the record (ADR 0194), or ``None``.
+
+    ``document`` is what the team compiler writes for one agent after
+    fetching, hashing and approval: ``{"overlays": [...], "overlayTreeHash":
+    "<sha256>"}``. Entries keep their application order - order IS the merge
+    semantics, so they are never sorted - and schema field order. Two rules
+    the schema cannot state are enforced here: ids are unique, and a target
+    has one writer unless every writer is an instructions overlay (an
+    optional override first, then appends). An absent or empty document
+    yields nothing, so a record without overlays renders byte-identical to
+    its v1alpha2 form."""
+    if document is None:
+        return None
+    if not isinstance(document, dict):
+        raise GitopsEmitterError(
+            "gitops-emitter: the overlays document must be an object "
+            "{\"overlays\": [...], \"overlayTreeHash\": \"<sha256>\"}"
+        )
+    unknown = sorted(str(key) for key in set(document) - {"overlays", "overlayTreeHash"})
+    if unknown:
+        raise GitopsEmitterError(
+            f"gitops-emitter: the overlays document has unknown keys {', '.join(unknown)} - it "
+            "carries only overlays and overlayTreeHash, and a misspelled key is never ignored"
+        )
+    entries = document.get("overlays", [])
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        raise GitopsEmitterError("gitops-emitter: overlays must be a list of overlay objects")
+    if not entries:
+        if "overlayTreeHash" in document:
+            raise GitopsEmitterError(
+                "gitops-emitter: the overlays document has overlayTreeHash but no overlays - "
+                "the tree hash exists only to verify an applied overlay"
+            )
+        return None
+    tree_hash = document.get("overlayTreeHash")
+    if not isinstance(tree_hash, str) or not tree_hash:
+        raise GitopsEmitterError(
+            "gitops-emitter: overlays need overlayTreeHash - the merged agent/ tree hash the "
+            "build container verifies before it builds"
+        )
+    # Every overlay value is one token: the build container reads overlays as
+    # whitespace-separated lines, and Python's `$` would otherwise let a
+    # trailing newline through patterns an ECMA-262 validator refuses.
+    if not _OVERLAY_TOKEN.fullmatch(tree_hash):
+        raise GitopsEmitterError(
+            "gitops-emitter: overlayTreeHash contains whitespace or control characters"
+        )
+    seen: set = set()
+    writers: Dict[Any, List[Dict[str, Any]]] = {}
+    ordered: List[Dict[str, Any]] = []
+    for index, entry in enumerate(entries):
+        if not all(_OVERLAY_TOKEN.fullmatch(value) for value in _string_leaves(entry)):
+            raise GitopsEmitterError(
+                f"gitops-emitter: overlay #{index + 1} has a value with whitespace or control "
+                "characters - every overlay field is a single token"
+            )
+        overlay_id = entry.get("id")
+        if overlay_id in seen:
+            raise GitopsEmitterError(
+                f"gitops-emitter: overlay id {overlay_id!r} appears twice - overlay ids are "
+                "unique within an agent"
+            )
+        seen.add(overlay_id)
+        writers.setdefault(entry.get("target"), []).append(entry)
+        item = _ordered(entry, _OVERLAY_FIELD_ORDER)
+        if isinstance(item.get("source"), dict):
+            item["source"] = _ordered(item["source"], _OVERLAY_SOURCE_FIELD_ORDER)
+        ordered.append(item)
+    for target, group in writers.items():
+        if len(group) < 2:
+            continue
+        stacked = all(entry.get("kind") == "instructions" for entry in group) and all(
+            entry.get("mode") == "append" for entry in group[1:]
+        )
+        if not stacked:
+            ids = ", ".join(str(entry.get("id")) for entry in group)
+            raise GitopsEmitterError(
+                f"gitops-emitter: target {target!r} is written by overlays {ids} - one overlay "
+                "per target; only instructions stack (an optional override first, then appends)"
+            )
+    return {"overlays": ordered, "overlayTreeHash": tree_hash}
+
+
 def build_eve_record(
     name: str,
     *,
@@ -206,14 +308,17 @@ def build_eve_record(
     subdir: Optional[str],
     extension: Dict[str, Any],
     app_values: Optional[Dict[str, Any]] = None,
+    overlays: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Assemble the EveAgent record. Field set = the v1alpha2 schema;
+    """Assemble the EveAgent record. Field set = the v1alpha3 schema;
     ``env`` (the compiled overlay) is the topology compiler's, never
     emitted here. ``apps`` goes through the same ``resolve_apps`` the
     Hermes pipeline uses (author values + ``app_values`` overrides
     deep-merged, every ``valuesRequired`` path proven non-null) so a child
     Application renders from identical inputs on either runtime; ``backup``
-    is copied as intent (schedule + retention) for the chart's routine."""
+    is copied as intent (schedule + retention) for the chart's routine;
+    ``overlays`` (ADR 0194) is the team compiler's approved operator-overlay
+    document, carried last and only when it has entries."""
     spec: Dict[str, Any] = {
         "persona": name,
         "runtime": RUNTIME,
@@ -245,23 +350,31 @@ def build_eve_record(
     backup = extension.get("backup")
     if isinstance(backup, dict) and backup:
         spec["backup"] = _ordered(backup, _BACKUP_FIELD_ORDER)
+    resolved_overlays = eve_overlays(overlays)
+    if resolved_overlays:
+        spec["overlays"] = resolved_overlays["overlays"]
+        spec["overlayTreeHash"] = resolved_overlays["overlayTreeHash"]
     return {"spec": spec}
 
 
 _RECORD_SCHEMA_CACHE: Optional[Dict[str, Any]] = None
+# Validators whose messages name keys or counts, never the rejected value.
+_STRUCTURAL_VALIDATORS = frozenset(
+    {"required", "additionalProperties", "dependentRequired", "minItems", "maxItems", "uniqueItems"}
+)
 
 
 def _record_schema() -> Dict[str, Any]:
     global _RECORD_SCHEMA_CACHE
     if _RECORD_SCHEMA_CACHE is None:
         _RECORD_SCHEMA_CACHE = load_vendored_schema(
-            "eveagent-v1alpha2.schema.json", "eveagent", "v1alpha2", "eveagent.schema.json"
+            "eveagent-v1alpha3.schema.json", "eveagent", "v1alpha3", "eveagent.schema.json"
         )
     return _RECORD_SCHEMA_CACHE
 
 
 def validate_eve_record(record: Dict[str, Any]) -> None:
-    """Validate against the vendored eveagent/v1alpha2 schema before
+    """Validate against the vendored eveagent/v1alpha3 schema before
     anything is written (same soft-dependency contract as render.validate)."""
     if jsonschema is None:  # pragma: no cover - soft dependency
         return
@@ -269,6 +382,13 @@ def validate_eve_record(record: Dict[str, Any]) -> None:
         jsonschema.validate(instance=record, schema=_record_schema())
     except jsonschema.exceptions.ValidationError as exc:
         path = "/".join(str(part) for part in exc.absolute_path) or "<root>"
+        # Value-checking validators quote the rejected value, and an overlay
+        # repository URL can carry a credential: only structural messages are
+        # echoed, the rest name the constraint at the path.
+        if exc.validator in _STRUCTURAL_VALIDATORS:
+            detail = exc.message
+        else:
+            detail = f"the value does not satisfy its {exc.validator} constraint"
         raise GitopsEmitterError(
-            f"gitops-emitter: EveAgent record failed schema validation at {path}: {exc.message}"
+            f"gitops-emitter: EveAgent record failed schema validation at {path}: {detail}"
         ) from exc

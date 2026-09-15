@@ -32,11 +32,14 @@ import {
   compileWorkspaceBindings,
   loadWorkspaceDeclarations,
   mergeWorkspacesIntoBundles,
+  parseRefreshInterval,
   readWorkspaceProfileRecords,
   workspaceFiles,
   writeWorkspaceTree,
+  MIN_REFRESH_SECONDS,
   type NormalizedWorkspaceBinding,
   type WorkspaceProfileRecord,
+  type WorkspaceTracking,
 } from "./bindings.ts";
 
 // ---------------------------------------------------------------------------
@@ -76,9 +79,11 @@ export function desiredWorkspaces(
   // GitOps repository on GitHub, so `--gitops <clone>` points here at a
   // checkout of it - the same convention `hg nexus install` uses.
   const records = new Map<string, WorkspaceProfileRecord>();
-  for (const ctx of profileCtxs(state)) records.set(ctx.name, {});
+  // The runtime is seeded from the onboarded profile, so a Hermes record
+  // that never writes spec.runtime still refuses a tracked binding.
+  for (const ctx of profileCtxs(state)) records.set(ctx.name, { runtime: ctx.runtime });
   for (const [name, record] of readWorkspaceProfileRecords(gitopsDir ?? path.join(STAGING, "gitops"))) {
-    records.set(name, record);
+    records.set(name, { ...record, runtime: record.runtime ?? records.get(name)?.runtime });
   }
   try {
     const declarations = loadWorkspaceDeclarations(declaration);
@@ -220,6 +225,47 @@ export interface MountProbe {
   /** The sync routine's stamp: sha = converged, unavailable = clone/fetch
    * failed (served stale or empty), missing = no marker written. */
   marker: "sha" | "unavailable" | "missing";
+  /** A tracked workspace's freshness stamp (`.stamps/<name>.json`, ADR
+   * 0197). Absent = no stamp file; null = a stamp that does not parse. */
+  stamp?: WorkspaceStamp | null;
+  /** The pod's own clock (epoch seconds) when the probe ran - staleness
+   * is judged against it, never against this machine's clock. */
+  observedAt?: number;
+}
+
+/** What the workspace-sync container records after every refresh attempt. */
+export interface WorkspaceStamp {
+  branch: string | null;
+  sha: string | null;
+  refreshIntervalSeconds: number | null;
+  /** When the commit now served was materialized. */
+  fetchedAt: string | null;
+  /** The last refresh that confirmed the live tree is the branch tip. */
+  lastSuccessAt: string | null;
+  lastAttemptAt: string | null;
+  consecutiveFailures: number;
+  error: string | null;
+}
+
+export function parseWorkspaceStamp(raw: string): WorkspaceStamp | null {
+  try {
+    const doc = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+    const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+    const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+    return {
+      branch: str(doc["branch"]),
+      sha: str(doc["sha"]),
+      refreshIntervalSeconds: num(doc["refreshIntervalSeconds"]),
+      fetchedAt: str(doc["fetchedAt"]),
+      lastSuccessAt: str(doc["lastSuccessAt"]),
+      lastAttemptAt: str(doc["lastAttemptAt"]),
+      consecutiveFailures: num(doc["consecutiveFailures"]) ?? 0,
+      error: str(doc["error"]),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function probeScript(repos: { name: string; mountPath: string }[], runtime: "hermes" | "eve" = "hermes"): string {
@@ -239,6 +285,10 @@ function probeScript(repos: { name: string; mountPath: string }[], runtime: "her
         `ls ${m} >/dev/null 2>&1 && echo "${name} read=ok"`,
         `if touch ${m}/.hg-workspace-probe 2>/dev/null; then rm -f ${m}/.hg-workspace-probe; echo "${name} write=ok"; else echo "${name} write=denied"; fi`,
         `if [ -e "$R/.stamps/${name}.unavailable" ]; then echo "${name} marker=unavailable"; elif [ -e "$R/.stamps/${name}" ]; then echo "${name} marker=sha"; else echo "${name} marker=missing"; fi`,
+        // A tracked workspace's freshness stamp (one JSON line) and the
+        // pod's clock, so staleness is judged in the pod's time.
+        `if [ -f "$R/.stamps/${name}.json" ]; then printf '%s stamp=' "${name}"; tr -d '\\n' < "$R/.stamps/${name}.json"; echo; fi`,
+        `echo "${name} now=$(date +%s)"`,
       );
     }
     lines.push("exit 0");
@@ -285,6 +335,7 @@ export function parseProbeOutput(
   return repos.map(({ name }) => {
     const entry = byRepo.get(name) ?? {};
     const present = entry["mount"] === "present";
+    const observedAt = Number(entry["now"]);
     return {
       repository: name,
       present,
@@ -293,6 +344,8 @@ export function parseProbeOutput(
       writable: present ? entry["write"] === "ok" : null,
       marker:
         entry["marker"] === "sha" ? "sha" : entry["marker"] === "unavailable" ? "unavailable" : "missing",
+      ...("stamp" in entry ? { stamp: parseWorkspaceStamp(entry["stamp"]!) } : {}),
+      ...(entry["now"] !== undefined && Number.isFinite(observedAt) ? { observedAt } : {}),
     };
   });
 }
@@ -368,6 +421,50 @@ export interface VerifyRow {
   credentialOk: boolean | null;
   ok: boolean;
   problems: string[];
+  /** A tracked binding's observed freshness (ADR 0197); absent otherwise. */
+  tracking?: TrackedFreshness;
+}
+
+/** What verify reports for a tracked workspace: the declared channel, the
+ * stamp's evidence, and the verdict at twice the refresh interval. */
+export interface TrackedFreshness {
+  branch: string;
+  refreshInterval: string;
+  stampedBranch: string | null;
+  stampedSha: string | null;
+  fetchedAt: string | null;
+  lastSuccessAt: string | null;
+  consecutiveFailures: number;
+  error: string | null;
+  /** No successful refresh within 2 x refreshInterval (or none at all). */
+  stale: boolean;
+}
+
+export function trackedFreshness(
+  tracking: WorkspaceTracking,
+  probe: MountProbe | null,
+  nowSeconds: number = Date.now() / 1000,
+): TrackedFreshness {
+  const stamp = probe?.stamp ?? null;
+  let interval = MIN_REFRESH_SECONDS;
+  try {
+    interval = parseRefreshInterval(tracking.refreshInterval);
+  } catch {
+    // A compiled binding already passed this; the floor is the safe read.
+  }
+  const now = probe?.observedAt ?? nowSeconds;
+  const last = stamp?.lastSuccessAt ? Date.parse(stamp.lastSuccessAt) / 1000 : Number.NaN;
+  return {
+    branch: tracking.branch,
+    refreshInterval: tracking.refreshInterval,
+    stampedBranch: stamp?.branch ?? null,
+    stampedSha: stamp?.sha ?? null,
+    fetchedAt: stamp?.fetchedAt ?? null,
+    lastSuccessAt: stamp?.lastSuccessAt ?? null,
+    consecutiveFailures: stamp?.consecutiveFailures ?? 0,
+    error: stamp?.error ?? null,
+    stale: !Number.isFinite(last) || now - last > 2 * interval,
+  };
 }
 
 export interface VerifyResult {
@@ -377,7 +474,7 @@ export interface VerifyResult {
   ok: boolean;
 }
 
-function judgeBound(
+export function judgeBound(
   binding: NormalizedWorkspaceBinding,
   probe: MountProbe,
   credentialOk: boolean | null,
@@ -386,7 +483,9 @@ function judgeBound(
   if (!probe.present) problems.push("mount absent");
   else {
     if (!probe.readable) problems.push("mount not readable");
-    if (probe.revision !== binding.resolvedRevision) {
+    // A tracked binding has no compiled commit to drift from: the stamp is
+    // its evidence, judged below.
+    if (!binding.tracking && probe.revision !== binding.resolvedRevision) {
       problems.push(
         `revision drift: observed ${probe.revision?.slice(0, 12) ?? "none"} != resolved ${binding.resolvedRevision.slice(0, 12)}`,
       );
@@ -400,6 +499,35 @@ function judgeBound(
   }
   if (probe.marker === "unavailable") {
     problems.push("sync marker says unavailable - the checkout is stale or empty");
+  }
+  if (binding.tracking) {
+    // A failed or stale refresh FAILS verify (ADR 0197): serving the last
+    // good tree is allowed, doing it quietly is not.
+    const freshness = trackedFreshness(binding.tracking, probe);
+    if (probe.present) {
+      if (probe.stamp === undefined) problems.push("no freshness stamp - this workspace has never synced");
+      else if (probe.stamp === null) problems.push("freshness stamp does not parse");
+      else {
+        if (freshness.stampedBranch !== binding.tracking.branch) {
+          problems.push(`stamp tracks branch ${freshness.stampedBranch ?? "none"}, the binding tracks ${binding.tracking.branch}`);
+        }
+        if (probe.revision !== freshness.stampedSha) {
+          problems.push(
+            `live tree at ${probe.revision?.slice(0, 12) ?? "none"} but the stamp records ${freshness.stampedSha?.slice(0, 12) ?? "none"}`,
+          );
+        }
+        if (freshness.consecutiveFailures > 0) {
+          problems.push(
+            `last refresh failed (${freshness.consecutiveFailures} in a row): ${freshness.error ?? "no error recorded"}`,
+          );
+        }
+      }
+    }
+    if (freshness.stale) {
+      problems.push(
+        `stale: last successful refresh ${freshness.lastSuccessAt ?? "never"} is older than 2 x ${binding.tracking.refreshInterval}`,
+      );
+    }
   }
   if (credentialOk === false) problems.push("declared credential Secret is missing");
   return problems;
@@ -483,6 +611,7 @@ export function workspaceVerify(
         credentialOk,
         ok: problems.length === 0,
         problems,
+        ...(mine?.tracking ? { tracking: trackedFreshness(mine.tracking, probe) } : {}),
       });
     }
   }
@@ -605,8 +734,15 @@ export function scenarioFromRows(
   const unbound = mine.filter((r) => r.expected === "absent");
   const problems: string[] = [];
   for (const row of mine) for (const p of row.problems) problems.push(`${row.profile}: ${p}`);
+  // A tracked row matches when the live tree is the commit its stamp
+  // records; every other row matches its compiled revision.
   const revisionMatched =
-    bound.length > 0 && bound.every((r) => r.probe?.revision === r.resolvedRevision);
+    bound.length > 0 &&
+    bound.every((r) =>
+      r.tracking
+        ? r.tracking.stampedSha !== null && r.probe?.revision === r.tracking.stampedSha
+        : r.probe?.revision === r.resolvedRevision,
+    );
   const readOnlyVerified =
     group.access !== "read-only" ||
     (bound.length > 0 && bound.every((r) => r.probe?.present === true && r.probe.writable === false));
@@ -895,6 +1031,8 @@ export interface WorkspaceListRow {
   access: "read-only" | "read-write";
   purpose: string;
   authSecretRef?: string;
+  /** A tracked repository's channel (resolvedRevision is "" for it). */
+  tracking?: WorkspaceTracking;
   classification: string;
   profiles: { profile: string; shape: "bundled" | "independent"; terminalCwd: string | null }[];
 }
@@ -911,6 +1049,7 @@ export function workspaceList(state: HgState, desired: DesiredWorkspaces): Works
     const sources = [...new Set(group.bindings.map((b) => b.source))];
     const revisions = [...new Set(group.bindings.map((b) => b.resolvedRevision))];
     const secret = group.bindings.find((b) => b.authSecretRef)?.authSecretRef;
+    const tracking = group.bindings.find((b) => b.tracking)?.tracking;
     return {
       repository: group.repository,
       source: sources.join(" | "),
@@ -921,6 +1060,7 @@ export function workspaceList(state: HgState, desired: DesiredWorkspaces): Works
       access: group.access,
       purpose: group.purpose,
       ...(secret ? { authSecretRef: secret } : {}),
+      ...(tracking ? { tracking } : {}),
       classification: scenarioNameFor(desired, group.repository),
       profiles: [...group.targetOf.keys()].map((profile) => ({
         profile,

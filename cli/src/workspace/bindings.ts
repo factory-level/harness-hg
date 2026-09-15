@@ -26,11 +26,50 @@ import { CONTRACTS_ROOT } from "../lib.ts";
 // loudly rather than guessed at (the environment-bundles discipline).
 const SCHEMA_FILES: Record<string, string> = {
   "hermes.gitops/v1alpha1": path.join(CONTRACTS_ROOT, "environment-workspaces/v1alpha1/workspaces.schema.json"),
+  // v1alpha2 adds revision mode `tracked` (ADR 0197).
+  "hermes.gitops/v1alpha2": path.join(CONTRACTS_ROOT, "environment-workspaces/v1alpha2/workspaces.schema.json"),
 };
 
 export type WorkspaceRevision =
   | { mode: "pinned"; sha: string }
-  | { mode: "application-revision"; application: string };
+  | { mode: "application-revision"; application: string }
+  | { mode: "tracked"; branch: string; refreshInterval: string };
+
+/** A tracked binding's release channel (ADR 0197): the pod clones the
+ * branch tip at boot and fast-forwards it in place every interval. */
+export interface WorkspaceTracking {
+  branch: string;
+  refreshInterval: string;
+}
+
+/** The refresh floor. The schema's pattern already refuses less; the
+ * compiler re-checks so a declaration built in code cannot slip under it. */
+export const MIN_REFRESH_SECONDS = 300;
+
+/** `30m` / `1h` -> seconds. Throws on anything else or on a value below
+ * the floor - the chart and the sync container read the same units. */
+export function parseRefreshInterval(value: string): number {
+  const match = /^([1-9][0-9]*)(m|h)$/.exec(value);
+  if (!match) throw new Error(`refreshInterval ${JSON.stringify(value)} must be whole minutes or hours, e.g. 30m or 1h`);
+  const seconds = Number(match[1]) * (match[2] === "h" ? 3600 : 60);
+  if (seconds < MIN_REFRESH_SECONDS) {
+    throw new Error(`refreshInterval ${JSON.stringify(value)} is below the 5m minimum`);
+  }
+  return seconds;
+}
+
+/** Why a branch name is unsafe to track, or null. The schema's rules,
+ * restated where the value becomes a shell word and a git refspec. */
+export function trackedBranchProblem(branch: string): string | null {
+  if (!/^[A-Za-z0-9._/-]{1,200}$/.test(branch)) return "may only contain letters, digits, '.', '_', '-' and '/'";
+  if (branch.startsWith("refs/")) return "is named without the refs/heads/ prefix";
+  if (branch === "HEAD") return "may not be HEAD";
+  if (/^[-./]/.test(branch) || /[/.]$/.test(branch)) return "may not start with '-', '.' or '/', or end with '/' or '.'";
+  if (branch.includes("..") || branch.includes("//") || /\/[.-]/.test(branch)) return "may not contain '..', '//' or a component starting with '.' or '-'";
+  if (/\.lock(\/|$)/.test(branch)) return "may not contain a '.lock' component";
+  if (/^[0-9a-f]{40}$/.test(branch)) return "is a commit, not a branch - pin it with mode: pinned";
+  return null;
+}
 
 export interface WorkspaceRepositoryDeclaration {
   name: string;
@@ -75,6 +114,9 @@ export interface WorkspaceProfileRecord {
   /** The record's namespace-local distribution-clone credential - what a
    * `source: self` repository mounts with (same repository, same key). */
   gitAuthSecretRef?: string;
+  /** The record's `spec.runtime`. Only an Eve agent can refresh a tracked
+   * workspace in its pod; undefined = unknown, which refuses nothing. */
+  runtime?: string;
 }
 
 /** One compiled binding - the generated model of #361. The runtime
@@ -83,12 +125,17 @@ export interface WorkspaceProfileRecord {
 export interface NormalizedWorkspaceBinding {
   repository: string;
   source: string;
+  /** A full commit for pinned, application-revision and self bindings.
+   * Always "" for a tracked binding: its commit is whatever the pod last
+   * refreshed to, never a compiled value. */
   resolvedRevision: string;
   mountPath: string;
   access: "read-only" | "read-write";
   purpose: string;
   targetProfiles: string[];
   authSecretRef?: string;
+  /** Present only for a tracked binding (ADR 0197). */
+  tracking?: WorkspaceTracking;
 }
 
 export interface WorkspaceCompileResult {
@@ -155,12 +202,13 @@ export function readWorkspaceProfileRecords(gitopsDir: string): Map<string, Work
     if (!fs.existsSync(file)) continue;
     try {
       const record = parseYaml(fs.readFileSync(file, "utf8")) as {
-        spec?: { source?: string; sha?: string; gitAuthSecretRef?: string };
+        spec?: { source?: string; sha?: string; gitAuthSecretRef?: string; runtime?: string };
       } | null;
       records.set(name, {
         source: record?.spec?.source,
         sha: record?.spec?.sha,
         gitAuthSecretRef: record?.spec?.gitAuthSecretRef,
+        runtime: record?.spec?.runtime,
       });
     } catch {
       // A corrupt record is the emitter's problem; the compiler will
@@ -280,6 +328,52 @@ export function compileWorkspaceBindings(
       continue;
     }
 
+    // A tracked binding (ADR 0197) compiles to its release channel, never
+    // a commit: the pod clones the branch tip and refreshes it in place.
+    // Only a standalone Eve agent runs the refresh - a record naming
+    // another runtime refuses here rather than rendering a chart that
+    // expects a sha (bundles refuse in mergeWorkspacesIntoBundles).
+    if (repository.source.revision.mode === "tracked") {
+      const { branch, refreshInterval } = repository.source.revision;
+      let valid = true;
+      const branchProblem = trackedBranchProblem(branch);
+      if (branchProblem) {
+        valid = false;
+        error("*", `workspace repository ${repository.name}: tracked branch ${JSON.stringify(branch)} ${branchProblem}`);
+      }
+      try {
+        parseRefreshInterval(refreshInterval);
+      } catch (thrown) {
+        valid = false;
+        error("*", `workspace repository ${repository.name}: ${thrown instanceof Error ? thrown.message : String(thrown)}`);
+      }
+      for (const profile of binding.profiles) {
+        const runtime = profileRecords.get(profile)?.runtime;
+        if (runtime !== undefined && runtime !== "eve") {
+          valid = false;
+          error(
+            profile,
+            `workspace repository ${repository.name} tracks branch ${branch}, but profile ${profile} runs ` +
+              `${JSON.stringify(runtime)} - only Eve agents refresh a workspace in the pod`,
+            "pin the repository (mode: pinned) for this profile",
+          );
+        }
+      }
+      if (!valid) continue;
+      bindings.push({
+        repository: repository.name,
+        source: repository.source.url,
+        resolvedRevision: "",
+        mountPath: repository.mount.path,
+        access: repository.mount.access,
+        purpose: binding.purpose,
+        targetProfiles: [...binding.profiles],
+        ...(repository.source.authSecretRef ? { authSecretRef: repository.source.authSecretRef } : {}),
+        tracking: { branch, refreshInterval },
+      });
+      continue;
+    }
+
     // Resolve the revision to a full immutable SHA. Mutable refs are
     // schema-rejected for pinned mode; application-revision resolves
     // against the named application's DEPLOYED record, and refuses when
@@ -386,6 +480,16 @@ export function mergeWorkspacesIntoBundles(
 
     const additions = new Map<string, BundleRepositoryDeclaration>();
     for (const binding of relevant) {
+      // A bundle mounts each checkout into its members through a subPath,
+      // which pins the directory when the member starts: an in-pod refresh
+      // could never reach them (ADR 0197 cost). Refuse, never half-work.
+      if (binding.tracking) {
+        throw new Error(
+          `bundle ${bundle.name}: repository ${binding.repository} tracks branch ${binding.tracking.branch}, ` +
+            "but bundled agents mount workspaces through a subPath that an in-pod refresh cannot reach - " +
+            "deploy the bound agents standalone, or pin the repository",
+        );
+      }
       const record: BundleRepositoryDeclaration = {
         name: binding.repository,
         source: binding.source,
@@ -482,10 +586,15 @@ export function workspaceFiles(
     if (!assigned.some(binding => binding.mountPath === terminalCwd)) {
       throw new Error(`profile ${profile}: terminalCwd must name a bound repository mount`);
     }
+    // A tracked repository carries its channel instead of a sha: the
+    // eve-agent chart renders the sync container from `tracking`, and the
+    // values never change on a refresh, so neither does the pod.
     const repositories = assigned.map((binding) => ({
       name: binding.repository,
       source: binding.source,
-      sha: binding.resolvedRevision,
+      ...(binding.tracking
+        ? { tracking: { branch: binding.tracking.branch, refreshInterval: binding.tracking.refreshInterval } }
+        : { sha: binding.resolvedRevision }),
       mountPath: binding.mountPath,
       access: binding.access,
       ...(binding.authSecretRef ? { gitAuthSecretRef: binding.authSecretRef } : {}),

@@ -78,3 +78,14 @@ export function applyFilters(gs: BundleGroup[], health: HealthOverlay | null, f:
     }))
     .filter((g) => g.agents.length > 0);
 }
+
+/** Join by the declared deployment identity, never a display-id prefix. */
+export function agentInstances(data: NexusData, health: HealthOverlay | null, id: string) {
+  const component = data.plan?.components.find((c) => c.id === id);
+  return (component?.instances ?? []).filter((i) => typeof i.id === "string" && i.id.length > 0).map((i) => {
+    const raw = health?.instances?.[i.id!];
+    const row = raw && typeof raw === "object" ? raw as { level?: string; reasons?: { message?: string }[] } : undefined;
+    const level = ["healthy", "degraded", "unhealthy", "unknown"].includes(row?.level ?? "") ? row!.level! : "unknown";
+    return { ...i, id: i.id!, level, reasons: (row?.reasons ?? []).map((r) => r.message).filter((m): m is string => typeof m === "string") };
+  });
+}

@@ -144,6 +144,15 @@ describe("operatorSourceRepos", () => {
     expect(operatorSourceRepos(root)).toEqual(["https://h.example/x", "oci://r.example/c", "r.example/c"]);
   });
 
+  test("preserves the explicitly declared local-app chart source during a platform source change", async () => {
+    const { operatorSourceRepos } = await import("../src/gitops/index.ts");
+    const root = mkdtempSync(join(tmpdir(), "gitops-repos-"));
+    write(root, "bootstrap/values/cluster-values.yaml", yaml({ platformRepo: { url: "https://git.example/public.git", revision: "main" } }));
+    expect(operatorSourceRepos(root)).toEqual(["https://git.example/public.git"]);
+    write(root, "bootstrap/values/cluster-values.yaml", yaml({ platformRepo: { url: "https://git.example/x # injected" } }));
+    expect(() => operatorSourceRepos(root)).toThrow(/platformRepo.url/);
+  });
+
   test("refuses an entry that is not URL-shaped (YAML injection)", async () => {
     const { operatorSourceRepos } = await import("../src/gitops/index.ts");
     const root = mkdtempSync(join(tmpdir(), "gitops-repos-"));

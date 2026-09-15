@@ -99,6 +99,8 @@ export function runControlPlane(
     namespaces: ns,
     chartVersion: cfg.versions.argocdChart,
     repoCreds: cfg.argocdRepoCreds,
+    applicationGitAuth: cfg.applicationGitAuth,
+    agents: cfg.agents,
     gitopsRepoUrl: cfg.gitopsRepoUrl,
     hermesGitopsRepoUrl: cfg.hermesGitopsRepoUrl,
     targetClusters: cfg.targetClusters,

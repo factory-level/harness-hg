@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hermes-gitops.factorylevel.dev/schemas/team-status/v1alpha1/status.schema.json",
+  "title": "Team installation status v1alpha1 (`hg team status --json`)",
+  "description": "What one installation's agents are actually running, observed from the cluster and classified against what the installation lock intends (ADR 0195). This is NOT the operator-local ledger: the ledger records what the last apply on one machine decided, while this document records what the cluster shows now, and the two are reported side by side. Every field carries its own verdict, and `unknown` always carries the reason it could not be proven - a missing build receipt, an absent smoke hook or an unread Argo CD Application is never a pass and never a failure. Reading it takes no lock and changes nothing, so it is safe while a resume is in flight.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "installation",
+    "observedAt",
+    "verdict",
+    "agents"
+  ],
+  "$defs": {
+    "verdict": {
+      "description": "`unknown` means the evidence could not be read, never that the check was skipped as unimportant.",
+      "enum": [
+        "pass",
+        "fail",
+        "unknown"
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict"
+      ],
+      "allOf": [
+        {
+          "$comment": "A verdict that is not a pass without a reason is exactly the unactionable output ADR 0195 exists to prevent.",
+          "if": {
+            "properties": {
+              "verdict": {
+                "enum": [
+                  "unknown",
+                  "fail",
+                  "not-applicable"
+                ]
+              }
+            },
+            "required": [
+              "verdict"
+            ]
+          },
+          "then": {
+            "required": [
+              "verdict",
+              "reason"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "desired": {
+          "type": "string",
+          "description": "What the installation intends, from the lock where it records one."
+        },
+        "running": {
+          "type": "string",
+          "description": "What the cluster shows."
+        },
+        "verdict": {
+          "$ref": "#/$defs/fieldVerdict"
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Required whenever the verdict is not `pass`: what differs, or what could not be read."
+        }
+      }
+    },
+    "fieldVerdict": {
+      "description": "`unknown` means the evidence could not be read. `not-applicable` means it was looked for and does not exist for this installation (a team watcher nobody runs); it never counts toward the verdict, and never stands in for a lookup that failed.",
+      "enum": [
+        "pass",
+        "fail",
+        "unknown",
+        "not-applicable"
+      ]
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "const": "team-status.hermes-gitops.factorylevel.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "TeamStatus"
+    },
+    "installation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observedAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "verdict": {
+      "$ref": "#/$defs/verdict"
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent",
+          "source",
+          "namespace",
+          "fields",
+          "verdict"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "namespace": {
+            "type": "string",
+            "minLength": 1
+          },
+          "verdict": {
+            "$ref": "#/$defs/verdict"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "argo",
+              "ready",
+              "source",
+              "overlay",
+              "eve",
+              "image",
+              "smoke",
+              "watcher"
+            ],
+            "properties": {
+              "argo": {
+                "$ref": "#/$defs/field",
+                "description": "The Argo CD Application has synchronized this agent's desired workload."
+              },
+              "ready": {
+                "$ref": "#/$defs/field",
+                "description": "A pod at the workload's update revision is Ready."
+              },
+              "source": {
+                "$ref": "#/$defs/field",
+                "description": "The commit the build receipt records against the locked source commit."
+              },
+              "overlay": {
+                "$ref": "#/$defs/field",
+                "description": "The operator overlays built against those the workload declares."
+              },
+              "eve": {
+                "$ref": "#/$defs/field",
+                "description": "The Eve release built against the locked one."
+              },
+              "image": {
+                "$ref": "#/$defs/field",
+                "description": "The image the pod runs, compared by the digest Kubernetes reports it is running, against the locked one."
+              },
+              "smoke": {
+                "$ref": "#/$defs/field",
+                "description": "The PostSync check for the synced revision: the hook Job while it exists, otherwise the hook result Argo CD recorded for that sync. `unknown` when neither is for the revision now synced."
+              },
+              "watcher": {
+                "$ref": "#/$defs/field",
+                "description": "The phase the team watcher last published for this installation. `not-applicable` when the lookup succeeded and no watcher publishes for it; `unknown` when the lookup itself failed."
+              }
+            }
+          }
+        }
+      }
+    },
+    "ledger": {
+      "type": "object",
+      "description": "The operator-local stage ledger, reported beside the live observation - never in place of it."
+    }
+  }
+}

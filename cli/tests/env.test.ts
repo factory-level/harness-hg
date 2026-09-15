@@ -2,7 +2,7 @@
 // rules hold (#358 stays unreachable), ciphertext survives
 // regeneration byte-for-byte, and drift is a finding.
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
@@ -300,4 +300,31 @@ test("regenerating an unset secret keeps it a missing prerequisite", () => {
   const second = generateStack(spec, "infra", opts);
   expect(second.missingSecrets).toEqual(first.missingSecrets);
   expect(second.text).toBe(first.text);
+});
+
+// ADR 0196: a stack file carrying `secure: <UNSET - see findings>` is one Pulumi refuses whole,
+// without naming the path. `hg env apply` therefore never writes one: it names every unset
+// secret and its fix, writes nothing, and exits non-zero.
+test("env apply refuses before writing anything while a secret is unset", async () => {
+  const { cmdEnvironment } = await import("../src/env/command.ts");
+  const { PLATFORM_ROOT } = await import("../src/lib.ts");
+  const files = ["state", "infra"].map((dir) => join(PLATFORM_ROOT, dir, "Pulumi.scratch.yaml"));
+  // Never clobber a real stack file: the command writes to the platform checkout.
+  for (const file of files) expect(existsSync(file)).toBe(false);
+  expect(() => cmdEnvironment(true, ["apply", "scratch"], { spec: writeSpec() })).toThrow(/nothing was written/);
+  for (const file of files) expect(existsSync(file)).toBe(false);
+});
+
+// ADR 0196 review: env new cannot check infra secrets before the state stack exists - the infra
+// stack lives in the backend the state stack creates - so its refusal says what already ran.
+test("env new refuses an infra-only unset secret without claiming nothing was written", async () => {
+  const { refuseUnsetSecrets } = await import("../src/env/new.ts");
+  const finding = { path: "gitopsGitToken", stack: "infra" as const, fix: "(cd /x/infra && pulumi -s scratch config set --secret --path 'gitopsGitToken' <value>)" };
+  const backend = { PULUMI_BACKEND_URL: "gs://example-proj-scratch-state" };
+  expect(() => refuseUnsetSecrets([], backend, "state")).not.toThrow();
+  let message = "";
+  try { refuseUnsetSecrets([finding], backend, "infra"); } catch (error) { message = (error as Error).message; }
+  expect(message).toContain("the infra stack config was not written (the state stack and the infra stack's creation already ran");
+  expect(message).not.toContain("nothing was written");
+  expect(message).toContain("&& PULUMI_BACKEND_URL=gs://example-proj-scratch-state pulumi -s scratch config set --secret --path 'gitopsGitToken'");
 });

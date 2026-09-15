@@ -128,7 +128,7 @@ exists to prevent. $owned is a hand-maintained mirror of statefulset.yaml's
 env block; keep the two in step.
 */}}
 {{- define "eve.envGuard" -}}
-{{- $owned := list "PORT" "HOST" "HOME" "NODE_ENV" "ROUTE_AUTH_BASIC_USERNAME" "ROUTE_AUTH_BASIC_PASSWORD" "ROUTE_AUTH_BASIC_PASSWORD_FILE" "EVE_DIST_SOURCE" "EVE_DIST_SHA" "EVE_DIST_SUBDIR" "EVE_PROJECT_DIR" "EVE_WORKSPACES_ROOT" "EVE_PUBLIC_ROUTE_PREFIX" -}}
+{{- $owned := list "PORT" "HOST" "HOME" "NODE_ENV" "ROUTE_AUTH_BASIC_USERNAME" "ROUTE_AUTH_BASIC_PASSWORD" "ROUTE_AUTH_BASIC_PASSWORD_FILE" "EVE_DIST_SOURCE" "EVE_DIST_SHA" "EVE_DIST_SUBDIR" "EVE_PROJECT_DIR" "EVE_WORKSPACES_ROOT" "EVE_PUBLIC_ROUTE_PREFIX" "EXPECTED_EVE_VERSION" "HG_RUNTIME_DIGEST" "HG_BUILD_RECEIPT" "HG_EXPECTED_SOURCE_SHA" "HG_EXPECTED_OVERLAY_DIGEST" "HG_EXPECTED_BUILD_KEY" "HG_EXPECTED_RUNTIME_DIGEST" "HG_EXPECTED_EVE_VERSION" -}}
 {{- with .Values.spec.workspace -}}{{- range .repositories -}}{{- $owned = append $owned (include "eve.workspaceEnvName" .name) -}}{{- end -}}{{- end -}}
 {{- range $k, $_ := (.Values.spec.env | default dict) -}}
 {{- if has $k $owned -}}
@@ -294,11 +294,48 @@ binding fails the render, a clone that fails at runtime degrades.
 {{- fail (printf "spec.workspace.repositories %q and %q both map to %s" .name (get $envs $env) $env) -}}
 {{- end -}}
 {{- $_ := set $envs $env .name -}}
-{{- if not (regexMatch "^[0-9a-f]{40}$" (.sha | toString)) -}}
+{{- if .tracking -}}
+{{- /* A tracked binding (ADR 0197): a branch and an interval, never a sha.
+     The branch becomes a shell word and a git refspec, so the contract's
+     rules are re-checked here, at the trust boundary. */ -}}
+{{- if .sha -}}
+{{- fail (printf "spec.workspace.repositories[%s] tracks a branch and must not also carry a sha" .name) -}}
+{{- end -}}
+{{- $branch := .tracking.branch | default "" | toString -}}
+{{- if or (not (regexMatch "^[A-Za-z0-9._/-]{1,200}$" $branch)) (hasPrefix "refs/" $branch) (eq $branch "HEAD") (regexMatch "^[-./]" $branch) (regexMatch "[/.]$" $branch) (contains ".." $branch) (contains "//" $branch) (regexMatch "/[.-]" $branch) (regexMatch "\\.lock(/|$)" $branch) (regexMatch "^[0-9a-f]{40}$" $branch) -}}
+{{- fail (printf "spec.workspace.repositories[%s].tracking.branch %q is not a trackable branch name (letters, digits, . _ - /; no refs/ prefix, '..', '//', leading '-', '.' or '/', trailing '/' or '.', '.lock' component, HEAD or 40-hex commit)" .name $branch) -}}
+{{- end -}}
+{{- $interval := .tracking.refreshInterval | default "" | toString -}}
+{{- if not (regexMatch "^(([5-9]|[1-9][0-9]+)m|[1-9][0-9]*h)$" $interval) -}}
+{{- fail (printf "spec.workspace.repositories[%s].tracking.refreshInterval %q must be whole minutes (at least 5m) or hours, e.g. 30m" .name $interval) -}}
+{{- end -}}
+{{- else if not (regexMatch "^[0-9a-f]{40}$" (.sha | toString)) -}}
 {{- fail (printf "spec.workspace.repositories[%s].sha %q must be a full 40-character lowercase commit sha" .name (.sha | toString)) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- end -}}
+
+{{/*
+eve.hasTrackedWorkspaces - non-empty when any spec.workspace.repositories[]
+entry tracks a branch (ADR 0197): the workspace-sync container, its metrics
+annotations, the NetworkPolicy port and the WorkspaceStale rule render only then.
+*/}}
+{{- define "eve.hasTrackedWorkspaces" -}}
+{{- with .Values.spec.workspace -}}
+{{- range .repositories -}}
+{{- if .tracking -}}true{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+eve.refreshSeconds - a guarded refreshInterval ("30m", "1h") in seconds.
+*/}}
+{{- define "eve.refreshSeconds" -}}
+{{- $v := . | toString -}}
+{{- $n := regexReplaceAll "[mh]$" $v "" | atoi -}}
+{{- if hasSuffix "h" $v -}}{{- mul $n 3600 -}}{{- else -}}{{- mul $n 60 -}}{{- end -}}
 {{- end -}}
 
 {{/*
@@ -318,14 +355,20 @@ eve.cloneURLOf - eve.gitCloneURL's rule applied to an arbitrary string
 {{- end -}}
 
 {{/*
-eve.workspaceBindings - the EVE_WORKSPACE_BINDINGS value boot.sh reads:
-one "name source sha access" line per repository (source normalized by
-eve.cloneURLOf). Takes the repositories list.
+eve.workspaceBindings - the EVE_WORKSPACE_BINDINGS value boot.sh and
+files/workspace-sync.sh read: one line per repository (source normalized by
+eve.cloneURLOf). A pinned line is "name source sha access"; a tracked one
+(ADR 0197) is "name source branch access tracked intervalSeconds". Takes the
+repositories list.
 */}}
 {{- define "eve.workspaceBindings" -}}
 {{- $lines := list -}}
 {{- range . -}}
+{{- if .tracking -}}
+{{- $lines = append $lines (printf "%s %s %s %s tracked %s" .name (include "eve.cloneURLOf" .source) (.tracking.branch | toString) (.access | default "read-write") (include "eve.refreshSeconds" .tracking.refreshInterval)) -}}
+{{- else -}}
 {{- $lines = append $lines (printf "%s %s %s %s" .name (include "eve.cloneURLOf" .source) (.sha | toString) (.access | default "read-write")) -}}
+{{- end -}}
 {{- end -}}
 {{- join "\n" $lines -}}
 {{- end -}}
@@ -360,12 +403,17 @@ not depend on the order their inputs happened to arrive in.
 {{- $wsByName := dict -}}
 {{- with .Values.spec.workspace -}}
 {{- range .repositories -}}
+{{- /* A tracked workspace (ADR 0197) names its channel, never a commit, so
+     this manifest - and the runtime digest the startup gate compares - is
+     the same before and after an in-pod refresh. */ -}}
+{{- $revision := .sha | default "" | toString -}}
+{{- if .tracking -}}{{- $revision = printf "tracked:%s" (.tracking.branch | toString) -}}{{- end -}}
 {{- $_ := set $wsByName .name (dict
       "name" .name
       "path" (printf "/app/workspaces/%s" .name)
       "access" (.access | default "read-write")
       "repository" (.source | default "")
-      "revision" (.sha | default "" | toString)) -}}
+      "revision" $revision) -}}
 {{- end -}}
 {{- end -}}
 {{- $workspaces := list -}}
@@ -410,4 +458,105 @@ not depend on the order their inputs happened to arrive in.
       "connections" $connections
       "apps" (sortAlpha $apps | uniq) -}}
 {{- dict "contract" "agent-runtime/v1alpha1" "spec" $spec | toJson -}}
+{{- end -}}
+
+{{/*
+eve.overlayGuard - operator overlays (ADR 0194) re-checked at the trust boundary
+before they become build-container environment. The record schema says more;
+this chart ships no values.schema.json, so the invariants the line format and
+the build rely on are enforced here: overlays and overlayTreeHash come
+together, ids are unique DNS labels, kinds and modes are known, every value is
+one token (boot.sh splits on whitespace), removals carry no source, and every
+other overlay carries a 40-hex commit and a SHA-256 content hash.
+*/}}
+{{/*
+The rebuild key files/boot.sh computes: spec.sha alone, or sha256 of the sha and
+the overlay digest when operator overlays exist (ADR 0194). The chart has to
+agree with the script for the startup gate to mean anything.
+*/}}
+{{- define "eve.buildKey" -}}
+{{- $overlays := .Values.spec.overlays | default list -}}
+{{- if $overlays -}}
+{{- printf "%s\n%s" (.Values.spec.sha | toString) (include "eve.overlayDigest" .) | sha256sum -}}
+{{- else -}}
+{{- .Values.spec.sha | toString -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Desired versions as workload metadata (ADR 0195). Labels carry what is safe to
+select and query on; annotations carry the long digests. Neither ever reaches a
+selector - a selector change would orphan the StatefulSet.
+*/}}
+{{- define "eve.versionLabels" -}}
+harness-hg.factorylevel.dev/source-sha: {{ .Values.spec.sha | toString | trunc 63 | quote }}
+harness-hg.factorylevel.dev/eve-version: {{ include "eve.expectedEveVersion" . | trunc 63 | quote }}
+{{- end -}}
+
+{{- define "eve.expectedEveVersion" -}}
+{{- $deployment := .Values.spec.deployment | default dict -}}
+{{- .Values.runtimeImage.eveVersion | default $deployment.runtimeImageTag | default .Values.runtimeImage.tag | toString -}}
+{{- end -}}
+
+{{- define "eve.versionAnnotations" -}}
+harness-hg.factorylevel.dev/build-key: {{ include "eve.buildKey" . | quote }}
+harness-hg.factorylevel.dev/runtime-digest: {{ include "eve.runtimeManifest" . | sha256sum | quote }}
+{{- if .Values.spec.overlays }}
+harness-hg.factorylevel.dev/overlay-digest: {{ include "eve.overlayDigest" . | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "eve.overlayGuard" -}}
+{{- $overlays := .Values.spec.overlays | default list -}}
+{{- $tree := .Values.spec.overlayTreeHash | default "" | toString -}}
+{{- if and $overlays (not (regexMatch "^[a-f0-9]{64}$" $tree)) -}}
+{{- fail "spec.overlays needs spec.overlayTreeHash (a SHA-256): the build container verifies the merged agent/ tree against it" -}}
+{{- end -}}
+{{- if and (not $overlays) (ne $tree "") -}}
+{{- fail "spec.overlayTreeHash is set without spec.overlays" -}}
+{{- end -}}
+{{- $seen := dict -}}
+{{- range $overlays -}}
+{{- $id := .id | default "" | toString -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $id) -}}{{- fail (printf "spec.overlays[].id %q must be a DNS-1123 label" $id) -}}{{- end -}}
+{{- if hasKey $seen $id -}}{{- fail (printf "spec.overlays: %q appears twice" $id) -}}{{- end -}}
+{{- $_ := set $seen $id true -}}
+{{- if not (has (.kind | default "" | toString) (list "skill" "tool" "connection" "instructions" "file")) -}}{{- fail (printf "spec.overlays[%s].kind %q is not an overlay kind" $id (.kind | default "" | toString)) -}}{{- end -}}
+{{- $mode := .mode | default "" | toString -}}
+{{- if not (has $mode (list "append" "override" "remove")) -}}{{- fail (printf "spec.overlays[%s].mode %q is not an overlay mode" $id $mode) -}}{{- end -}}
+{{- if not (regexMatch "^agent/[^\\s]+$" (.target | default "" | toString)) -}}{{- fail (printf "spec.overlays[%s].target must be one path under agent/" $id) -}}{{- end -}}
+{{- if eq $mode "remove" -}}
+{{- if or .source .contentHash .gitAuthSecretRef -}}{{- fail (printf "spec.overlays[%s]: a removal carries no source" $id) -}}{{- end -}}
+{{- else -}}
+{{- $src := .source | default dict -}}
+{{- if not (regexMatch "^[0-9a-f]{40}$" ($src.commit | default "" | toString)) -}}{{- fail (printf "spec.overlays[%s].source.commit must be a full 40-hex commit" $id) -}}{{- end -}}
+{{- if not (regexMatch "^[a-f0-9]{64}$" (.contentHash | default "" | toString)) -}}{{- fail (printf "spec.overlays[%s].contentHash must be a SHA-256" $id) -}}{{- end -}}
+{{- if not (regexMatch "^(https://[^/@\\s?#]+/[^\\s?#@]+|git@[^:\\s]+:[^\\s]+)$" ($src.repository | default "" | toString)) -}}{{- fail (printf "spec.overlays[%s].source.repository must be a credential-free https:// or git@ URL" $id) -}}{{- end -}}
+{{- if not (regexMatch "^[^\\s]+$" ($src.path | default "" | toString)) -}}{{- fail (printf "spec.overlays[%s].source.path must be one token" $id) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+eve.overlayLines - the EVE_OVERLAYS value: one "id kind mode target repository
+commit path contentHash" line per overlay, "-" for the source fields a removal
+does not carry. files/overlay-apply.mjs overlayLines() renders the same bytes.
+Takes the overlays list.
+*/}}
+{{- define "eve.overlayLines" -}}
+{{- $lines := list -}}
+{{- range . -}}
+{{- $src := .source | default dict -}}
+{{- $lines = append $lines (printf "%s %s %s %s %s %s %s %s" (.id | toString) (.kind | toString) (.mode | toString) (.target | toString) ($src.repository | default "-" | toString) ($src.commit | default "-" | toString) ($src.path | default "-" | toString) (.contentHash | default "-" | toString)) -}}
+{{- end -}}
+{{- join "\n" $lines -}}
+{{- end -}}
+
+{{/*
+eve.overlayDigest - sha256 of the overlay lines, a newline and the merged tree
+hash: the pod annotation and the build container's rebuild-key suffix.
+files/overlay-apply.mjs overlayDigest() computes the same value.
+*/}}
+{{- define "eve.overlayDigest" -}}
+{{- printf "%s\n%s" (include "eve.overlayLines" (.Values.spec.overlays | default list)) (.Values.spec.overlayTreeHash | default "" | toString) | sha256sum -}}
 {{- end -}}

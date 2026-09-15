@@ -1,0 +1,26 @@
+# The publication opened a pull request the destination's branch protection
+# holds for review; the watcher waits and points at it.
+apiVersion: nexus.hermes.ai/v1alpha2
+kind: ReconciliationStatus
+observedAt: "2026-09-10T10:00:00Z"
+phase: pending
+installation: factory-teams
+stage: published
+pending:
+  reason: merge-pending
+  link: https://github.com/example/generated/pull/42
+  since: "2026-09-10T09:58:00Z"
+  nextAttemptAt: "2026-09-10T10:02:00Z"
+desiredSha: 9a3d0e2f1b8c7d6e5a4b3c2d1e0f9a8b7c6d5e4f
+retryable: false
+version: factory-team-watcher-1
+sources:
+  - id: social
+    ref: refs/tags/v1.4.0
+    desiredSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+agents:
+  - name: manager
+    source: social
+    desiredSha: 1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d
+    runtimeDigest: example/eve@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    eveVersion: 0.42.0

@@ -263,7 +263,8 @@ The rules the sections hold to:
 repository sharing — on one shell: `.pagehead`, why-it-matters, a three-step how-it-fits (`.steps`),
 related-capability cards (`.fcards`), and a `.btn` into the matching wiki page. `about.html` carries
 the purpose and the **Created by Factory-level** attribution, which the footer repeats on every
-page. There is deliberately **no license claim** anywhere — the repository has no license file.
+page. The repository is Apache-2.0 (`LICENSE`); the vendored faces carry their own OFL notice in
+`fonts/README.md`.
 
 ### One primary CTA per page
 

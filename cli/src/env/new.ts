@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { CliError, PLATFORM_ROOT, jsonOut, log, ok } from "../lib.ts";
 import { FrontDoorStep, runFrontDoor } from "../frontdoor.ts";
-import { generateStack } from "./generate.ts";
+import { generateStack, type SecretFinding } from "./generate.ts";
 import { projectNameOf } from "./command.ts";
 import {
   EnvironmentSpec,
@@ -47,6 +47,18 @@ function run(cmd: string[], opts: RunOpts): { code: number; out: string } {
     throw new CliError(`command failed (${proc.exitCode}): ${cmd.join(" ")}${out ? `\n${out}` : ""}`);
   }
   return { code: proc.exitCode ?? 1, out };
+}
+
+/** A stack's generated config is never written while one of its secrets is unset: a stack file
+ * holding the placeholder is one Pulumi refuses whole, without naming the path (ADR 0196). The
+ * check cannot move before every mutation: an infra secret can be encrypted only into the infra
+ * stack, which lives in the backend the state stack creates. So the refusal says exactly what
+ * already ran. `pulumi stack init` created the file each fix encrypts into, against its backend. */
+export function refuseUnsetSecrets(missing: SecretFinding[], env: Record<string, string>, stack: "state" | "infra"): void {
+  if (missing.length === 0) return;
+  const fixes = missing.map((m) => `  ${m.fix.replace(" && pulumi ", ` && ${envPrefix(env)}pulumi `)}`).join("\n");
+  const ran = stack === "infra" ? "the state stack and the infra stack's creation already ran" : "the state stack's creation already ran";
+  throw new CliError(`${missing.length} ${stack} secret(s) unset - the ${stack} stack config was not written (${ran}; each step is safe to re-run). Supply each, then re-run env new:\n${fixes}`);
 }
 
 function envPrefix(env: Record<string, string>): string {
@@ -185,6 +197,7 @@ export function cmdEnvNew(json: boolean, name: string, opts: { spec?: string; dr
         const g = generateStack(spec, "state", {
           project: projectNameOf(stateDir), existingFile: path.join(stateDir, `Pulumi.${name}.yaml`), stackDir: stateDir,
         });
+        refuseUnsetSecrets(g.missingSecrets, rootEnv, "state");
         fs.writeFileSync(path.join(stateDir, `Pulumi.${name}.yaml`), g.text);
       },
     },
@@ -206,21 +219,14 @@ export function cmdEnvNew(json: boolean, name: string, opts: { spec?: string; dr
       },
     },
     {
-      title: "infra stack config generated from the spec (secrets become findings until set)",
+      title: "infra stack config generated from the spec (refused, naming each fix, until every secret is set)",
       command: `hg env apply ${name}`,
       run: () => {
         const g = generateStack(spec, "infra", {
           project: projectNameOf(infraDir), existingFile: path.join(infraDir, `Pulumi.${name}.yaml`), stackDir: infraDir,
         });
+        refuseUnsetSecrets(g.missingSecrets, envBackend, "infra");
         fs.writeFileSync(path.join(infraDir, `Pulumi.${name}.yaml`), g.text);
-        if (g.missingSecrets.length > 0) {
-          const fixes = g.missingSecrets
-            .map((m) => `  ${m.fix.replace(" && pulumi ", ` && ${envPrefix(envBackend)}pulumi `)}`)
-            .join("\n");
-          throw new CliError(
-            `${g.missingSecrets.length} secret(s) unset - supply each, then re-run env new:\n${fixes}`,
-          );
-        }
       },
     },
     {

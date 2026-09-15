@@ -25,6 +25,13 @@ and referenced resources should survive compilation without machine-local symlin
 If build-time prewarming needs unavailable sandbox infrastructure, report that build as
 blocked, with the failing prerequisite; contract validation cannot substitute for it.
 
+The production fallback sandbox requires the scaffold's locked `just-bash` dependency.
+Bootstrap's `hg team` startup check uses the selected digest-pinned runtime image and
+architecture, with no workstation Docker/KVM socket. It builds from a fresh dependency
+install and requires `/eve/v1/health` to become ready. A successful build is insufficient.
+For private repositories, declare and validate `gitAuthSecretRef`; an existing Secret does
+not mount itself into the workload.
+
 ## Behavior scenarios
 
 Read the installed Eve evaluation guide before authoring tests. Give each role at least one
@@ -47,12 +54,13 @@ validation commands and outcomes, and any remaining integration setup. Separate:
 
 - Source/contract validation and per-agent build results.
 - Behavioral evaluation results, including mock-only coverage and blocked runtime checks.
-- Operator steps for deployment and activation, when requested next.
+- The persisted bootstrap handoff and current deployment/activation stage, when in scope.
 
 Check that repeating onboarding with the same requirements preserves customized instructions,
 installed skill versions, existing agents, and unrelated app files. Extending a team must add
 new recipients to applicable workspace bindings without removing the original recipients.
 
-Emitting deployment records and proving a GitOps checkout are separate operator steps. When
-explicitly in scope, use `hg topology emit` and `hg gitops doctor` through the existing
-agent-bundle loop. Never claim a running or connected team from source checks alone.
+Bootstrap apply owns complete projection and publication through `hg team`; topology,
+workspace and Nexus emission are internal operations, not separate manual commits.
+Never claim a running or connected team from source checks alone. A required unknown
+stage leaves onboarding incomplete.

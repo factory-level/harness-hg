@@ -52,7 +52,9 @@ export function cmdValidate(json: boolean, dir?: string): void {
   if (workspaceDeclaration) {
     try {
       const declarations = loadWorkspaceDeclarations(workspaceDeclaration);
-      const known = new Map(profileCtxs(state).map((ctx) => [ctx.name, {}]));
+      // The runtime travels with each profile so a tracked binding (ADR 0197,
+      // Eve-only) to a profile on another harness refuses here too.
+      const known = new Map(profileCtxs(state).map((ctx) => [ctx.name, { runtime: ctx.runtime }]));
       const result = compileWorkspaceBindings(declarations, known, { requireResolution: false });
       findings.push(...result.findings);
       const bundleDeclaration = bundleDeclarationFile(state);

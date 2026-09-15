@@ -52,7 +52,7 @@ export interface PlanComponent {
   links?: Record<string, string>;
   /** Instance destinations; `deployed[].name === "published"` is the
    * externally reachable hostname (ADR-40). */
-  instances?: { destinations?: { deployed?: { name?: string; url?: string }[] } }[];
+  instances?: { id?: string; application?: string; namespace?: string; target?: string; destinations?: { deployed?: { name?: string; url?: string }[] } }[];
 }
 export interface NexusData {
   demo: boolean;
@@ -115,6 +115,7 @@ export interface DataStore {
   error: string | null;
   health: HealthOverlay | null;
   stale: boolean;
+  pollFailed?: boolean;
   refresh: () => void;
 }
 
@@ -123,6 +124,7 @@ export function useDataStore(): DataStore {
   const [error, setError] = React.useState<string | null>(null);
   const [health, setHealth] = React.useState<HealthOverlay | null>(null);
   const [stale, setStale] = React.useState(false);
+  const [pollFailed, setPollFailed] = React.useState(false);
   const [nonce, setNonce] = React.useState(0);
 
   React.useEffect(() => {
@@ -160,9 +162,10 @@ export function useDataStore(): DataStore {
         const h = (await SDK.fetchJSON(`${API}/nexus/health`)) as HealthOverlay;
         if (dead) return;
         setHealth(h);
+        setPollFailed(false);
         setStale(h.stale === true);
       } catch {
-        if (!dead) setStale(true); // last-good overlay stays
+        if (!dead) { setStale(true); setPollFailed(true); } // last-good overlay stays
       }
       timer = setTimeout(tick, POLL_MS);
     };
@@ -181,5 +184,5 @@ export function useDataStore(): DataStore {
     };
   }, [data]);
 
-  return { data, error, health, stale, refresh: () => setNonce((n) => n + 1) };
+  return { data, error, health, stale, pollFailed, refresh: () => setNonce((n) => n + 1) };
 }

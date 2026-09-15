@@ -26,6 +26,9 @@ dispositions (rename / alias / frozen-legacy, each with its owning issue) live i
 | event | **event** | a typed message on the communication plane, one envelope everywhere ([#655](https://github.com/factory-level/harness-hg/issues/655)) | alert (alerts route; events flow) |
 | declaration | **bundle declaration** | what an agent-team repo states about itself: the `harness-hg/` directories at the root and under each agent ([ADR 0178](../adr/0178-agent-team-contract-surface.md)) | `hermes-gitops.yaml` (the frozen legacy filename), `.harness-hg/` (never built) |
 | agent-team repository | **agent-team repository** | the repository a team authors: `harness-hg/` + `agents/<harness>/<name>/{harness-hg,src}` | agent application repository, persona repo, bundle repo |
+| installation lock | **installation lock** | the bootstrap-owned record of resolved source commits, runtime pins and platform revision that a team watcher publishes from ([ADR 0190](../adr/0190-locked-installation-revisions.md)) | pin file, lockfile (npm's, or a skill lock) |
+| operator overlay | **operator overlay** | bootstrap-declared, approved Git content merged into one agent's source before build — append, override or remove ([ADR 0194](../adr/0194-operator-overlays.md)) | overlay alone (the `runtime-overlay` contract and the compiled `spec.env` overlay are different things), patch, customization |
+| build receipt | **build receipt** | what an Eve build actually produced — source commit, overlay digest, Eve versions — compared with the desired record ([ADR 0195](../adr/0195-health-at-intended-version.md)) | build stamp (the stamp is only its rebuild key) |
 
 **Harness vs runtime is a real distinction, not a synonym pair.** The harness is the
 repo-side driver (what `harness/<name>/` owns); the runtime is the process it puts in the

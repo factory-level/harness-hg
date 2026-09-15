@@ -1,0 +1,21 @@
+# The branch is named without refs/heads/: a full ref would let a tag or a
+# remote-tracking ref pose as a release channel.
+apiVersion: hermes.gitops/v1alpha2
+kind: WorkspaceBindings
+
+repositories:
+  - name: vision
+    source:
+      url: https://github.com/organization/vision-manager.git
+      revision:
+        mode: tracked
+        branch: refs/heads/main
+        refreshInterval: 30m
+    mount:
+      path: /workspaces/vision-manager
+      access: read-only
+
+bindings:
+  - repository: vision
+    profiles: [marketing-manager]
+    purpose: brand-context
