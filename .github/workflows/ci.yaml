@@ -105,6 +105,12 @@ jobs:
     env:
       # The operator home the CLI reads and writes; never the runner's own.
       HERMES_GITOPS_HOME: /tmp/hg-home
+      # The watcher tests commit into throwaway repositories; a runner has
+      # no git identity of its own.
+      GIT_AUTHOR_NAME: hg-ci
+      GIT_AUTHOR_EMAIL: hg-ci@example.invalid
+      GIT_COMMITTER_NAME: hg-ci
+      GIT_COMMITTER_EMAIL: hg-ci@example.invalid
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

@@ -84,11 +84,12 @@ TAG="$(python3 "$ROOT/infra/scripts/derive-version.py" --print | sed 's/-dev+.*/
 if git -C "$ROOT" ls-remote --tags "$PUBLIC_REMOTE" "refs/tags/$TAG" 2>/dev/null | grep -q .; then
   echo "public-snapshot: $TAG is already released - nothing version-moving (feat/fix/perf) landed since; a docs-only cut needs one first"; exit 1
 fi
-# Tag the ops HEAD too (locally; the recipe pushes it): the next cut's notes
-# start here, and the version replay anchors on it.
-git -C "$ROOT" tag -a "$TAG" -m "public release $TAG (cut from this commit)"
 NOTES="$OUT/../$TAG-notes.md"
 python3 "$ROOT/infra/scripts/release-notes.py" > "$NOTES"
+# Tag the ops HEAD too (locally; the recipe pushes it): the next cut's notes
+# start here, and the version replay anchors on it. AFTER the notes, which
+# range from the previous tag to HEAD.
+git -C "$ROOT" tag -a "$TAG" -m "public release $TAG (cut from this commit)"
 # The notes are private commit subjects, published verbatim: same gate.
 bash "$ROOT/infra/scripts/check-public-clean.sh" --file "$NOTES"
 echo "== snapshot ready at $OUT ($(cd "$OUT" && git rev-parse --short HEAD)) as $TAG; notes at $NOTES. Push and release with:"
