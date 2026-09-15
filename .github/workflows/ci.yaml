@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # The operator home the CLI reads and writes; never the runner's own.
-      HERMES_GITOPS_HOME: ${{ runner.temp }}/hg-home
+      HERMES_GITOPS_HOME: /tmp/hg-home
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
