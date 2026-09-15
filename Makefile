@@ -12,10 +12,8 @@ schema-validate:
 gitops-template-validate:
 	bash infra/scripts/validate-gitops-template.sh
 
-# Placeholder: no linters wired up yet. Will grow to cover yamllint/helm lint etc.
-# in later milestones.
-lint:
-	@echo "lint: no linters configured yet (placeholder)"
+# Lightweight repository checks; chart lint runs under chart-test.
+lint: retired-paths landing-check
 
 # harness/hermes/charts/hermes-profile: helm lint, golden `helm template` renders (byte-diffed
 # against tests/chart/golden/), negative-render assertions, best-effort
@@ -123,16 +121,6 @@ alerting-lib:
 alerting-lib-drift:
 	@bash infra/scripts/sync-alerting-lib.sh --check
 
-# Documentation screenshots of the real Nexus canvas, captured by driving the
-# committed browser-acceptance harness under Playwright. Needs Chrome on the
-# machine (playwright-core drives it; no browser download). Re-run after a UI
-# change that the docs show. NOT in `make test`: it needs a browser, and a
-# screenshot diff is not a useful gate.
-.PHONY: nexus-screenshots
-# Screenshot pairs now ride nexus-ui's review loop (browser/capture.ts
-# takes explicit old/new URLs); the doc-capture target retired with
-# dashboard/browser (its _docs/assets consumers re-point under #671).
-
 # The wiki's brand mark and favicon, traced from the live mark in
 # the mark algorithm (nexus-ui/src/primitives/HermesMark.tsx) at its canonical
 # still frame. Regenerate after any
@@ -179,9 +167,14 @@ public-clean:
 # The whole published site in ./site/: landing at /, the wiki at /docs/, the
 # Nexus UI demo at /demo/ (infra/scripts/build-site.sh). This is what the
 # Pages workflow uploads. Preview: python3 -m http.server -d site
+.PHONY: landing-check
+landing-check:
+	python3 infra/scripts/check-landing.py
+
 .PHONY: site
-site: wiki-build
+site: wiki-build landing-check
 	bash infra/scripts/build-site.sh
+	python3 infra/scripts/check-landing.py --site site
 
 test: schema-validate gitops-template-validate chart-test pytest dashboard-test wheel-smoke docs-drift cli-docs-drift mark-drift alerting-lib-drift wiki-build wiki-adr public-clean site doc-links source-repos contract-types-drift chart-boundary retired-paths env-drift quickstart-drift e2e-offline
 

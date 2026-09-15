@@ -47,6 +47,16 @@ describe.skipIf(!ON)("the static Nexus UI demo", () => {
     await page.waitForSelector(".nx-root", { timeout: 10_000 });
     expect(failed).toEqual([]);
     expect(await page.locator("text=DEMO DATA").count()).toBeGreaterThan(0);
+    const banner = page.locator(".demo-banner");
+    expect(await banner.isVisible()).toBe(true);
+    const bannerBox = await banner.boundingBox();
+    const appBox = await page.locator(".nx-root").boundingBox();
+    // The fixed-position application must not cover the public navigation.
+    expect(appBox!.y).toBeGreaterThanOrEqual(bannerBox!.y + bannerBox!.height);
+    await page.getByRole("link", { name: "Build an agent team", exact: true }).click();
+    await page.waitForLoadState("networkidle");
+    expect(new URL(page.url()).pathname).toBe("/docs/get-started/dev-quickstart/");
+    expect(await page.locator("h1").textContent()).toContain("Build an agent team");
     await page.goto(`http://127.0.0.1:${server!.port}/demo/#/avatars`, { waitUntil: "networkidle" });
     await page.waitForSelector("img", { timeout: 10_000 });
     const decoded = await page.evaluate(() =>

@@ -5,9 +5,9 @@
 Harness Hg runs teams of AI agents on Kubernetes from files in Git.
 
 You describe your team in a repository. The platform turns that into running agents.
-It adds monitoring, alerts, backups and network access. You build none of that.
+It supplies monitoring and alerts, and runs the backup routines and network access your team declares.
 
-Harness Hg adds as few controllers of its own as it can. Argo CD, Helm and the External
+Harness Hg uses stock controllers to reconcile deployments. Argo CD, Helm and the External
 Secrets Operator do the work. When something breaks, it breaks in a way you already know
 how to debug.
 
@@ -77,6 +77,7 @@ refused, with an explanation.
 
 | You want to | Read |
 |---|---|
+| Explore the interface without installing anything | [Nexus UI demo](https://factory-level.github.io/harness-hg/demo/) |
 | Create your own agent application | [Agent Team Repo](get-started/agent-team-repo.md) |
 | Build an agent team and test it locally | [Build an agent team](get-started/dev-quickstart.md) |
 | Host a real environment | [Host an environment](get-started/host-an-environment.md) |

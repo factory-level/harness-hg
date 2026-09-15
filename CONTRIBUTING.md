@@ -8,10 +8,10 @@ Thanks for helping. This page is the whole checklist.
 
    ```bash
    make test
-   cd cli      && bun install --frozen-lockfile && bun run typecheck && bun test
-   cd infra    && bun run typecheck && bun test
-   cd nexus-ui && bun run typecheck && bun test
-   cd state    && bun run typecheck && bun test
+   (cd cli      && bun install --frozen-lockfile && bun run typecheck && bun test)
+   (cd infra    && bun install --frozen-lockfile && bun run typecheck && bun test)
+   (cd nexus-ui && bun install --frozen-lockfile && bun run typecheck && bun test)
+   (cd state    && bun install --frozen-lockfile && bun run typecheck && bun test)
    ```
 
 2. **Use conventional commits.** The platform version is computed from commit subjects:
@@ -62,6 +62,19 @@ contracts, the emitter and anything that reaches a cluster get the most scrutiny
 Bugs and feature requests: [GitHub issues](https://github.com/factory-level/harness-hg/issues).
 Security problems: [`SECURITY.md`](SECURITY.md), never a public issue.
 
+## Verifying a public export
+
+From the private ops fork, commit the PR changes and run:
+
+```bash
+infra/scripts/public-snapshot.sh --verify-only /tmp/hg-public-review
+```
+
+Use a fresh output path. This exports **committed HEAD**, removes the operator overlay,
+and runs public-clean and `make test` inside the export. It does not fetch a remote,
+create tags or release notes, or publish anything. The public snapshot does not contain
+the overlay list, so run this command from the ops fork.
+
 ## Cutting a release
 
 The version is derived from the commit history (`make version`), never typed. A release is
@@ -72,7 +85,7 @@ from the same conventional-commit parse:
 make test                                   # the gate, on the ops fork
 infra/scripts/public-snapshot.sh /tmp/hg-pub  # exports, gates the export, prints the recipe
 # then the three lines it prints: push main, push the tag, gh release create
-gh workflow run wiki -R factory-level/harness-hg --ref main   # the orphan commit hides the path filter
+gh workflow run wiki -R factory-level/harness-hg --ref main   # explicitly rebuild the published site
 ```
 
 `hg --version` on a checkout prints the same string the badge and the tag carry.

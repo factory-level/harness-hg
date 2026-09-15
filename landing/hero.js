@@ -6,9 +6,8 @@
 // for script to reveal it. What is lost is the demonstration, which is why
 // the demonstration is aria-hidden and duplicated in static text.
 //
-// The commands describe the CLI's TARGET surface (ADR-70). `hg deploy`
-// is a specification as much as a demonstration; nothing launches until the
-// binary makes it true.
+// Commands use the shipping CLI grammar. The scenes are illustrations,
+// not command output or live deployment evidence.
 (function () {
   'use strict';
 
@@ -85,10 +84,11 @@
 
   // ------------------------------------------------------------ the scenes
   //
-  // The verb changes rarely and the target rolls beneath it: three onboards,
-  // two dev loops, one backup restore - every verb is a real `hg` verb
-  // (cli/src/commands.ts). Each scene lists what that command puts on the
-  // Fleet canvas, using the eight kinds of the canvas object system.
+  // Example dev loops, fleet status and backup inventory use shipping commands.
+  // The first repo is the runnable quickstart; other repo paths are illustrative.
+  // Every verb is a real `hg` verb
+  // (cli/src/commands.ts). Scenes illustrate the teams and operational data
+  // you can inspect, using the eight kinds of the canvas object system.
   //
   //   profile   an agent profile      tall card, owner's bar, lifted
   //   tool      a tool it ships       wide plaque, owner's bar, tight radius
@@ -132,19 +132,17 @@
   // is 238px at 1366x768 — so the vertical values carry the composition and
   // are deliberately NOT evenly spaced.
   var SCENES = [
-    { verb: 'onboard', target: 'social-media',
+    { verb: 'dev', target: 'examples/agent-team',
       objects: [
-        { kind: 'profile', name: 'Social Media', icon: 'mkt-engagement', desc: 'Drafts and ships campaign posts.',
-          foot: 'Agent · healthy', at: [23, 42] },
-        { kind: 'tool', name: 'Content Board', meta: 'Tool · Social Media',
-          at: [48, 21] },
-        { kind: 'comm', dir: 'out', event: 'campaign.published', count: '2 registered',
-          regs: [['Analytics warehouse', 'ingest.warehouse.internal'],
-                 ['Partner feed', 'feeds.partner.example']], at: [76, 65] }
+        { kind: 'profile', name: 'Manager', icon: 'mkt-engagement', desc: 'Coordinates the example team.',
+          foot: 'Agent · Eve', at: [23, 42] },
+        { kind: 'tool', name: 'Test Page', meta: 'App · Manager', at: [48, 21] },
+        { kind: 'profile', name: 'Research', icon: 'customer-service', desc: 'Researches tasks for the team.',
+          foot: 'Agent · shared runtime', at: [76, 65] }
       ],
-      wires: [[0, 1, 'ships'], [0, 2, 'emits to']] },
+      wires: [[0, 1, 'owns'], [0, 2, 'shares runtime']] },
 
-    { verb: 'onboard', target: 'support-triage',
+    { verb: 'dev', target: './support-triage',
       objects: [
         { kind: 'profile', name: 'Support Triage', icon: 'customer-service', desc: 'Routes and answers inbound tickets.',
           foot: 'Agent · healthy', at: [24, 41] },
@@ -157,9 +155,9 @@
       ],
       wires: [[0, 1, 'ships'], [0, 2, 'ships']] },
 
-    { verb: 'onboard', target: 'marketing-suite',
+    { verb: 'dev', target: './marketing-suite',
       objects: [
-        { kind: 'dist', name: 'Marketing suite', meta: '4 profiles · marketing',
+        { kind: 'dist', name: 'Marketing suite', meta: '4 agents · marketing',
           fans: ['MM', 'CS', 'BV', 'SR'], front: 'Social Reply', at: [24, 41] },
         { kind: 'group', name: 'Marketing team', meta: 'Group of people · 3',
           faces: ['MO', 'TN', 'CR'], at: [53, 22] },
@@ -168,7 +166,7 @@
       ],
       wires: [[0, 1, 'called by'], [0, 2, 'approves']] },
 
-    { verb: 'dev', target: 'support-triage',
+    { verb: 'status', target: '',
       objects: [
         { kind: 'profile', name: 'Support Triage', icon: 'customer-service', desc: 'Routes and answers inbound tickets.',
           foot: 'Agent · v2.4.1', at: [23, 42] },
@@ -180,7 +178,7 @@
       ],
       wires: [[1, 0, 'called by'], [0, 2, 'approves']] },
 
-    { verb: 'dev', target: 'billing-reconcile',
+    { verb: 'dev', target: './billing-reconcile',
       objects: [
         { kind: 'profile', name: 'Billing Reconcile', icon: 'finance-manager', desc: 'Matches ledger entries nightly.',
           foot: 'Agent · v3.0.2', at: [23, 42] },
@@ -192,13 +190,13 @@
       ],
       wires: [[0, 1, 'ships'], [0, 2, 'runs on']] },
 
-    { verb: 'backup', target: 'restore --from ledger-db-20260914',
+    { verb: 'backup', target: 'list',
       objects: [
-        { kind: 'tool', name: 'Ledger DB', meta: 'Tool · restore verified', at: [24, 29] },
+        { kind: 'tool', name: 'Ledger DB', meta: 'Tool · backup available', at: [24, 29] },
         { kind: 'reserved', name: 'Billing SRE', meta: 'Reserved · 4 links',
           own: 'staff', tiles: [['Auth', 1], ['Queue', 1], ['Storage', 1], ['Audit', 0]],
           at: [51, 60] },
-        { kind: 'sticky', text: 'Restore rehearsed on the replacement server, not just the backup.',
+        { kind: 'sticky', text: 'Run a recovery rehearsal before calling this backup restorable.',
           alt: true, at: [78, 31] }
       ],
       wires: [[0, 1, 'runs on']] }

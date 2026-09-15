@@ -4,7 +4,14 @@
 
 `landing/` is the hand-written promotional site and devlog for Harness Hg — static HTML/CSS/
 JS, authored directly, independent of the documentation build. It sells the product; it
-never substitutes for the manual.
+never substitutes for the manual. The primary action opens the Nexus UI demo; the secondary
+one opens the local agent-team quickstart. Preserve the current visual identity and URLs.
+
+Current product copy uses the vocabulary register and describes implemented behavior.
+Animated commands use the shipping CLI grammar; their scenes are explicitly illustrative.
+Each page supplies canonical and social metadata with a shared, locally rendered preview
+image. The landing gate checks metadata, links, assets and command grammar; browser review
+covers responsive layout, themes, keyboard access and reduced motion.
 
 ## Docs
 
@@ -31,13 +38,13 @@ HTML is a manual that has to be scraped to be checked.
 
 ## Repo README and OSS configuration
 
-`README.md` is the authoritative scaffold outline — the target directory structure and the
-refactor's status live there, and new work has an obvious home before it is implemented. The
-community surface stays current and truthful:
+`README.md` introduces the product, shows the runnable quickstart, and routes readers to the
+manual, demo and contribution instructions. Its repository map describes the current tree.
 
-- `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODEOWNERS` carry the harness-hg identity.
-- GitHub issues are the work tracker: the final-pass epic
-  ([#646](https://github.com/factory-level/harness-hg/issues/646)) with `phase-0`…`phase-5`
-  labels ordering the work.
-- Cross-repo changes keep the standing rule: platform PR merges first, persona PR second,
-  proven by rendering each profile's record before and after and `cmp`-ing them.
+- Community documents carry the Harness Hg identity and describe the public snapshot workflow.
+- The ops fork retains operational documents in its export overlay. Public documentation must
+  make sense and build without them.
+- `public-snapshot.sh --verify-only` exports committed HEAD and gates the public tree without
+  fetching the public Git remote, creating tags or release notes, or publishing. A successful gate leaves a clean export.
+- Working command aliases, schemas, API paths and cluster identifiers remain compatible.
+  Historical decision and design evidence retain their original names.

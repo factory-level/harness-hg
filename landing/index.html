@@ -4,30 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Harness Hg — your agent fleet, described in Git</title>
-<meta name="description" content="A GitOps control plane for agent harnesses. One command renders your agent and everything it needs into Git as a pull request, and Argo CD makes your cluster match it. Mercury runs no controller of its own.">
+<meta name="description" content="Run teams of AI agents on Kubernetes from files in Git. Explore the Nexus UI demo, then build your team with the local quickstart.">
 <meta name="color-scheme" content="light dark">
 
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Harness Hg">
 <meta property="og:title" content="Harness Hg — your agent fleet, described in Git">
-<meta property="og:description" content="A GitOps control plane for agent harnesses. One command renders your agent and everything it needs into Git as a pull request, and Argo CD makes your cluster match it.">
-<!-- `summary`, not `summary_large_image`: the large card reserves a 2:1 image
-     slot and renders it blank without an og:image, and there is no og:image —
-     the mark is marched from noise onto a <canvas> at runtime. -->
-<meta name="twitter:card" content="summary">
+<meta property="og:description" content="Run teams of AI agents on Kubernetes from files in Git. Explore the Nexus UI demo, then build your team with the local quickstart.">
+<link rel="canonical" href="https://factory-level.github.io/harness-hg/">
+<meta property="og:url" content="https://factory-level.github.io/harness-hg/">
+<meta property="og:image" content="https://factory-level.github.io/harness-hg/assets/share-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Harness Hg — Run teams of AI agents on Kubernetes from files in Git. Nexus UI demo and technical quickstart.">
+<meta name="twitter:image" content="https://factory-level.github.io/harness-hg/assets/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
 
-<link rel="icon" href="favicon.svg?v=18" type="image/svg+xml">
+<link rel="icon" href="favicon.svg?v=19" type="image/svg+xml">
 <!-- The faces are vendored in `fonts/` and declared in styles.css — nothing
      here waits on a third-party CDN, and no visitor's IP reaches one. All
      three are preloaded because all three paint the first screen: Figtree is
      the lockup and the claim, JetBrains Mono is the command, Nunito Sans is
      the paragraph. `crossorigin` because font fetches are CORS-mode requests
      even same-origin — omit it and the preload is fetched twice. -->
-<link rel="preload" href="fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/jetbrains-mono-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<script src="theme.js"></script>
-<link rel="stylesheet" href="styles.css?v=18">
+<link rel="preload" href="fonts/figtree-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/jetbrains-mono-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/nunito-sans-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<script src="theme.js?v=19"></script>
+<link rel="stylesheet" href="styles.css?v=19">
 
 <!-- The ONLY inline script on the page, and it does one thing: mark that
      scripting is on, before first paint. Without it the board renders as an
@@ -58,7 +62,7 @@
 <header class="topbar">
   <div class="topbar__in">
     <a class="topbar__brand" href="./">
-      <img src="favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <img src="favicon.svg?v=19" width="22" height="22" alt="" aria-hidden="true">
       <span class="lockup"><span class="lockup__name">Harness</span><span class="lockup__sym">Hg</span></span>
     </a>
     <nav class="topbar__nav" aria-label="Primary">
@@ -142,8 +146,8 @@
              both on its first tick, so this costs a JS reader nothing — but
              without it a no-script reader got the bare word `hg`, an
              8ch void where the verb belongs, and a blinking caret after it. -->
-        <span class="roll roll--verb" data-verb>onboard</span>
-        <span class="roll roll--target" data-target>support-triage</span>
+        <span class="roll roll--verb" data-verb>dev</span>
+        <span class="roll roll--target" data-target>examples/agent-team</span>
         <span class="cmd__caret"></span>
       </p>
 
@@ -180,16 +184,15 @@
 
   <!-- The paragraph names only fields the record actually HAS (ADR-131). -->
   <div class="hero__foot">
-    <p class="note">Your agent, the apps it runs beside, the secrets it needs and how it is exposed — rendered as <strong>one record</strong> and written into Git. <strong>Argo CD</strong> applies it and keeps it applied.</p>
+    <p class="note">Run a team of AI agents on Kubernetes from files in Git. <strong>Harness Hg</strong> renders the deployment records; <strong>Argo CD</strong> keeps the cluster in sync. Beta software. The scenes illustrate example teams and outcomes.</p>
 
     <p class="links">
-      <a class="btn" href="docs/">
-        Read the docs
+      <a class="btn" href="demo/">
+        Open the live demo
         <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
       </a>
-      <!-- GitHub already holds the header's far edge, so the hero's second
-           action is the build story rather than a repeat (spec §4.2). -->
-      <a class="link" href="devlog/">Read the devlog</a>
+      <!-- The demo is the first step; the quickstart is the next. -->
+      <a class="link" href="docs/get-started/dev-quickstart/">Build an agent team</a>
     </p>
   </div>
 
@@ -219,7 +222,7 @@
   <div class="feat__copy">
     <p class="sec__eyebrow">Agent bundles</p>
     <h2 class="sec__title" id="bundles-h">Install the whole team.</h2>
-    <p class="sec__lede">Share agents with the tools and capabilities they need — together, as a reusable bundle. One declaration brings the team, what it ships, and what it depends on.</p>
+    <p class="sec__lede">An Agent Team Repo declares your agents, their apps and their needs. Bundle agents into a shared runtime pod when they belong together.</p>
     <p class="feat__more"><a class="link link--fwd" href="features/agent-bundles.html">How bundles work</a></p>
   </div>
 </section>
@@ -237,7 +240,7 @@
   <div class="feat__copy">
     <p class="sec__eyebrow">GitOps-native</p>
     <h2 class="sec__title" id="gitops-h">Orchestrated by the GitOps tools you already know.</h2>
-    <p class="sec__lede">Keep the workflow close to the repositories, reviews, and automation your team already uses. Mercury writes a record into Git and opens the pull request; <strong>Argo CD</strong> applies what merges and keeps the cluster matching it. <strong>No bespoke controller</strong> — reconciliation is off-the-shelf.</p>
+    <p class="sec__lede">Keep the workflow close to the repositories, reviews, and automation your team already uses. Harness Hg writes deployment records into Git; <strong>Argo CD</strong> applies the declared state and keeps the cluster matching it. <strong>No bespoke controller</strong> — reconciliation is off-the-shelf.</p>
     <p class="feat__more"><a class="link link--fwd" href="docs/">How the pieces fit, in the docs</a></p>
   </div>
 </section>
@@ -258,8 +261,8 @@
     <ul class="feat__list">
       <li>See the fleet on one canvas.</li>
       <li>Coordinate how agents publish and receive events.</li>
-      <li>Preserve backups that restore has actually rehearsed.</li>
-      <li>Move reusable capabilities between repositories.</li>
+      <li>See backup availability and recovery evidence separately.</li>
+      <li>Inspect the agents and supporting apps declared by your team.</li>
     </ul>
     <p class="feat__more"><a class="link link--fwd" href="features/">Explore the features</a></p>
   </div>
@@ -270,14 +273,14 @@
      toward the pointer — finally gets a size worth looking at. -->
 <section class="sec--cta" aria-labelledby="cta-h">
   <canvas class="cta__mark" data-sphere aria-hidden="true"></canvas>
-  <h2 class="sec__title" id="cta-h">Build with it. Follow the build.</h2>
-  <p class="sec__lede">Start in the docs, or follow the devlog as the project evolves.</p>
+  <h2 class="sec__title" id="cta-h">See it run. Then build your team.</h2>
+  <p class="sec__lede">Explore Nexus UI with demo data. No installation or account needed. Then follow the local quickstart.</p>
   <p class="sec__cta">
-    <a class="btn" href="docs/">
-      Read the docs
+    <a class="btn" href="demo/">
+      Open the live demo
       <svg width="14" height="10" viewBox="0 0 14 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 5h11M8.6 1.8 11.8 5 8.6 8.2"/></svg>
     </a>
-    <a class="link" href="devlog/">Read the devlog</a>
+    <a class="link" href="docs/get-started/dev-quickstart/">Build an agent team</a>
   </p>
 </section>
 
@@ -295,7 +298,7 @@
   <p class="siteftr__note">Created by Factory-level.</p>
 </footer>
 
-<script src="contour-sphere.js?v=18"></script>
-<script src="hero.js?v=18"></script>
+<script src="contour-sphere.js?v=19"></script>
+<script src="hero.js?v=19"></script>
 </body>
 </html>

@@ -4,20 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Backups — Harness Hg</title>
-<meta name="description" content="Every agent’s state is backed up on a schedule, and restore is a rehearsal, not a hope.">
+<meta name="description" content="Declare backup routines for application data, then test recovery before relying on a snapshot.">
 <meta name="color-scheme" content="light dark">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Harness Hg">
 <meta property="og:title" content="Backups — Harness Hg">
-<meta property="og:description" content="Every agent’s state is backed up on a schedule, and restore is a rehearsal, not a hope.">
-<meta name="twitter:card" content="summary">
-<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<meta property="og:description" content="Declare backup routines for application data, then test recovery before relying on a snapshot.">
+<link rel="canonical" href="https://factory-level.github.io/harness-hg/features/backups.html">
+<meta property="og:url" content="https://factory-level.github.io/harness-hg/features/backups.html">
+<meta property="og:image" content="https://factory-level.github.io/harness-hg/assets/share-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Harness Hg — Run teams of AI agents on Kubernetes from files in Git. Nexus UI demo and technical quickstart.">
+<meta name="twitter:image" content="https://factory-level.github.io/harness-hg/assets/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../favicon.svg?v=19" type="image/svg+xml">
 <!-- Vendored faces, declared in styles.css. The two text faces paint the
      first screen here; JetBrains Mono loads on demand for inline literals. -->
-<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<script src="../theme.js"></script>
-<link rel="stylesheet" href="../styles.css?v=18">
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js?v=19"></script>
+<link rel="stylesheet" href="../styles.css?v=19">
 <script>document.documentElement.classList.add('js')</script>
 </head>
 <body>
@@ -27,7 +34,7 @@
 <header class="topbar">
   <div class="topbar__in">
     <a class="topbar__brand" href=".././">
-      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <img src="../favicon.svg?v=19" width="22" height="22" alt="" aria-hidden="true">
       <span class="lockup"><span class="lockup__name">Harness</span><span class="lockup__sym">Hg</span></span>
     </a>
     <nav class="topbar__nav" aria-label="Primary">
@@ -60,7 +67,7 @@
   <div>
     <p class="sec__eyebrow">Backups</p>
     <h1 class="sec__title">Preserve what the fleet knows.</h1>
-    <p class="sec__lede">An agent’s useful state outgrows its declaration the moment it starts working. Every profile ships a backup schedule with its record, and <strong>restore is a rehearsal, not a hope</strong>.</p>
+    <p class="sec__lede">An agent’s useful state outgrows its declaration the moment it starts working. Your team declares backup routines for its data. <strong>A stored backup needs a successful restore test before you can rely on it.</strong></p>
   </div>
   <figure class="feat__viz pagehead__viz" aria-hidden="true">
     <div class="vizboard">
@@ -97,12 +104,12 @@
     <li class="step">
       <p class="step__n" aria-hidden="true">01</p>
       <h3 class="step__t">The record declares the schedule.</h3>
-      <p class="step__b">Backup cadence and retention ship with the profile, not beside it.</p>
+      <p class="step__b">Your team declares what to capture, when to run the backup, and how to restore the data.</p>
     </li>
     <li class="step">
       <p class="step__n" aria-hidden="true">02</p>
-      <h3 class="step__t">State lands in restorable snapshots.</h3>
-      <p class="step__b">Each agent’s working state is captured on its own schedule.</p>
+      <h3 class="step__t">The routine writes a backup artifact.</h3>
+      <p class="step__b">A successful upload proves availability. It does not prove that the application can recover.</p>
     </li>
     <li class="step">
       <p class="step__n" aria-hidden="true">03</p>
@@ -150,7 +157,7 @@
   <p class="siteftr__note">Created by Factory-level.</p>
 </footer>
 
-<script src="../contour-sphere.js?v=18"></script>
-<script src="../hero.js?v=18"></script>
+<script src="../contour-sphere.js?v=19"></script>
+<script src="../hero.js?v=19"></script>
 </body>
 </html>

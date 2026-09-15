@@ -9,7 +9,7 @@ to read more.
 |---|---|
 | **Harness Hg** | The product: a GitOps control plane for agent applications. `hg` is the command. Mercury's symbol is Hg |
 | **`hg`** | The operator CLI. Every command belongs to one of the three loops. [CLI reference](reference/cli/index.md) |
-| **`hermes-gitops`** | An internal identifier you will still see in paths, a file name and a Secret name. Not a product |
+| **`hermes-gitops`** | A retained compatibility identifier in packages, CLI aliases, API paths, schemas, environment variables and cluster resources. The product name is Harness Hg |
 
 ## Things you deploy
 
@@ -21,7 +21,7 @@ to read more.
 | **Harness** | The runtime that boots an agent and talks to the platform. Each harness ships a harness declaration. Types: **Eve** (default), **Hermes Agent** (deprecated). [Harness](platform/runtime.md) |
 | **Eve agent** | An agent on Eve: an npm project in `agents/eve/<name>/src/`. Deployed as `ag-eve-<name>`. [Eve agents](agent-team-install/eve-agents.md) |
 | **Subagent** | Eve's unit of composition inside one agent: its own folder, model, instructions and tools. Runs inside the parent's pod |
-| **Bundle** | Several agents sharing one runtime pod. A bundled agent gives up its own Application, namespace and Service |
+| **Bundle** | Several agents sharing one runtime pod. This is a deployment choice within an Agent Team Repo; it is not a synonym for the repository. A bundled agent gives up its own Application, namespace and Service |
 | **Record** | The generated file the platform writes for an agent: plain Helm values with one `spec:` block. Never hand-written. [Profile record](reference/profile-record.md) |
 
 ## Places

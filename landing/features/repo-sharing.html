@@ -10,14 +10,21 @@
 <meta property="og:site_name" content="Harness Hg">
 <meta property="og:title" content="Repository Sharing — Harness Hg">
 <meta property="og:description" content="Agent capabilities live in repositories — declared, versioned and shareable across projects.">
-<meta name="twitter:card" content="summary">
-<link rel="icon" href="../favicon.svg?v=18" type="image/svg+xml">
+<link rel="canonical" href="https://factory-level.github.io/harness-hg/features/repo-sharing.html">
+<meta property="og:url" content="https://factory-level.github.io/harness-hg/features/repo-sharing.html">
+<meta property="og:image" content="https://factory-level.github.io/harness-hg/assets/share-card.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Harness Hg — Run teams of AI agents on Kubernetes from files in Git. Nexus UI demo and technical quickstart.">
+<meta name="twitter:image" content="https://factory-level.github.io/harness-hg/assets/share-card.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../favicon.svg?v=19" type="image/svg+xml">
 <!-- Vendored faces, declared in styles.css. The two text faces paint the
      first screen here; JetBrains Mono loads on demand for inline literals. -->
-<link rel="preload" href="../fonts/figtree-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=18" as="font" type="font/woff2" crossorigin>
-<script src="../theme.js"></script>
-<link rel="stylesheet" href="../styles.css?v=18">
+<link rel="preload" href="../fonts/figtree-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../fonts/nunito-sans-latin.woff2?v=19" as="font" type="font/woff2" crossorigin>
+<script src="../theme.js?v=19"></script>
+<link rel="stylesheet" href="../styles.css?v=19">
 <script>document.documentElement.classList.add('js')</script>
 </head>
 <body>
@@ -27,7 +34,7 @@
 <header class="topbar">
   <div class="topbar__in">
     <a class="topbar__brand" href=".././">
-      <img src="../favicon.svg?v=18" width="22" height="22" alt="" aria-hidden="true">
+      <img src="../favicon.svg?v=19" width="22" height="22" alt="" aria-hidden="true">
       <span class="lockup"><span class="lockup__name">Harness</span><span class="lockup__sym">Hg</span></span>
     </a>
     <nav class="topbar__nav" aria-label="Primary">
@@ -60,7 +67,7 @@
   <div>
     <p class="sec__eyebrow">Repository sharing</p>
     <h1 class="sec__title">Take the team with you.</h1>
-    <p class="sec__lede">Capabilities live in repositories: a persona repository declares agents and what they need, a <strong>distribution</strong> versions the offering, and any environment installs it with one command.</p>
+    <p class="sec__lede">An <strong>Agent Team Repo</strong> declares agents, apps and required capabilities. Pin its revision and install it into an environment that supplies those capabilities.</p>
   </div>
   <figure class="feat__viz pagehead__viz" aria-hidden="true">
     <div class="vizmap">
@@ -69,7 +76,7 @@
           <line x1="55" y1="45" x2="90" y2="68"/><line x1="110" y1="82" x2="146" y2="105"/>
         </g>
       </svg>
-      <span class="vizmap__node" style="--x:27%; --y:27%">persona repo</span>
+      <span class="vizmap__node" style="--x:27%; --y:27%">team repo</span>
       <span class="vizmap__node vizmap__node--hub" style="--x:50%; --y:50%">distribution · v1.3.0</span>
       <span class="vizmap__node" style="--x:73%; --y:73%">your fleet</span>
     </div>
@@ -83,7 +90,7 @@
       <p class="sec__eyebrow">Why it matters</p>
       <h2 class="sec__title" id="repo-sharing-why">A capability trapped in one repo gets rebuilt, not reused.</h2>
       <p class="sec__lede">Every rebuild drifts: the second copy of a team is never quite the first, and the differences surface at the worst time. When the declaration is the shareable unit, moving a team between repositories, machines or people is an install — pinned by ref and sha, reproducible on arrival.</p>
-    <p class="sec__lede">Sharing flows one way. The platform defines the contract, persona repositories adopt it, and validation runs against the declarations before anything reaches a cluster.</p>
+    <p class="sec__lede">Sharing flows one way. The platform defines the contract, Agent Team Repos adopt it, and validation runs against the declarations before anything reaches a cluster.</p>
     </div>
     <aside class="why__aside">
       <p class="pull">An install, not an archaeology dig.</p>
@@ -99,18 +106,18 @@
   <ol class="steps">
     <li class="step">
       <p class="step__n" aria-hidden="true">01</p>
-      <h3 class="step__t">A persona repository declares the agents.</h3>
+      <h3 class="step__t">An Agent Team Repo declares the agents.</h3>
       <p class="step__b">The team, its tools, its events and its needs — in one place, under review.</p>
     </li>
     <li class="step">
       <p class="step__n" aria-hidden="true">02</p>
-      <h3 class="step__t">A distribution versions the offering.</h3>
+      <h3 class="step__t">Pin the team revision.</h3>
       <p class="step__b">Pinned by ref and sha, so an install is reproducible.</p>
     </li>
     <li class="step">
       <p class="step__n" aria-hidden="true">03</p>
-      <h3 class="step__t">Any environment installs it.</h3>
-      <p class="step__b">One command renders the record for that environment and opens the pull request.</p>
+      <h3 class="step__t">Install into a compatible environment.</h3>
+      <p class="step__b">Harness Hg validates the team and renders deployment records for the destination environment.</p>
     </li>
   </ol>
 </section>
@@ -153,7 +160,7 @@
   <p class="siteftr__note">Created by Factory-level.</p>
 </footer>
 
-<script src="../contour-sphere.js?v=18"></script>
-<script src="../hero.js?v=18"></script>
+<script src="../contour-sphere.js?v=19"></script>
+<script src="../hero.js?v=19"></script>
 </body>
 </html>

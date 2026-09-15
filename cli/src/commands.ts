@@ -206,13 +206,13 @@ export const COMMANDS: Command[] = [
     loops: ["dev"],
     summary: "register a repo, or one agent, with the local loop",
     desc:
-      "Registers a profile directory OR a whole catalogue (`distributions/*` + `.hermes-dist/*`). " +
-      "All discovered profiles boot on the next `hg up` unless `--profile` narrows to one.",
+      "Registers an Agent Team Repo, a legacy profile directory, or a legacy catalogue (`distributions/*` + `.hermes-dist/*`). " +
+      "All discovered agents boot on the next `hg up` unless `--profile` narrows to one.",
     subs: [
       {
         name: "",
         args: "<./path | repo-url>",
-        summary: "register a profile directory or catalogue",
+        summary: "register an Agent Team Repo or legacy profile catalogue",
         flags: [
           { name: "--profile", value: "<name>", desc: "Narrow a catalogue to one profile." },
           { name: "--env", value: "<path/.env>", desc: "Pin a dotenv file (default: `<root>/.env` plus per-profile `.env`)." },

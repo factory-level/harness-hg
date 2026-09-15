@@ -41,8 +41,7 @@ pulumi/programs/*/Pulumi.*.yaml
 .env
 
 # MkDocs Material wiki build output (make wiki-build / mkdocs build).
-# The wiki's build output lives beside its source (_docs/wiki/mkdocs.yml
-# sets site_dir: ../site). Anchored so it cannot swallow any chart named
+# _docs/mkdocs.yml sets site_dir: site beside the configuration. Anchored so it cannot swallow any chart named
 # site/ (e.g. examples/charts/site), which MUST ship
 # with the repo — Argo CD renders it from the platform repo clone.
 /_docs/site/

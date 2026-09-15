@@ -30,6 +30,8 @@ jobs:
         run: make retired-paths
       - name: Quickstarts carry their loop runs' asserted sequences (#675)
         run: make quickstart-drift
+      - name: Landing links, social metadata and CLI examples
+        run: make landing-check
 
   gitops-emitter-test:
     runs-on: ubuntu-latest

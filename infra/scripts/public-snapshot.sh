@@ -3,17 +3,20 @@
 # operator overlay, as ONE orphan commit in a fresh clone, gated before it
 # is pushed anywhere.
 #
-#   infra/scripts/public-snapshot.sh <out-dir> [<commit-subject>]
+#   infra/scripts/public-snapshot.sh [--verify-only] <out-dir> [<commit-subject>]
+#   --verify-only exports committed HEAD and gates it without release side effects.
 #
 # What it does:
 #   1. `git archive HEAD` into <out-dir>, then delete the overlay list.
 #   2. Run the public-clean gate with NO exclusions and the full `make test`
 #      inside the export, so the snapshot is proven on its own.
 #   3. `git init` + one commit. Push it yourself: the script never touches a
-#      remote.
+#      remote for publication (release mode fetches the existing public history).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT="${1:?usage: public-snapshot.sh <out-dir> [<subject>]}"
+VERIFY_ONLY=false
+if [ "${1:-}" = "--verify-only" ]; then VERIFY_ONLY=true; shift; fi
+OUT="${1:?usage: public-snapshot.sh [--verify-only] <out-dir> [<subject>]}"
 SUBJECT="${2:-chore: initial public release}"
 
 # The operator overlay (infra/scripts/public-overlay.txt). Everything else in
@@ -43,7 +46,9 @@ EOF
 # the ops fork, where every public PR is ported before the next cut), and
 # the push is a fast-forward, never a force. The first cut has no parent.
 PUBLIC_REMOTE="${PUBLIC_REMOTE:-https://github.com/factory-level/harness-hg.git}"
-if git -C "$OUT" fetch -q "$PUBLIC_REMOTE" main 2>/dev/null; then
+if $VERIFY_ONLY; then
+  echo "== verification export of $(git -C "$ROOT" rev-parse --short HEAD) (no remote fetch)"
+elif git -C "$OUT" fetch -q "$PUBLIC_REMOTE" main 2>/dev/null; then
   parent="$(git -C "$OUT" rev-parse FETCH_HEAD)"
   chained="$(cd "$OUT" && git -c user.name=harness-hg -c user.email=hg-bot@users.noreply.github.com commit-tree "HEAD^{tree}" -p "$parent" -m "$SUBJECT")"
   git -C "$OUT" update-ref refs/heads/main "$chained" && git -C "$OUT" reset -q --hard main
@@ -59,7 +64,16 @@ echo "== gates inside the export"
 rm -f "$OUT/.snapshot-make-test.log"
 # make test writes build output (site/, _docs/site/); the commit predates it
 # and .gitignore covers it, so the tree is still one clean commit.
-(cd "$OUT" && git status --short | head -5)
+# A successful build must not silently change a tracked projection.
+if [ -n "$(git -C "$OUT" status --porcelain)" ]; then
+  git -C "$OUT" status --short
+  echo "public-snapshot: gates left unexpected changes in the export" >&2
+  exit 1
+fi
+if $VERIFY_ONLY; then
+  echo "== public export verified at $OUT; no tags, release notes or publication"
+  exit 0
+fi
 # The tag is the version the ops history derives (the export is one orphan
 # commit and cannot derive it itself). Release notes come from the same parse.
 TAG="$(python3 "$ROOT/infra/scripts/derive-version.py" --print | sed 's/-dev+.*//')"
@@ -78,6 +92,5 @@ echo "== snapshot ready at $OUT ($(cd "$OUT" && git rev-parse --short HEAD)) as 
 echo "   git -C $OUT push $PUBLIC_REMOTE HEAD:main && git -C $OUT tag -a $TAG -m 'release $TAG' && git -C $OUT push $PUBLIC_REMOTE $TAG"
 echo "   gh release create $TAG -R factory-level/harness-hg --title $TAG --notes-file $NOTES"
 echo "   git -C $ROOT push origin $TAG   (the ops-side tag the notes and version anchor on)"
-# A force-pushed orphan commit has no base to diff, so the wiki workflow's
-# path filter never matches and no run starts: dispatch it by hand.
-echo "   then: gh workflow run wiki -R factory-level/harness-hg --ref main   (the push trigger's path filter cannot see an orphan commit)"
+# Explicit dispatch also covers an initial orphan snapshot with no diff base.
+echo "   then: gh workflow run wiki -R factory-level/harness-hg --ref main   (explicitly rebuild the published site)"

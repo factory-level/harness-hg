@@ -13,6 +13,6 @@ rest of the repo's Hermes-facing assets:
 
 The full config contract (file-by-file, how to extend it, how to launch
 this repo's own agent) is documented first-class at
-`_docs/wiki/platform/reconciliation.md`. Repos packaged for Hermes GitOps deployment also
+`_docs/wiki/platform/reconciliation.md`. Repos packaged for Harness Hg deployment also
 carry a `hermes-gitops.yaml` beside their `distribution.yaml` — see
 `_docs/wiki/platform/reconciliation.md`.

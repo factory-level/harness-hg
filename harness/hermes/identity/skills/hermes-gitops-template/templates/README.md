@@ -1,7 +1,7 @@
 # <ORG> distributed profiles
 
 This repository ships **distributed profiles** — external, portable AI-agent
-distributions a Hermes GitOps platform installs *by Git reference*. Each
+distributions a Harness Hg platform installs *by Git reference*. Each
 profile is a folder under `distributions/`; the shared Helm charts they use
 live under `charts/`.
 

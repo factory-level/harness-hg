@@ -98,3 +98,14 @@ if [ -n "$HITS" ]; then
   exit 1
 fi
 echo "retired-paths: clean (no living reference to plugin/schemas, infra/charts, dashboard/*, or dead aliases)"
+
+# Current landing copy, README and package descriptions use the product name.
+# Historical devlogs and provenance documents retain their original terminology.
+PUBLIC_HITS="$(git grep -nIE 'Mercury|Hermes GitOps|Hermes Nexus' -- \
+  README.md 'landing/*.html' 'landing/features/*.html' \
+  ':(exclude)landing/devlog' cli/package.json nexus-ui/package.json || true)"
+if [ -n "$PUBLIC_HITS" ]; then
+  echo "retired-paths: stale branding in current public copy:" >&2
+  echo "$PUBLIC_HITS" >&2
+  exit 1
+fi

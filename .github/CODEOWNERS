@@ -38,12 +38,12 @@
 /control-plane/nexus/chart/files/                @calv-io-n
 
 # --- Documentation contract ----------------------------------------------
-# _docs/ is three parts with different rules (design = target,
-# architecture = present, adr = decisions + costs). See CONTRIBUTING.md.
+# _docs/ has four trees: wiki = manual, design = target, architecture =
+# present, adr = decisions + costs. See CONTRIBUTING.md.
 /_docs/                             @calv-io-n
 
 # --- Governance itself ---------------------------------------------------
-/CODEOWNERS                         @calv-io-n
+/.github/CODEOWNERS                         @calv-io-n
 /LICENSE                            @calv-io-n
 /SECURITY.md                        @calv-io-n
 /CONTRIBUTING.md                    @calv-io-n

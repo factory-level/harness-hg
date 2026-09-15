@@ -8,11 +8,11 @@ Run a team of AI agents on Kubernetes from files in Git.
 
 You describe an agent team in a repository: who the agents are, what they need, what they
 ship. Harness Hg turns that into running agents with monitoring, alerts, backups and network
-access, and shows you the result on one operations page.
+access, and shows you the result in Nexus UI.
 
-[![Nexus, the operations surface, showing a bundled agent team and its health](landing/assets/nexus-agents.png)](https://factory-level.github.io/harness-hg/demo/)
+[![Nexus UI, the operations surface, showing a bundled agent team and its health](landing/assets/nexus-agents.png)](https://factory-level.github.io/harness-hg/demo/)
 
-*Nexus with demo data. [Open the live demo](https://factory-level.github.io/harness-hg/demo/),
+*Nexus UI with demo data. [Open the live demo](https://factory-level.github.io/harness-hg/demo/),
 nothing to install.*
 
 ## What you get
@@ -21,8 +21,8 @@ nothing to install.*
   frozen schema. A bad declaration fails before anything reaches a cluster.
 - **No controller of ours.** Argo CD, Helm and the External Secrets Operator do all the
   reconciling. When it breaks, it breaks in a way you already know how to debug.
-- **Operations included.** Each agent arrives with Grafana dashboards, alert routes, a backup
-  routine and, where declared, a public endpoint.
+- **Operations included.** The platform supplies Grafana dashboards and alert routes, and runs
+  the backup routines and public endpoints your team declares.
 - **One CLI, `hg`.** Onboard, bring up, test and prove from one tool. Every `prove` command
   returns pass, fail or *unknown*: a check that could not run never counts as a pass.
 
@@ -104,7 +104,7 @@ flowchart LR
    GitOps repository. Secret values never enter Git; only their names do.
 3. **Argo CD** turns each record into an Application. There is nothing to install beyond
    stock Argo CD, Helm and the External Secrets Operator.
-4. **Nexus** reads what Argo CD, Prometheus and the backup routines report and shows one
+4. **Nexus UI** reads what Argo CD, Prometheus and the backup routines report and shows one
    page per concern: fleet, alert routing, agents, backups.
 
 The [Platform](https://factory-level.github.io/harness-hg/docs/platform/) tab of the manual
@@ -137,7 +137,9 @@ missing or wrong.
 | `control-plane/` | one chart per component: Argo CD, Grafana, Loki, the event router, Nexus |
 | `infra/` | the Pulumi bootstrap for a hosted environment and the GitOps repo scaffold |
 | `plugin/gitops_emitter/` | the emitter that renders records into the GitOps repository |
-| `nexus-ui/` | the operations surface |
+| `nexus-ui/` | Nexus UI, the operations interface |
+| `landing/` | the public site and social preview assets |
+| `_docs/` | the product manual, design documents and decision records |
 | `examples/` | reference repositories, including the demo team |
 
 ## Contributing

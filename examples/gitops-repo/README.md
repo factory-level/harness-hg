@@ -1,6 +1,6 @@
 # Example: a rendered GitOps repository
 
-**What this page tells you:** what a scaffolded GitOps destination repository looks like — after `pulumi up` creates the repo and the Hermes GitOps Plugin fills it in.
+**What this page tells you:** what a scaffolded GitOps destination repository looks like — after `pulumi up` creates the repo and the Harness Hg emitter fills it in.
 
 This directory is a snapshot, not a template you clone. The real repo is made for you:
 
@@ -12,7 +12,7 @@ This directory is a snapshot, not a template you clone. The real repo is made fo
 ```mermaid
 flowchart LR
     P["Pulumi<br/>(pulumi up)"] -- "creates repo" --> R["GitOps repository<br/>(this layout)"]
-    G["Hermes GitOps Plugin"] -- "renders + commits" --> R
+    G["Harness Hg emitter"] -- "renders + commits" --> R
     R -- "read only" --> A["Argo CD"]
     A -- "one Application<br/>per profile" --> K["The single v1 cluster<br/>(local)"]
     H["Humans"] -- "extend; drift is<br/>reported, not overwritten" --> R

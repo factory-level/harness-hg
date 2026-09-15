@@ -1,4 +1,4 @@
-# infra/ — the Hermes GitOps bootstrap Pulumi program
+# infra/ — the Harness Hg bootstrap Pulumi program
 
 A bun/TypeScript Pulumi program (following the `factory-level/inferops`
 `infra/foundation` mental model)

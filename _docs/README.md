@@ -4,7 +4,7 @@ Four trees, four jobs (final-pass reorg, 2026-08-25):
 
 | Tree | Holds | Tense | Published? |
 |---|---|---|---|
-| `wiki/` | **The product manual** — what ships, written for a beta user | present, shipping only | **Yes** — the only published tree; self-contained (own `mkdocs.yml`, `overrides/`, `assets/`), `make wiki-build --strict` |
+| `wiki/` | **The product manual** — what ships, written for a beta user | present, shipping only | **Yes** — the only published tree; built with `_docs/mkdocs.yml`, `make wiki-build` (strict) |
 | `design/` | **Desired state** — what the system is intended to be | future-facing, deliberate | No — internal |
 | `architecture/` | **As-built** — how the system actually is today | present, honest | No — internal |
 | `adr/` | **The decision ledger** — one `NNNN-<name>.md` per decision, each recording a change to `design/` (decision, reason, mandatory cost). `CHANGES.md` is the frozen pre-reorg ledger: cite, never append | historical, append-only | No — internal; the wiki never cites it (`make wiki-adr`) |
@@ -14,7 +14,7 @@ records what is now true → every change to a `design/` page lands as a new
 `adr/NNNN-<name>.md` first. When as-built matches desired, the two trees say the same thing and the diff between
 them **is** the honest gap list (`maintainers/gaps.md` keys off exactly that diff).
 
-The unpublished `maintainers/` ledgers (`built.md`, `gaps.md`) remain the per-build-unit
+In the private ops fork, the unpublished `maintainers/` ledgers (`built.md`, `gaps.md`) remain the per-build-unit
 honesty tables; `architecture/` is the narrative they index into.
 
 This file is for contributors and is excluded from the build (it lives outside
@@ -34,7 +34,7 @@ built. A reader should be able to answer seven questions and stop reading:
 2. I am new — how do I get to a running install? → **Get Started**
 3. What does the platform provide and control? → **Platform**
 4. What must my agent application repository provide? → **Agent Team Install**
-5. How do I watch and operate the result? → **Nexus**
+5. How do I watch and operate the result? → **Nexus UI**
 6. How do I perform an operational task? → **Runbooks**
 7. What is the exact command, field, or file? → **Reference**
 
@@ -47,7 +47,7 @@ Confusing these will make you write the wrong thing.
 
 | Kind | Lives in | Holds |
 |---|---|---|
-| **Conceptual / task** | Home, Get Started, Platform, Agent Team Install, Nexus, Runbooks | What a thing is, why it exists, how it fits, how to do it |
+| **Conceptual / task** | Home, Get Started, Platform, Agent Team Install, Nexus UI, Runbooks | What a thing is, why it exists, how it fits, how to do it |
 | **Reference** | Reference | Exact commands, fields, defaults, accepted values, precedence, directory layouts |
 
 **A conceptual page never carries schema-level detail** — it links to Reference instead. A fact
@@ -65,7 +65,7 @@ The wiki is read by a beta user who wants an answer, not a history. Every page f
 - **Tables for ownership and options. Prose for one idea. Code blocks for commands.**
 - **The names.** The product is **Harness Hg**. The operations surface is **Nexus UI**. The repo
   you write is an **Agent Team Repo**. Agents run on a **harness**; Eve is the default. Hermes
-  Agent appears once, on Read this first, as a harness with status *Coming soon*.
+  Agent is deprecated: existing installations only, with no new capability.
 
 ## Rules
 

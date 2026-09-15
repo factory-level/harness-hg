@@ -52,8 +52,26 @@ cat > site/demo/index.html <<'HTML'
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Harness Hg · Nexus UI demo</title><link rel="icon" href="../favicon.svg">
-<link rel="stylesheet" href="style.css"></head>
-<body><div id="nexus-root"></div><script src="demo.js"></script></body></html>
+<link rel="stylesheet" href="style.css">
+<style>
+body { margin: 0; display: flex; flex-direction: column; height: 100dvh; }
+.demo-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px 24px; padding: 12px 20px; background: #eeeff4; color: #141824;
+  font: 14px/1.5 system-ui, sans-serif; }
+.demo-banner p { margin: 0; }
+.demo-banner nav { display: flex; gap: 20px; }
+.demo-banner a { color: #1f56c0; text-underline-offset: 3px; }
+.demo-banner a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+#nexus-root { flex: 1; min-height: 0; contain: layout; }
+#nexus-root > .nx-root { block-size: 100%; max-block-size: 100%; }
+</style></head>
+<body>
+<header class="demo-banner">
+  <p><strong>Nexus UI demo</strong> · Demo data; changes stay in this browser.</p>
+  <nav aria-label="Demo navigation"><a href="../">Harness Hg</a>
+    <a href="../docs/get-started/dev-quickstart/">Build an agent team</a></nav>
+</header>
+<div id="nexus-root"></div><script src="demo.js"></script></body></html>
 HTML
 
 echo "site: $(find site -type f | wc -l) files -> ./site/"

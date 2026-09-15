@@ -2,7 +2,7 @@
     "name": "nexus-ui",
     "version": "0.1.0",
     "private": true,
-    "description": "The rebuilt Nexus frontend (ADR 0157, #666) - Astryx components + custom canvas over the _docs/design/nexus-ui/ spec. Builds the plugin IIFE with React staying the host SDK's (src/shims/).",
+    "description": "Nexus UI, the Harness Hg operations interface for agent fleets, event connections and backups.",
     "type": "module",
     "scripts": {
         "typecheck": "tsc --noEmit",

@@ -4,7 +4,7 @@
 
 ## What a distributed profile is
 
-A **distributed profile** is an external Git repository that ships an AI agent's distribution — its manifest, personality, config, and deployment intent — so a Hermes GitOps platform can install it **by Git reference**. The author writes a few small files. No Kubernetes YAML, no Helm, no Dockerfiles. The author never has to know where the agent will run.
+A **distributed profile** is an external Git repository that ships an AI agent's distribution — its manifest, personality, config, and deployment intent — so a Harness Hg platform can install it **by Git reference**. The author writes a few small files. No Kubernetes YAML, no Helm, no Dockerfiles. The author never has to know where the agent will run.
 
 This directory is a mini version of such a repo. In real life it would be its own repository (for example `github.com/your-org/agents`), and the platform's fleet configuration would point at it.
 
@@ -79,7 +79,7 @@ Note the shape difference: in `hermes-gitops.yaml`, an app's `values` are the au
 
 ## Scope in v1
 
-Pod compute only, single cluster. Networking, backups, and placement are **platform** capabilities — this repo only *declares* what it needs (spec ADR-010). That is what keeps the profile portable: the same folder installs unchanged on any Hermes GitOps platform.
+Pod compute only, single cluster. Networking, backups, and placement are **platform** capabilities — this repo only *declares* what it needs (spec ADR-010). That is what keeps the profile portable: the same folder installs unchanged on any Harness Hg platform.
 
 ## See also
 
